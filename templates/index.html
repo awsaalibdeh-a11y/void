@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>VOID</title>
+  <meta name="description" content="VOID: an all-black hypercar concept. Scroll to build it, spin it, launch it and spec your own. Made by Awsaa.">
+  <meta name="theme-color" content="#050506">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v={{ v }}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%23050506%27/%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2716%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%275%27/%3E%3C/svg%3E">
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+<div id="loader" aria-hidden="true">
+  <div class="ld-word"><span>V</span><span>O</span><span>I</span><span>D</span></div>
+  <div class="ld-bar"><i id="ldbar"></i></div>
+  <div class="ld-pct"><b id="ldpct">0</b>%</div>
+</div>
+
+<canvas id="gl" aria-label="The VOID car in 3D"></canvas>
+<div id="grain" aria-hidden="true"></div>
+
+<nav id="nav">
+  <a class="logo" href="#hero">VOID</a>
+  <div class="links"><a href="#ride">The ride</a><a href="#build">Build yours</a><a href="#specs">Specs</a></div>
+  <div class="right"><span class="credit">Made by Awsaa</span><button id="snd" class="pill" aria-pressed="false" title="Music and engine sound">Sound off</button></div>
+</nav>
+
+<main>
+  <section id="hero" data-scene="hero" style="height:240vh">
+    <div class="sticky">
+      <div class="hero-copy" id="heroCopy">
+        <div class="kicker">Concept · 2026</div>
+        <h1 class="mega">VOID</h1>
+        <p class="lede">Built from nothing. Black from every angle.</p>
+      </div>
+      <div class="build-hud" id="buildHud"><span>Building</span><b id="buildPct">0</b><span>%</span><div class="bh-bar"><i id="buildBar"></i></div></div>
+      <div class="cue" id="cue"><span>Scroll to build it</span><i></i></div>
+      <button class="pill solid play" id="play">&#9654; Play the ride</button>
+    </div>
+  </section>
+
+  <section id="ride" data-scene="ride" style="height:1500vh">
+    <div class="sticky">
+      <div class="rail" id="rail"><i id="railFill"></i></div>
+      <div class="caps" id="caps">
+        <div class="cap" data-from="0" data-to=".065"><div class="num">01</div><h2>Rolling out.</h2><p>Off the line in the dark, up to 108 km/h before the loop.</p></div>
+        <div class="cap" data-from=".065" data-to=".245"><div class="num">02</div><h2>The loop.</h2><p>A full 360&deg; on a 9 m loop. The g-meter is real physics: watch it climb at the bottom and drop over the top.</p></div>
+        <div class="cap" data-from=".245" data-to=".385"><div class="num">03</div><h2>The ramp.</h2><p>Out of the loop, foot down, and up a 33&deg; kicker at full speed.</p></div>
+        <div class="cap" data-from=".385" data-to=".52"><div class="num">04</div><h2>Lift-off.</h2><p>Four thrusters swing out and fire straight down. Vertical lift, no runway.</p></div>
+        <div class="cap" data-from=".52" data-to=".68"><div class="num">05</div><h2>Wings out.</h2><p>The thrusters turn to push it forward, the wings slide out and take the weight. Now it glides.</p></div>
+        <div class="cap" data-from=".68" data-to=".785"><div class="num">06</div><h2>Inside.</h2><p>Going into the cockpit.</p></div>
+      </div>
+      <div class="telem" id="telem">
+        <div><span>Speed</span><b id="tSpd">0</b><i>km/h</i></div>
+        <div><span>Load</span><b id="tG">1.0</b><i>g</i></div>
+        <div><span>Alt</span><b id="tAlt">0</b><i>m</i></div>
+      </div>
+      <div class="dash" id="dash">
+        <div class="dash-scan"></div>
+        <div class="dash-top"><span class="rec"><i></i>REC</span><span>Dashcam &middot; front</span><span id="dClock">00:00:00</span></div>
+        <div class="dash-mid">
+          <div class="radar"><canvas id="radar" width="300" height="300"></canvas><div class="radar-l">Safe landing scan &middot; 5 km</div></div>
+          <div class="lz"><div class="lz-h">Landing zones</div><ul id="lzList"></ul><div class="best" id="best"></div></div>
+        </div>
+        <div class="ladder" id="ladder"><i></i><i></i><i></i><b></b></div>
+        <div class="dash-bot">
+          <div class="g"><span>Speed</span><b id="dSpd">0</b><i>km/h</i></div>
+          <div class="g"><span>Altitude</span><b id="dAlt">0</b><i>m</i></div>
+          <div class="g"><span>Vertical</span><b id="dVs">0</b><i>m/s</i></div>
+          <div class="g fuel"><span>Fuel</span><b id="dFuel">100</b><i>%</i><div class="fbar"><i id="dFuelBar"></i></div><small id="dRange"></small></div>
+          <div class="g"><span>Mode</span><b id="dMode">Glide</b></div>
+        </div>
+      </div>
+      <div class="dream" id="dream">
+        <div class="d1">This is the creator&rsquo;s dream car.</div>
+        <div class="d2">If it existed.</div>
+        <div class="d3">&mdash; Awsaa</div>
+      </div>
+      <button class="pill play" id="play2">&#9654; Play the ride</button>
+    </div>
+  </section>
+
+  <section id="build" data-scene="build">
+    <div class="sticky">
+      <div class="sec-label">03 &mdash; Build yours</div>
+      <div class="drag-hint">Drag to turn it</div>
+      <aside class="cfg" id="cfg">
+        <div class="cfg-head"><h2>Your VOID</h2><button class="pill" id="rev">Start engine</button></div>
+        <div id="cfgBody"></div>
+        <div class="cfg-foot">
+          <div class="sum" id="sum"></div>
+          <div class="cfg-btns"><button class="pill" id="reset">Back to all black</button><button class="pill solid" id="share">Copy my build</button></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="specs" data-scene="specs">
+    <div class="specs-wrap">
+      <div class="sec-label static">04 &mdash; Numbers</div>
+      <h2 class="specs-title">Nothing extra.<br>Nothing missing.</h2>
+      <div class="specs">
+        <div><b>790</b><span>horsepower</span></div>
+        <div><b>800</b><span>Nm of torque</span></div>
+        <div><b>2.6<small>s</small></b><span>0&ndash;100 km/h</span></div>
+        <div><b>6.9<small>s</small></b><span>0&ndash;200 km/h</span></div>
+        <div><b>335</b><span>km/h top speed</span></div>
+        <div><b>1,240<small>kg</small></b><span>dry weight</span></div>
+        <div><b>4.0<small>L</small></b><span>twin-turbo V8</span></div>
+        <div><b>7</b><span>speed seamless gearbox</span></div>
+        <div><b>4</b><span>lift thrusters</span></div>
+        <div><b>5<small>km</small></b><span>landing scan range</span></div>
+        <div><b>130<small>m</small></b><span>glide altitude</span></div>
+        <div><b>9<small>m</small></b><span>loop radius</span></div>
+      </div>
+    </div>
+    <footer>
+      <div class="foot-logo">VOID</div>
+      <p><b>Made by Awsaa.</b> This is the creator&rsquo;s dream car, if it existed. VOID is a concept, not a real car for sale. The 3D car is modelled in code and its shape is inspired by the McLaren 765LT. This site isn't made by or linked to McLaren.</p>
+    </footer>
+  </section>
+</main>
+
+<div id="fade" aria-hidden="true"></div>
+<div id="toast" role="status"></div>
+<noscript><p style="position:fixed;inset:auto 0 0;padding:16px;background:#111;color:#fff;text-align:center">VOID needs JavaScript for the 3D car.</p></noscript>
+<script type="module" src="/static/main.js?v={{ v }}"></script>
+</body>
+</html>
