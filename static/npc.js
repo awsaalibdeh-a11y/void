@@ -83,7 +83,8 @@ export function createLife(scene, roads, walkways, COARSE) {
         const c = npcCars[i];
         let want = c.want;
         if (player) { const dx = player.x - c.x, dz = player.z - c.z, ahead = (dx * Math.cos(c.yaw) + dz * Math.sin(c.yaw)); if (ahead > 0 && ahead < 18 && Math.abs(-dx * Math.sin(c.yaw) + dz * Math.cos(c.yaw)) < 3 && player.y < 3) want = 0; }
-        c.v += Math.max(-8 * dt, Math.min(3 * dt, want - c.v));
+        for (const o of npcCars) if (o !== c && o.lane === c.lane && o.dir === c.dir) { const gap = (o.d - c.d) * c.dir; if (gap > 0 && gap < 11) want = Math.min(want, gap < 6 ? 0 : o.v * .9); }
+        c.v += Math.max(-10 * dt, Math.min(3 * dt, want - c.v));
         c.d += c.v * c.dir * dt;
         if (c.d < 0 || c.d > c.lane.total) { c.dir *= -1; c.d = Math.max(0, Math.min(c.lane.total, c.d)); }
         at(c.lane, c.d, tmp);

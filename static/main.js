@@ -151,8 +151,8 @@ function showroom(dt, time) {
 // ---------- per frame ----------
 const clock = new THREE.Clock();
 let lastHud = 0, prevGear = 1, feedFlip = 0;
-function frameLoop() {
-  const dt = Math.min(.05, clock.getDelta()), time = clock.elapsedTime;
+function frameLoop(fixed) {
+  const dt = fixed || Math.min(.05, clock.getDelta()), time = clock.elapsedTime;
   let S;
   if (mode === "watch") {
     if (w.playing && !w.dragging) {
@@ -185,9 +185,9 @@ function frameLoop() {
 
   // shadow, underglow, exhaust, speed lines
   const fr = S.fr, ground = clamp(1 - S.pos.y / 3) * (fr.u.y > .8 ? 1 : 0);
-  fx.shadow.position.set(S.pos.x, .01, S.pos.z); fx.shadow.material.opacity = ground; fx.shadow.rotation.z = Math.atan2(-fr.f.z, fr.f.x);
+  fx.shadow.position.set(S.pos.x, S.pos.y > .5 ? .07 : S.pos.y + .07, S.pos.z); fx.shadow.material.opacity = ground; fx.shadow.rotation.z = Math.atan2(-fr.f.z, fr.f.x);
   const glowOn = !!OPTS.glow.items[build.glow][1];
-  fx.glow.position.copy(fx.shadow.position); fx.glow.rotation.z = fx.shadow.rotation.z; fx.glow.material.opacity = glowOn ? ground * .85 : 0;
+  fx.glow.position.copy(fx.shadow.position).y += .01; fx.glow.rotation.z = fx.shadow.rotation.z; fx.glow.material.opacity = glowOn ? ground * .85 : 0;
   if (S.thrust.power > .3) for (const n of nozzles) if (Math.random() < .18) {
     const pf = fx.puffs[fx.puffI++ % fx.puffs.length], wp = n.clone().applyMatrix4(car.group.matrixWorld);
     pf.s.position.copy(wp); pf.life = 1; pf.s.visible = true; pf.s.scale.setScalar(.4);
@@ -247,4 +247,4 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { cancelAnimationFrame(raf); if (mode === "watch" && w.playing) pause(); if (sound.ctx) sound.ctx.suspend(); }
   else { clock.getDelta(); loop(); if (sound.on && sound.ctx) sound.ctx.resume(); }
 });
-window.VOID = { W, car, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console
+window.VOID = { step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frameLoop(dt); }, W, car, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console

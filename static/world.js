@@ -19,7 +19,7 @@ export const G = 9.81, R = 9, LZ = 4.2, HW = 2.3, RAMP_X = 120;
 
 // landing zones, metres in world space (x forward from the start line, z to the right)
 export const ZONES = [
-  { id: "ALPHA", x: -168, z: 339, safe: true, note: "Neighbourhood park" },
+  { id: "ALPHA", x: -1646, z: 1015, safe: true, note: "West park, open lawn" },
   { id: "BRAVO", x: -1321, z: 1267, safe: true, note: "Big park, open lawn" },
   { id: "CHARLIE", x: -206, z: -900, safe: false, note: "Over the Gulf, water" },
   { id: "DELTA", x: -1870, z: 590, safe: true, note: "Stadium car park" },
@@ -29,7 +29,7 @@ export const ZONES = [
 export const PAD_R = 28;
 
 export async function createWorld(canvas, COARSE) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
   renderer.localClippingEnabled = true;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, COARSE ? 1.5 : 1.75));

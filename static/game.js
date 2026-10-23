@@ -9,6 +9,7 @@ import { pip } from "./city.js";
 const $ = id => document.getElementById(id);
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
 const UP = new THREE.Vector3(0, 1, 0);
+export const SPAWN = { x: -168, z: 339, yaw: -Math.PI / 2 };           // the middle of Tubaishi public park, facing the sea
 
 export function createGame(W, car, sound, life, opts = {}) {
   const T = W.track, fr = frame(), back = frame(), basis = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -41,11 +42,11 @@ export function createGame(W, car, sound, life, opts = {}) {
   $("gGo").onclick = () => { $("gReady").hidden = true; if (!sound.on) sound.setOn(true); g.started = true; };
 
   function spawn(at) {
-    const s = at || { x: -55, z: 0, yaw: 0 };
+    const s = at || SPAWN;
     Object.assign(g, { mode: "drive", x: s.x, z: s.z, y: 0, yaw: s.yaw, v: 0, vel: new THREE.Vector3(), pitch: 0, roll: 0, wings: 0, thr: 0, ang: 0, gForce: 1, d: 0, hover: false, landing: false, wreck: 0 });
   }
   function start() {
-    g = { score: 0, started: false, last: { x: -55, z: 0, yaw: 0 }, msg: "", msgT: 0, done: new Set() };
+    g = { score: 0, started: false, last: { ...SPAWN }, msg: "", msgT: 0, done: new Set() };
     spawn(); $("gReady").hidden = false; $("gScore").textContent = "0"; $("gBest").textContent = best() ? `Best score: ${best()}` : "";
     sound.setGame("idle");
   }
@@ -118,7 +119,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     a.y += g.wings * G * Math.min(.96, (vh / 80) ** 2) * (.4 + .6 * ceiling);
     if (lift) a.y += 18 * ceiling;
     if (g.hover && !lift && !g.landing) a.y += clamp(G - g.vel.y * 2.5, 0, 16);          // hover assist: holds height when you let go
-    if (g.landing) a.y += clamp(G + (-3.5 - g.vel.y) * 3, 0, 18);                      // settle down at about 3.5 m/s
+    if (g.landing) a.y += clamp(G + ((g.y < 14 ? -3 : -9) - g.vel.y) * 3, 0, 22);        // drop at 9 m/s, soft 3 m/s for the last few metres
     if (boost) a.addScaledVector(dir, 7);
     const k = .0008 + (brake ? .003 : 0) + (1 - g.wings) * .0004;
     a.addScaledVector(g.vel, -(k * g.vel.length() + (brake || g.landing ? .35 : .01)));
@@ -191,9 +192,18 @@ export function createGame(W, car, sound, life, opts = {}) {
         let up = UP.clone();
         if (g.mode === "rail") { T.sample(Math.max(T.D[T.loopIn] - 6, g.d - 7.5), back); camPos.copy(loc(back, 0, 2.4, 0)); camLook.copy(loc(fr, 5, .8, 0)); up = back.u.clone(); }
         else {
-          const d = new THREE.Vector3(Math.cos(g.yaw), 0, Math.sin(g.yaw)), far = air ? 11 : 7.5 + speed * .012;
-          const wantPos = fr.p.clone().addScaledVector(d, -far).add(new THREE.Vector3(0, air ? 3.6 : 2.4, 0)), wantLook = fr.p.clone().addScaledVector(d, 6).add(new THREE.Vector3(0, .8, 0));
+          const d = new THREE.Vector3(Math.cos(g.yaw), 0, Math.sin(g.yaw)), far = air ? 11 : 7 + speed * .012;
+          const wantPos = fr.p.clone().addScaledVector(d, -far).add(new THREE.Vector3(0, air ? 3.6 : 3.4, 0)), wantLook = fr.p.clone().addScaledVector(d, 6).add(new THREE.Vector3(0, .8, 0));
           const k = clamp(dt * (air ? 4 : 6)); camPos.lerp(wantPos, k); camLook.lerp(wantLook, k);
+          // camera collision: if a building is between the car and the camera, bring the camera in front of it
+          const near = W.buildings.filter(b => Math.abs(b.x - g.x) < b.hw + 16 && Math.abs(b.z - g.z) < b.hd + 16);
+          if (near.length) {
+            const from = fr.p.clone().add(new THREE.Vector3(0, 1.6, 0)), to = camPos.clone(), seg = to.clone().sub(from), n = Math.ceil(seg.length() / .4);
+            for (let i = 1; i <= n; i++) {
+              const pnt = from.clone().addScaledVector(seg, i / n);
+              if (near.some(b => pnt.y < b.h + 1 && Math.abs(pnt.x - b.x) < b.hw + .6 && Math.abs(pnt.z - b.z) < b.hd + .6 && (!b.poly || pip(pnt.x, pnt.z, b.poly)))) { camPos.copy(from.addScaledVector(seg, Math.max(0, (i - 2) / n))); break; }
+            }
+          }
         }
         cam = { pos: camPos.clone(), look: camLook.clone(), up, fov: lerp(54, 64, clamp(speed / 330)) };
       }
