@@ -27,7 +27,8 @@ class Page(unittest.TestCase):
     def test_credit_dream_card_and_not_affiliated_note(self):
         self.assertIn("Made by Awsaa", self.html)
         self.assertIn("dream car", self.html)
-        self.assertIn("isn't made by or linked to McLaren", self.html)
+        self.assertIn("Hydra LTE242", self.html)
+        self.assertIn("isn&rsquo;t made by or linked to McLaren", self.html)
 
     def test_every_id_the_script_uses_exists_in_the_page(self):
         js = read("static", "main.js")

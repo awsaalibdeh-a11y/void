@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>VOID</title>
-  <meta name="description" content="VOID: an all-black hypercar concept. Scroll to build it, spin it, launch it and spec your own. Made by Awsaa.">
-  <meta name="theme-color" content="#050506">
+  <meta name="description" content="VOID: the Hydra LTE242, an black-and-red hypercar concept that drives a loop and then flies. Watch the film, play the game, build your own. Made by Awsaa.">
+  <meta name="theme-color" content="#10131b">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v={{ v }}">
@@ -17,7 +17,7 @@
     } }
   </script>
 </head>
-<body>
+<body data-mode="home">
 <div id="loader" aria-hidden="true">
   <div class="ld-word"><span>V</span><span>O</span><span>I</span><span>D</span></div>
   <div class="ld-bar"><i id="ldbar"></i></div>
@@ -26,110 +26,130 @@
 
 <canvas id="gl" aria-label="The VOID car in 3D"></canvas>
 <div id="grain" aria-hidden="true"></div>
+<div id="fade" aria-hidden="true"></div>
 
 <nav id="nav">
-  <a class="logo" href="#hero">VOID</a>
-  <div class="links"><a href="#ride">The ride</a><a href="#build">Build yours</a><a href="#specs">Specs</a></div>
-  <div class="right"><span class="credit">Made by Awsaa</span><button id="snd" class="pill" aria-pressed="false" title="Music and engine sound">Sound off</button></div>
+  <button class="logo" data-go="home" aria-label="VOID home">VOID</button>
+  <span class="credit">Made by Awsaa</span>
+  <div class="right">
+    <button id="snd" class="pill" aria-pressed="false" title="Music and engine sound">Sound off</button>
+    <button id="exit" class="pill" title="Back home (Esc)">&#10005;</button>
+  </div>
 </nav>
 
-<main>
-  <section id="hero" data-scene="hero" style="height:240vh">
-    <div class="sticky">
-      <div class="hero-copy" id="heroCopy">
-        <div class="kicker">Concept · 2026</div>
-        <h1 class="mega">VOID</h1>
-        <p class="lede">Built from nothing. Black from every angle.</p>
-      </div>
-      <div class="build-hud" id="buildHud"><span>Building</span><b id="buildPct">0</b><span>%</span><div class="bh-bar"><i id="buildBar"></i></div></div>
-      <div class="cue" id="cue"><span>Scroll to build it</span><i></i></div>
-      <button class="pill solid play" id="play">&#9654; Play the ride</button>
+<main id="page">
+  <section id="home">
+    <div class="home-copy">
+      <div class="kicker">Hydra LTE242 &middot; black-and-red hypercar concept</div>
+      <h1 class="mega">VOID</h1>
+      <p class="lede">It takes the loop. Then it flies.</p>
     </div>
+    <div class="choices">
+      <button class="choice main" data-go="watch"><b>&#9654;&ensp;Watch</b><span>The 48-second film, with music</span></button>
+      <button class="choice" data-go="play"><b>Play</b><span>Drive it, fly it, land it</span></button>
+      <button class="choice" data-go="build"><b>Build</b><span>Paint it your way</span></button>
+    </div>
+    <a class="more" href="#specs">Specs</a>
   </section>
 
-  <section id="ride" data-scene="ride" style="height:1500vh">
-    <div class="sticky">
-      <div class="rail" id="rail"><i id="railFill"></i></div>
-      <div class="caps" id="caps">
-        <div class="cap" data-from="0" data-to=".065"><div class="num">01</div><h2>Rolling out.</h2><p>Off the line in the dark, up to 108 km/h before the loop.</p></div>
-        <div class="cap" data-from=".065" data-to=".245"><div class="num">02</div><h2>The loop.</h2><p>A full 360&deg; on a 9 m loop. The g-meter is real physics: watch it climb at the bottom and drop over the top.</p></div>
-        <div class="cap" data-from=".245" data-to=".385"><div class="num">03</div><h2>The ramp.</h2><p>Out of the loop, foot down, and up a 33&deg; kicker at full speed.</p></div>
-        <div class="cap" data-from=".385" data-to=".52"><div class="num">04</div><h2>Lift-off.</h2><p>Four thrusters swing out and fire straight down. Vertical lift, no runway.</p></div>
-        <div class="cap" data-from=".52" data-to=".68"><div class="num">05</div><h2>Wings out.</h2><p>The thrusters turn to push it forward, the wings slide out and take the weight. Now it glides.</p></div>
-        <div class="cap" data-from=".68" data-to=".785"><div class="num">06</div><h2>Inside.</h2><p>Going into the cockpit.</p></div>
-      </div>
-      <div class="telem" id="telem">
-        <div><span>Speed</span><b id="tSpd">0</b><i>km/h</i></div>
-        <div><span>Load</span><b id="tG">1.0</b><i>g</i></div>
-        <div><span>Alt</span><b id="tAlt">0</b><i>m</i></div>
-      </div>
-      <div class="dash" id="dash">
-        <div class="dash-scan"></div>
-        <div class="dash-top"><span class="rec"><i></i>REC</span><span>Dashcam &middot; front</span><span id="dClock">00:00:00</span></div>
-        <div class="dash-mid">
-          <div class="radar"><canvas id="radar" width="300" height="300"></canvas><div class="radar-l">Safe landing scan &middot; 5 km</div></div>
-          <div class="lz"><div class="lz-h">Landing zones</div><ul id="lzList"></ul><div class="best" id="best"></div></div>
-        </div>
-        <div class="ladder" id="ladder"><i></i><i></i><i></i><b></b></div>
-        <div class="dash-bot">
-          <div class="g"><span>Speed</span><b id="dSpd">0</b><i>km/h</i></div>
-          <div class="g"><span>Altitude</span><b id="dAlt">0</b><i>m</i></div>
-          <div class="g"><span>Vertical</span><b id="dVs">0</b><i>m/s</i></div>
-          <div class="g fuel"><span>Fuel</span><b id="dFuel">100</b><i>%</i><div class="fbar"><i id="dFuelBar"></i></div><small id="dRange"></small></div>
-          <div class="g"><span>Mode</span><b id="dMode">Glide</b></div>
-        </div>
-      </div>
-      <div class="dream" id="dream">
-        <div class="d1">This is the creator&rsquo;s dream car.</div>
-        <div class="d2">If it existed.</div>
-        <div class="d3">&mdash; Awsaa</div>
-      </div>
-      <button class="pill play" id="play2">&#9654; Play the ride</button>
-    </div>
-  </section>
-
-  <section id="build" data-scene="build">
-    <div class="sticky">
-      <div class="sec-label">03 &mdash; Build yours</div>
-      <div class="drag-hint">Drag to turn it</div>
-      <aside class="cfg" id="cfg">
-        <div class="cfg-head"><h2>Your VOID</h2><button class="pill" id="rev">Start engine</button></div>
-        <div id="cfgBody"></div>
-        <div class="cfg-foot">
-          <div class="sum" id="sum"></div>
-          <div class="cfg-btns"><button class="pill" id="reset">Back to all black</button><button class="pill solid" id="share">Copy my build</button></div>
-        </div>
-      </aside>
-    </div>
-  </section>
-
-  <section id="specs" data-scene="specs">
+  <section id="specs">
     <div class="specs-wrap">
-      <div class="sec-label static">04 &mdash; Numbers</div>
+      <div class="sec-label">The numbers</div>
       <h2 class="specs-title">Nothing extra.<br>Nothing missing.</h2>
       <div class="specs">
         <div><b>790</b><span>horsepower</span></div>
-        <div><b>800</b><span>Nm of torque</span></div>
         <div><b>2.6<small>s</small></b><span>0&ndash;100 km/h</span></div>
-        <div><b>6.9<small>s</small></b><span>0&ndash;200 km/h</span></div>
         <div><b>335</b><span>km/h top speed</span></div>
         <div><b>1,240<small>kg</small></b><span>dry weight</span></div>
-        <div><b>4.0<small>L</small></b><span>twin-turbo V8</span></div>
-        <div><b>7</b><span>speed seamless gearbox</span></div>
         <div><b>4</b><span>lift thrusters</span></div>
-        <div><b>5<small>km</small></b><span>landing scan range</span></div>
-        <div><b>130<small>m</small></b><span>glide altitude</span></div>
+        <div><b>5<small>km</small></b><span>landing scan</span></div>
+        <div><b>130<small>m</small></b><span>glide height</span></div>
         <div><b>9<small>m</small></b><span>loop radius</span></div>
       </div>
     </div>
     <footer>
       <div class="foot-logo">VOID</div>
-      <p><b>Made by Awsaa.</b> This is the creator&rsquo;s dream car, if it existed. VOID is a concept, not a real car for sale. The 3D car is modelled in code and its shape is inspired by the McLaren 765LT. This site isn't made by or linked to McLaren.</p>
+      <p><b>Made by Awsaa.</b> The Hydra LTE242 is the creator&rsquo;s dream car, if it existed. It&rsquo;s a concept, not a real car for sale. Its shape is inspired by the McLaren 765LT, and this site isn&rsquo;t made by or linked to McLaren. The music is original and made in code.</p>
     </footer>
   </section>
 </main>
 
-<div id="fade" aria-hidden="true"></div>
+<!-- Watch -->
+<div id="watchUI" class="mode">
+  <div class="cap" id="wCap"><div class="num" id="wNum"></div><h2 id="wTitle"></h2><p id="wSub"></p></div>
+  <div class="telem" id="telem">
+    <div><span>Speed</span><b id="tSpd">0</b><i>km/h</i></div>
+    <div><span>Load</span><b id="tG">1.0</b><i>g</i></div>
+    <div><span>Alt</span><b id="tAlt">0</b><i>m</i></div>
+  </div>
+  <div class="dream" id="dream">
+    <div class="d0">HYDRA LTE242</div>
+    <div class="d1">This is the creator&rsquo;s dream car.</div>
+    <div class="d2">If it existed.</div>
+    <div class="d3">&mdash; Awsaa</div>
+  </div>
+  <div class="end" id="wEnd">
+    <h2>That&rsquo;s the Hydra LTE242.</h2>
+    <div class="end-btns"><button class="pill solid" id="wAgain">&#8634; Watch again</button><button class="pill" data-go="play">Play it</button><button class="pill" data-go="build">Build yours</button></div>
+  </div>
+  <div class="player">
+    <button id="wPlay" class="pbtn" aria-label="Pause">&#10074;&#10074;</button>
+    <div class="scrub"><input id="wScrub" type="range" min="0" max="48" step="0.01" value="0" aria-label="Film position"><div class="ticks" id="wTicks"></div></div>
+    <span class="wtime" id="wTime">0:00</span>
+  </div>
+</div>
+
+<!-- Play -->
+<div id="playUI" class="mode">
+  <div class="g-hint" id="gHint"></div>
+  <div class="g-target"><i id="gArrow">&#11014;</i><span id="gTgt"></span></div>
+  <div class="g-stats">
+    <div><span>Speed</span><b id="gSpd">0</b><i>km/h</i></div>
+    <div><span>Load</span><b id="gG">1.0</b><i>g</i></div>
+    <div><span>Alt</span><b id="gAlt">0</b><i>m</i></div>
+    <div><span>Vert</span><b id="gVs">0</b><i>m/s</i></div>
+    <div class="fuel"><span>Fuel</span><b id="gFuel">100</b><i>%</i><div class="fbar"><i id="gFuelBar"></i></div></div>
+    <div><span>Mode</span><b id="gMode">Drive</b></div>
+  </div>
+  <button class="pill g-view" id="gView">Front seat</button>
+  <div class="pads">
+    <div class="pad-l"><button data-pad="left" aria-label="Left">&#9664;</button><button data-pad="right" aria-label="Right">&#9654;</button></div>
+    <div class="pad-r"><button data-pad="brake">Brake</button><button data-pad="gas" class="big">Gas</button><button data-pad="thrust" class="big air">Thrust</button></div>
+  </div>
+  <div class="g-card" id="gReady">
+    <h2>Fly the Hydra</h2>
+    <ol>
+      <li><b>Drive:</b> hold <kbd>W</kbd> / <kbd>&uarr;</kbd> (Gas). Too slow at the top of the loop and you fall.</li>
+      <li><b>Ramp:</b> hit it flat out and you take off.</li>
+      <li><b>Fly:</b> <kbd>Space</kbd> thrust lifts you, <kbd>W</kbd> boosts, <kbd>A</kbd> <kbd>D</kbd> steer. The wings open on their own at speed.</li>
+      <li><b>Land:</b> follow the arrow to a <span class="ok">green</span> pad. <kbd>S</kbd> brakes, so touch down under 6 m/s.</li>
+    </ol>
+    <p class="small"><kbd>C</kbd> switches to the front seat. On a phone, use the buttons.</p>
+    <button class="pill solid" id="gGo">Start</button>
+    <div class="small" id="gBest"></div>
+  </div>
+  <div class="g-card" id="gOver" hidden>
+    <h2 id="gTitle"></h2>
+    <p id="gMsg"></p>
+    <div class="g-res" id="gStats"></div>
+    <div class="small" id="gOverBest"></div>
+    <div class="end-btns"><button class="pill solid" id="gRetry">&#8634; Try again</button><button class="pill" data-go="watch">Watch the film</button></div>
+  </div>
+</div>
+
+<!-- Build -->
+<div id="buildUI" class="mode">
+  <div class="drag-hint">Drag to turn it</div>
+  <aside class="cfg" id="cfg">
+    <div class="cfg-head"><h2>Your Hydra LTE242</h2><button class="pill" id="rev">Start engine</button></div>
+    <div id="cfgBody"></div>
+    <div class="cfg-foot">
+      <div class="sum" id="sum"></div>
+      <div class="cfg-btns"><button class="pill" id="reset">Black &amp; red</button><button class="pill solid" id="share">Copy my build</button></div>
+    </div>
+  </aside>
+</div>
+
 <div id="toast" role="status"></div>
 <noscript><p style="position:fixed;inset:auto 0 0;padding:16px;background:#111;color:#fff;text-align:center">VOID needs JavaScript for the 3D car.</p></noscript>
 <script type="module" src="/static/main.js?v={{ v }}"></script>

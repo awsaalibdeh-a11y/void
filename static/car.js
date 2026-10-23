@@ -4,8 +4,8 @@
 import * as THREE from "three";
 
 const X0 = -2.3, LEN = 4.6;                 // rear tip to nose, along +x
-const WHEELS = [1.45, -1.42];               // front and rear axle x
-const WR = 0.37, ARCH = 0.45, WELL = 0.6;   // wheel radius, arch radius, how far in the wells are carved
+const WHEELS = [1.42, -1.38];               // front and rear axle x (a 2.8 m wheelbase)
+const WR = 0.36, ARCH = 0.44, WELL = 0.62;  // wheel radius, arch radius, how far in the wells are carved
 
 // cosine interpolation through [u, value] keys (u from 0 at the rear to 1 at the nose)
 function curve(keys, u) {
@@ -18,19 +18,23 @@ function curve(keys, u) {
 }
 const spow = (v, p) => Math.sign(v) * Math.pow(Math.abs(v), p);
 
+// long-tail proportions: a tall, blunt tail, wide rear haunches, a pinched waist where the door
+// scoop is, wide front fenders and a low, narrow nose
 const BODY = {
-  x0: X0, len: LEN, n: 5, tumble: .25,
-  top: [[0, .66], [.05, .84], [.12, .9], [.3, .9], [.45, .86], [.62, .8], [.75, .7], [.88, .56], [.96, .46], [1, .38]],
-  bot: [[0, .36], [.06, .26], [.15, .22], [.85, .22], [.95, .24], [1, .3]],
-  half: [[0, .78], [.06, .94], [.16, 1], [.42, .97], [.58, .96], [.8, 1], [.92, .94], [1, .72]],
-  ends: [.025, .045], fenders: true,
+  x0: X0, len: LEN, n: 6, tumble: .3,
+  top: [[0, .84], [.03, .93], [.12, .96], [.25, .96], [.4, .9], [.55, .84], [.66, .8], [.78, .68], [.9, .54], [.97, .44], [1, .36]],
+  bot: [[0, .3], [.04, .2], [.12, .16], [.88, .16], [.96, .2], [1, .28]],
+  half: [[0, .86], [.05, .95], [.18, 1.0], [.35, .96], [.5, .91], [.62, .93], [.8, .99], [.93, .93], [1, .62]],
+  ends: [.012, .06], fenders: true, scoop: true,
 };
+// a cab-forward teardrop: the screen starts far forward, the roof peaks over the doors and the
+// glass runs back in a long taper over the engine
 const CANOPY = {
-  x0: -0.95, len: 2.0, n: 4, tumble: .38,
-  top: [[0, .86], [.15, 1.08], [.45, 1.17], [.7, 1.1], [1, .8]],
-  bot: [[0, .7], [1, .7]],
-  half: [[0, .55], [.4, .74], [.8, .7], [1, .5]],
-  ends: [.08, .1], fenders: false,
+  x0: -1.35, len: 2.35, n: 4, tumble: .42,
+  top: [[0, .92], [.12, 1.0], [.3, 1.12], [.5, 1.19], [.65, 1.17], [.8, 1.06], [.92, .92], [1, .8]],
+  bot: [[0, .72], [1, .72]],
+  half: [[0, .42], [.2, .6], [.5, .72], [.75, .72], [.92, .64], [1, .5]],
+  ends: [.15, .06], fenders: false,
 };
 
 // a (nu+1) x nv grid of points on the lofted surface
@@ -45,8 +49,12 @@ function loft(spec, nu, nv) {
       const th = (j / nv) * Math.PI * 2, cz = Math.cos(th), sy = Math.sin(th);
       let z = w * spow(cz, 2 / spec.n), y = h * spow(sy, 2 / spec.n);
       if (sy > 0) z *= 1 - spec.tumble * sy * sy;
-      if (spec.fenders && sy > 0) for (const xw of WHEELS) y += (xw > 0 ? .22 : .1) * Math.exp(-(((x - xw) / .55) ** 2)) * Math.abs(cz) ** 3;
+      if (spec.fenders && sy > 0) for (const xw of WHEELS) y += (xw > 0 ? .2 : .14) * Math.exp(-(((x - xw) / .55) ** 2)) * Math.abs(cz) ** 3;
       z *= e; y = c + y * e;
+      if (spec.scoop && Math.abs(cz) > .3) {          // the big intake carved into each door, deepest at its front
+        const xr = (x + .35) / .62, yr = (y - .6) / .17;
+        if (Math.abs(xr) < 1 && Math.abs(yr) < 1) z *= 1 - .17 * (1 - xr * xr) * Math.sqrt(1 - yr * yr) * (1.15 - .3 * xr);
+      }
       if (spec.fenders) for (const xw of WHEELS) {
         if ((x - xw) ** 2 + (y - WR) ** 2 < ARCH * ARCH && Math.abs(z) > WELL) z = Math.sign(z) * WELL;
       }
@@ -88,14 +96,15 @@ export function buildCar() {
   const wireClip = new THREE.Plane(new THREE.Vector3(1, 0, 0), 3);
   const clip = [solidClip];
 
-  const paint = new THREE.MeshPhysicalMaterial({ color: 0x0b0b0d, metalness: .55, roughness: .22, clearcoat: 1, clearcoatRoughness: .08, clippingPlanes: clip });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x040507, metalness: .3, roughness: .04, clearcoat: 1, envMapIntensity: 1.6, clippingPlanes: clip });
+  const paint = new THREE.MeshPhysicalMaterial({ color: 0x0b0b0d, metalness: .6, roughness: .2, clearcoat: 1, clearcoatRoughness: .04, envMapIntensity: 1.3, clippingPlanes: clip });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0a0d12, metalness: .1, roughness: .03, clearcoat: 1, envMapIntensity: 1.8, transparent: true, opacity: .6, depthWrite: false, clippingPlanes: clip });  // tinted, so you can see the cabin
   const carbon = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, metalness: .4, roughness: .55, clippingPlanes: clip });
   const rubber = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: .9, clippingPlanes: clip });
   const rim = new THREE.MeshStandardMaterial({ color: 0x121215, metalness: .9, roughness: .28, clippingPlanes: clip });
-  const caliper = new THREE.MeshStandardMaterial({ color: 0x2a2a30, metalness: .3, roughness: .4, clippingPlanes: clip });
+  const caliper = new THREE.MeshStandardMaterial({ color: 0xc1121f, metalness: .3, roughness: .4, clippingPlanes: clip });
   const front = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xe8fbff).multiplyScalar(3), toneMapped: false, clippingPlanes: clip });
   const rear = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2a3a).multiplyScalar(2.6), toneMapped: false, clippingPlanes: clip });
+  const trim = new THREE.MeshPhysicalMaterial({ color: 0xc1121f, metalness: .4, roughness: .3, clearcoat: 1, clippingPlanes: clip });   // the red accents
   const lineMat = new THREE.LineBasicMaterial({ color: 0xeef0f5, transparent: true, opacity: .75, clippingPlanes: [wireClip] });
 
   const bodyHi = loft(BODY, 220, 96), canHi = loft(CANOPY, 90, 64);
@@ -104,43 +113,59 @@ export function buildCar() {
 
   const add = (geo, mat, x, y, z, parent = solid) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
 
-  // long-tail details: eye-socket headlights, splitter, side scoops, full-width wing,
-  // split tail lights, a deep diffuser and four exhausts clustered high in the middle
+  // details: eye-socket headlights, hood vents, splitter, side blades and sills, flying
+  // buttresses, engine louvers, a full-width wing, a mesh tail with four high exhausts, a diffuser
+  const beam = (a, b, w, h, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, a.distanceTo(b), h), mat); m.position.copy(a).add(b).multiplyScalar(.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); solid.add(m); return m; };
   for (const s of [-1, 1]) {
-    const sock = add(new THREE.SphereGeometry(.2, 24, 12), carbon, 2.0, .5, s * .6);
-    sock.scale.set(.75, .38, 1.2); sock.rotation.y = s * .5;
-    const led = add(new THREE.BoxGeometry(.03, .025, .34), front, 2.08, .53, s * .6); led.rotation.y = s * .55; led.rotation.x = s * -.25;
-    add(new THREE.BoxGeometry(.03, .022, .14), front, 2.1, .47, s * .48).rotation.y = s * .2;
-    const scoop = add(new THREE.SphereGeometry(.5, 28, 14), carbon, -.32, .6, s * .93);
-    scoop.scale.set(1.1, .36, .16); scoop.rotation.z = .12;
-    const blade = add(new THREE.BoxGeometry(.7, .07, .02), carbon, .72, .44, s * .985);
-    blade.rotation.z = .18; blade.rotation.y = s * -.05;
-    add(new THREE.BoxGeometry(.035, .035, .6), rear, -2.27, .78, s * .5);
+    const sock = add(new THREE.SphereGeometry(.2, 28, 14), carbon, 1.97, .52, s * .62);
+    sock.scale.set(.7, .42, 1.15); sock.rotation.y = s * .55; sock.rotation.x = s * .25;
+    const led = add(new THREE.BoxGeometry(.03, .022, .3), front, 2.04, .56, s * .64); led.rotation.y = s * .6; led.rotation.x = s * -.35;
+    add(new THREE.BoxGeometry(.03, .02, .12), front, 2.07, .49, s * .5).rotation.y = s * .25;
+    const vent = add(new THREE.BoxGeometry(.36, .012, .24), carbon, 1.5, .64, s * .3); vent.rotation.z = -.43;
+    const blade = add(new THREE.BoxGeometry(.62, .07, .02), carbon, .88, .4, s * .975); blade.rotation.z = .22;
+    add(new THREE.BoxGeometry(2.05, .07, .03), carbon, -.05, .21, s * .955);
+    add(new THREE.BoxGeometry(2.05, .012, .034), trim, -.05, .248, s * .956);                // red pinstripe on the sill
+    beam(new THREE.Vector3(-.45, 1.1, s * .6), new THREE.Vector3(-2.05, .95, s * .86), .07, .11, paint);
+    const tl = add(new THREE.BoxGeometry(.03, .03, .56), rear, -2.29, .82, s * .52); tl.rotation.x = s * .05;
+    add(new THREE.BoxGeometry(.03, .2, .03), rear, -2.28, .72, s * .8);
   }
-  add(new THREE.BoxGeometry(.38, .03, 1.98), carbon, 2.15, .235, 0);
-  add(new THREE.BoxGeometry(.34, .03, 1.9), carbon, -2.12, 1.0, 0).rotation.z = .1;
-  for (const z of [-.6, .6]) add(new THREE.BoxGeometry(.1, .14, .03), carbon, -2.06, .92, z);
-  for (let k = -3; k <= 3; k++) add(new THREE.BoxGeometry(.55, .18, .025), carbon, -2.08, .3, k * .2).rotation.z = -.4;
+  for (let k = 0; k < 6; k++) add(new THREE.BoxGeometry(.06, .015, .92), carbon, -1.42 - k * .11, .975, 0);
+  add(new THREE.BoxGeometry(.3, .03, 1.62), carbon, 2.06, .175, 0);
+  add(new THREE.BoxGeometry(.02, .032, 1.62), trim, 2.2, .175, 0);                           // red splitter lip
+  const wing = add(new THREE.BoxGeometry(.38, .03, 1.94), carbon, -2.12, 1.02, 0); wing.rotation.z = .12;
+  for (const z of [-.97, .97]) add(new THREE.BoxGeometry(.42, .16, .02), trim, -2.1, .98, z);
+  add(new THREE.BoxGeometry(.04, .32, 1.5), carbon, -2.3, .58, 0);
+  for (let k = -3; k <= 3; k++) add(new THREE.BoxGeometry(.6, .2, .025), carbon, -2.06, .25, k * .2).rotation.z = -.42;
   const ti = new THREE.MeshStandardMaterial({ color: 0x6d7079, metalness: 1, roughness: .3, side: THREE.DoubleSide, clippingPlanes: clip });
   const pipe = new THREE.CylinderGeometry(.05, .05, .22, 24, 1, true).rotateZ(Math.PI / 2), soot = new THREE.CircleGeometry(.045, 20).rotateY(-Math.PI / 2);
-  for (const y of [.58, .7]) for (const z of [-.065, .065]) { add(pipe, ti, -2.25, y, z); add(soot, rubber, -2.33, y, z); }
-  add(new THREE.BoxGeometry(3.4, .03, 1.7), carbon, -.1, .22, 0); // flat floor
+  for (const y of [.6, .72]) for (const z of [-.065, .065]) { add(pipe, ti, -2.28, y, z); add(soot, rubber, -2.37, y, z); }
+  add(new THREE.BoxGeometry(3.6, .03, 1.7), carbon, -.1, .16, 0); // flat floor
 
-  // wheels: a spinning group (tyre, rim, spokes) and a fixed caliper
+  // wheels: a rounded tyre, a deep-dish rim with twin spokes and a centre lock, a brake disc
+  // (all spinning) and a fixed caliper
   const wheels = [];
-  const tyreG = new THREE.CylinderGeometry(WR, WR, .3, 56).rotateX(Math.PI / 2);
-  const rimG = new THREE.CylinderGeometry(.285, .285, .305, 48).rotateX(Math.PI / 2);
-  const spokeG = new THREE.BoxGeometry(.035, .25, .03), hubG = new THREE.CylinderGeometry(.06, .06, .32, 20).rotateX(Math.PI / 2);
+  const V2 = (x, y) => new THREE.Vector2(x, y);
+  const tyreG = new THREE.LatheGeometry([V2(.265, -.15), V2(.32, -.156), V2(.35, -.145), V2(.362, -.115), V2(WR + .004, 0), V2(.362, .115), V2(.35, .145), V2(.32, .156), V2(.265, .15)], 72).rotateX(Math.PI / 2);
+  const barrelG = new THREE.LatheGeometry([V2(.262, .15), V2(.27, .13), V2(.268, -.13), V2(.24, -.14)], 64).rotateX(Math.PI / 2);
+  const lipG = new THREE.TorusGeometry(.266, .009, 8, 64);
+  const discG = new THREE.CylinderGeometry(.2, .2, .03, 48).rotateX(Math.PI / 2), hatG = new THREE.CylinderGeometry(.09, .09, .06, 32).rotateX(Math.PI / 2);
+  const nutG = new THREE.CylinderGeometry(.045, .045, .05, 6).rotateX(Math.PI / 2);
+  const spokeG = new THREE.BoxGeometry(.026, .2, .028).translate(0, .155, 0);
+  const disc = new THREE.MeshStandardMaterial({ color: 0x5a5c62, metalness: .8, roughness: .45, clippingPlanes: clip });
   const wireWheel = new THREE.EdgesGeometry(new THREE.CylinderGeometry(WR, WR, .3, 28).rotateX(Math.PI / 2), 20);
   for (const xw of WHEELS) for (const s of [-1, 1]) {
-    const spin = new THREE.Group(); spin.position.set(xw, WR, s * .82); solid.add(spin);
-    spin.add(new THREE.Mesh(tyreG, rubber), new THREE.Mesh(rimG, rim), new THREE.Mesh(hubG, caliper));
-    for (let k = 0; k < 10; k++) {
-      const sp = new THREE.Mesh(spokeG, rim), a = k / 10 * Math.PI * 2;
-      sp.position.set(Math.sin(a) * .14, Math.cos(a) * .14, s * .16); sp.rotation.z = -a + (k % 2 ? .25 : -.25); spin.add(sp);
+    const spin = new THREE.Group(); spin.position.set(xw, WR, s * .83); solid.add(spin);
+    spin.add(new THREE.Mesh(tyreG, rubber), new THREE.Mesh(barrelG, carbon));
+    const lip = new THREE.Mesh(lipG, rim); lip.position.z = s * .14; spin.add(lip);
+    const d = new THREE.Mesh(discG, disc); d.position.z = -s * .04; spin.add(d);
+    const hat = new THREE.Mesh(hatG, rim); hat.position.z = s * .04; spin.add(hat);
+    const nut = new THREE.Mesh(nutG, caliper); nut.position.z = s * .12; spin.add(nut);
+    for (let k = 0; k < 5; k++) for (const off of [-.11, .11]) {            // five twin spokes, dished in toward the hub
+      const sp = new THREE.Mesh(spokeG, rim); sp.position.z = s * .1;
+      sp.rotation.z = k / 5 * Math.PI * 2 + off; sp.rotation.x = s * .12; spin.add(sp);
     }
-    add(new THREE.BoxGeometry(.2, .12, .07), caliper, xw - .17, WR + .12, s * .74).rotation.z = .6;
-    const wl = new THREE.LineSegments(wireWheel, lineMat); wl.position.set(xw, WR, s * .82); wire.add(wl);
+    const cal = add(new THREE.BoxGeometry(.24, .13, .08), caliper, xw - .16, WR + .13, s * .7); cal.rotation.z = .65;
+    const wl = new THREE.LineSegments(wireWheel, lineMat); wl.position.set(xw, WR, s * .83); wire.add(wl);
     wheels.push(spin);
   }
 
@@ -216,6 +241,7 @@ export function buildCar() {
       paint.metalness = F[0]; paint.roughness = F[1]; paint.clearcoat = F[2];
     },
     setAccent(hex) { caliper.color.set(hex); },
+    setTrim(hex) { trim.color.set(hex); },
     setRim(hex) { rim.color.set(hex); },
     setLight(hex) { front.color.set(hex).multiplyScalar(3); },
   };
