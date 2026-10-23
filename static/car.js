@@ -96,8 +96,8 @@ export function buildCar() {
   const wireClip = new THREE.Plane(new THREE.Vector3(1, 0, 0), 3);
   const clip = [solidClip];
 
-  const paint = new THREE.MeshPhysicalMaterial({ color: 0x0b0b0d, metalness: .6, roughness: .2, clearcoat: 1, clearcoatRoughness: .04, envMapIntensity: 1.3, clippingPlanes: clip });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0a0d12, metalness: .1, roughness: .03, clearcoat: 1, envMapIntensity: 1.8, transparent: true, opacity: .6, depthWrite: false, clippingPlanes: clip });  // tinted, so you can see the cabin
+  const paint = new THREE.MeshPhysicalMaterial({ color: 0x0d0d10, metalness: .35, roughness: .38, clearcoat: .6, clearcoatRoughness: .2, envMapIntensity: .9, clippingPlanes: clip });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0a0d12, metalness: .1, roughness: .03, clearcoat: 1, envMapIntensity: 1.0, transparent: true, opacity: .6, depthWrite: false, clippingPlanes: clip });  // tinted, so you can see the cabin
   const carbon = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, metalness: .4, roughness: .55, clippingPlanes: clip });
   const rubber = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: .9, clippingPlanes: clip });
   const rim = new THREE.MeshStandardMaterial({ color: 0x121215, metalness: .9, roughness: .28, clippingPlanes: clip });
@@ -237,7 +237,7 @@ export function buildCar() {
     },
     setPaint(hex) { paint.color.set(hex); },
     setFinish(f) {
-      const F = { gloss: [.55, .22, 1], satin: [.45, .45, .5], matte: [.2, .72, 0] }[f] || [.55, .3, 1];
+      const F = { gloss: [.35, .38, .6], satin: [.3, .55, .3], matte: [.15, .78, 0] }[f] || [.35, .38, .6];
       paint.metalness = F[0]; paint.roughness = F[1]; paint.clearcoat = F[2];
     },
     setAccent(hex) { caliper.color.set(hex); },

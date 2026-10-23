@@ -1,6 +1,6 @@
 // The VOID's front seat: dashboard, steering wheel, a driver's cluster and a center screen.
 // The center screen is two layers: a live dashcam feed (a second camera on the nose, rendered to
-// a texture) and a HUD canvas on top (landing-zone scan within 5 km, fuel, speed, altitude).
+// a texture) and a HUD canvas on top (landing-zone scan within 5 km, speed, altitude).
 import * as THREE from "three";
 
 export const HEAD = new THREE.Vector3(-.2, 1.0, -.3);          // driver's eyes, car-local (left-hand drive)
@@ -14,41 +14,44 @@ export function addInterior(car, renderer) {
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parts.add(m); return m; };
   const beam = (a, b, r, mat) => { const len = a.distanceTo(b), m = new THREE.Mesh(new THREE.BoxGeometry(r, len, r * 1.6), mat); m.position.copy(a).add(b).multiplyScalar(.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); parts.add(m); return m; };
 
-  // dashboard: a side profile extruded across the cabin
-  const prof = new THREE.Shape([[.42, .7], [.56, .79], [.74, .81], [.92, .74], [.95, .6], [.42, .6]].map(([x, y]) => new THREE.Vector2(x, y)));
-  const dash = new THREE.Mesh(new THREE.ExtrudeGeometry(prof, { depth: 1.26, bevelEnabled: true, bevelSize: .015, bevelThickness: .015, bevelSegments: 2, curveSegments: 6 }), trim);
-  dash.position.z = -.63; parts.add(dash);
-  add(new THREE.BoxGeometry(.5, .004, 1.2), stitch, .66, .812, 0);                    // a stitch line along the top
-  add(new THREE.BoxGeometry(.5, .14, .24), carbon, .26, .58, 0);                       // center console
-  add(new THREE.BoxGeometry(2.2, .03, 1.5), trim, .05, .45, 0);                        // floor
+  // Everything is laid out from the driver's eyes (HEAD) forward, with clear space between parts:
+  // dash top at y .79, the cluster in a hooded binnacle above it, the wheel in front of the driver,
+  // the screen standing on the dash in the middle, the pillars and roof bar inside the glass.
+  const prof = new THREE.Shape([[.5, .64], [.55, .75], [.66, .79], [.82, .78], [.93, .72], [.93, .6], [.5, .6]].map(([x, y]) => new THREE.Vector2(x, y)));
+  const dash = new THREE.Mesh(new THREE.ExtrudeGeometry(prof, { depth: 1.1, bevelEnabled: true, bevelSize: .012, bevelThickness: .012, bevelSegments: 2, curveSegments: 6 }), trim);
+  dash.position.z = -.55; parts.add(dash);
+  add(new THREE.BoxGeometry(.34, .003, 1.06), stitch, .73, .797, 0);                   // a stitch line along the top
+  add(new THREE.BoxGeometry(.46, .12, .22), carbon, .2, .56, 0);                       // center console
+  add(new THREE.BoxGeometry(2.0, .02, 1.3), trim, .0, .44, 0);                         // floor
   for (const s of [-1, 1]) {
-    add(new THREE.BoxGeometry(1.5, .32, .03), trim, .15, .66, s * .7);                 // door panels
-    beam(new THREE.Vector3(.97, .76, s * .6), new THREE.Vector3(.34, 1.12, s * .5), .045, carbon); // A-pillars
+    add(new THREE.BoxGeometry(1.4, .26, .02), trim, .05, .64, s * .66);                // door panels
+    beam(new THREE.Vector3(.9, .8, s * .4), new THREE.Vector3(.28, 1.08, s * .47), .035, carbon); // A-pillars
   }
-  add(new THREE.BoxGeometry(.06, .04, 1.0), carbon, .32, 1.14, 0);                     // roof header
-  const seatB = add(new THREE.BoxGeometry(.1, .52, .46), trim, -.36, .76, .3); seatB.rotation.z = .2;   // passenger seat
-  add(new THREE.BoxGeometry(.5, .1, .46), trim, -.12, .52, .3);
+  add(new THREE.BoxGeometry(.05, .03, .86), carbon, .26, 1.08, 0);                     // roof bar
+  const seatB = add(new THREE.BoxGeometry(.1, .5, .42), trim, -.4, .74, .3); seatB.rotation.z = .22;     // passenger seat
+  add(new THREE.BoxGeometry(.46, .09, .42), trim, -.16, .52, .3);
 
-  // steering wheel, facing the driver, column tilted
-  const wheel = new THREE.Group(); wheel.position.set(.32, .77, HEAD.z); wheel.rotation.z = -.38; parts.add(wheel);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(.135, .02, 12, 40), trim); rim.rotation.y = Math.PI / 2; wheel.add(rim);
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .04, 24).rotateZ(Math.PI / 2), carbon); wheel.add(hub);
+  // steering wheel: in front of the driver, below the line of sight to the cluster
+  const wheel = new THREE.Group(); wheel.position.set(.3, .79, HEAD.z); wheel.rotation.z = -.35; parts.add(wheel);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(.13, .018, 12, 40), trim); rim.rotation.y = Math.PI / 2; wheel.add(rim);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, .035, 24).rotateZ(Math.PI / 2), carbon); wheel.add(hub);
   for (const a of [Math.PI / 2, -Math.PI / 6, Math.PI + Math.PI / 6]) {
-    const sp = new THREE.Mesh(new THREE.BoxGeometry(.015, .12, .025), carbon); sp.position.set(0, Math.sin(a) * .085, Math.cos(a) * .085); sp.rotation.x = -a + Math.PI / 2; wheel.add(sp);
+    const sp = new THREE.Mesh(new THREE.BoxGeometry(.012, .085, .022), carbon); sp.position.set(0, Math.sin(a) * .085, Math.cos(a) * .085); sp.rotation.x = -a + Math.PI / 2; wheel.add(sp);
   }
-  const mark = new THREE.Mesh(new THREE.BoxGeometry(.012, .03, .02), new THREE.MeshBasicMaterial({ color: 0xffffff, clippingPlanes: clip })); mark.position.set(0, .135, 0); wheel.add(mark);
-  for (const s of [-1, 1]) { const pad = new THREE.Mesh(new THREE.BoxGeometry(.01, .07, .05), carbon); pad.position.set(.04, .02, s * .17); wheel.add(pad); }
+  const mark = new THREE.Mesh(new THREE.BoxGeometry(.012, .028, .018), new THREE.MeshBasicMaterial({ color: 0xc1121f, clippingPlanes: clip })); mark.position.set(0, .13, 0); wheel.add(mark);
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(.03, .035, .24, 16).rotateZ(Math.PI / 2 - .35), carbon); column.position.set(.42, .74, HEAD.z); parts.add(column);
 
-  // the driver's cluster behind the wheel
+  // the driver's cluster, in a little hood on top of the dash
   const clusterC = document.createElement("canvas"); clusterC.width = 512; clusterC.height = 192;
   const clusterT = new THREE.CanvasTexture(clusterC); clusterT.colorSpace = THREE.SRGBColorSpace;
-  const cluster = add(new THREE.PlaneGeometry(.22, .082), new THREE.MeshBasicMaterial({ map: clusterT, toneMapped: false, clippingPlanes: clip }), .58, .85, HEAD.z);
-  cluster.lookAt(HEAD.clone().add(new THREE.Vector3(0, .05, 0)));
+  const cluster = add(new THREE.PlaneGeometry(.2, .075), new THREE.MeshBasicMaterial({ map: clusterT, toneMapped: false, clippingPlanes: clip }), .6, .84, HEAD.z);
+  cluster.lookAt(HEAD);
+  const hood = add(new THREE.BoxGeometry(.12, .012, .24), carbon, .63, .885, HEAD.z); hood.rotation.z = -.12;
 
-  // the center screen: feed + HUD, angled to the driver
-  const SCR_W = .34, SCR_H = .19;
-  const screen = new THREE.Group(); screen.position.set(.6, .91, .02); parts.add(screen);                 // a floating screen standing on the dash
-  screen.lookAt(HEAD);
+  // the center screen, standing on the dash between the seats
+  const SCR_W = .32, SCR_H = .18;
+  const screen = new THREE.Group(); screen.position.set(.64, .9, .06); parts.add(screen);
+  screen.lookAt(HEAD.clone().setZ(-.1));
   const rt = new THREE.WebGLRenderTarget(640, 360, { colorSpace: THREE.SRGBColorSpace });
   const feed = new THREE.Mesh(new THREE.PlaneGeometry(SCR_W, SCR_H), new THREE.MeshBasicMaterial({ map: rt.texture, toneMapped: false, clippingPlanes: clip }));
   screen.add(feed);
@@ -57,7 +60,7 @@ export function addInterior(car, renderer) {
   const hud = new THREE.Mesh(new THREE.PlaneGeometry(SCR_W, SCR_H), new THREE.MeshBasicMaterial({ map: hudT, transparent: true, toneMapped: false, clippingPlanes: clip }));
   hud.position.z = .002; screen.add(hud);
   const bezel = new THREE.Mesh(new THREE.BoxGeometry(SCR_W + .02, SCR_H + .02, .012), carbon); bezel.position.z = -.008; screen.add(bezel);
-  const stem = new THREE.Mesh(new THREE.BoxGeometry(.05, .1, .02), carbon); stem.position.set(0, -SCR_H / 2 - .04, -.012); screen.add(stem);
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(.05, .03, .02), carbon); stem.position.set(0, -SCR_H / 2 - .015, -.012); screen.add(stem);
 
   const feedCam = new THREE.PerspectiveCamera(62, 16 / 9, .1, 3000);
   feedCam.position.set(2.15, .58, 0); feedCam.rotation.y = -Math.PI / 2; g.add(feedCam);
@@ -80,7 +83,6 @@ export function addInterior(car, renderer) {
       x.fillStyle = "#fff"; x.font = "800 92px Unbounded, Inter, sans-serif"; x.textAlign = "center"; x.fillText(Math.round(s.speed), W / 2, 112);
       x.fillStyle = "#8c8c96"; x.font = "600 20px Inter, sans-serif"; x.fillText("KM/H", W / 2, 142);
       x.textAlign = "left"; x.fillStyle = "#fff"; x.font = "800 44px Unbounded, Inter, sans-serif"; x.fillText(s.gear, 28, 112);
-      x.textAlign = "right"; x.font = "700 26px Inter, sans-serif"; x.fillStyle = s.fuel < 25 ? "#ff4455" : "#3dff8a"; x.fillText(Math.round(s.fuel) + "%", W - 26, 112);
       x.fillStyle = "rgba(255,255,255,.12)"; x.fillRect(28, 166, W - 56, 8);
       x.fillStyle = s.rpm > 7200 ? "#ff3344" : "#fff"; x.fillRect(28, 166, (W - 56) * Math.min(1, s.rpm / 8200), 8);
       clusterT.needsUpdate = true;
@@ -128,17 +130,15 @@ export function addInterior(car, renderer) {
       x.fillText(best ? `BEST: LZ ${best.id} · ${best.dist.toFixed(1)} KM · ${Math.round(best.dist * 1000 / Math.max(1, s.speed / 3.6))} S` : "NO SAFE ZONE IN RANGE", lx + 22, ly + 346);
 
       // bottom strip
-      const cells = [["SPEED", Math.round(s.speed), "km/h"], ["ALTITUDE", Math.round(s.alt), "m"], ["VERTICAL", (s.vs >= 0 ? "+" : "") + s.vs.toFixed(1), "m/s"], ["FUEL", Math.round(s.fuel), "%"], ["MODE", s.mode, ""]];
-      const cw = (W - 72 - 4 * 14) / 5;
+      const cells = [["SPEED", Math.round(s.speed), "km/h"], ["ALTITUDE", Math.round(s.alt), "m"], ["VERTICAL", (s.vs >= 0 ? "+" : "") + s.vs.toFixed(1), "m/s"], ["MODE", s.mode, ""]];
+      const cw = (W - 72 - 3 * 14) / 4;
       cells.forEach(([k, v, u], i) => {
         const bx = 36 + i * (cw + 14), by = H - 150;
         x.fillStyle = "rgba(0,0,0,.6)"; x.fillRect(bx, by, cw, 118);
         x.fillStyle = "#8c8c96"; x.font = "700 16px Inter, sans-serif"; x.fillText(k, bx + 18, by + 32);
         x.fillStyle = "#fff"; x.font = "800 40px Unbounded, Inter, sans-serif"; x.fillText(v, bx + 18, by + 84);
         const tw = x.measureText(String(v)).width; x.fillStyle = "#8c8c96"; x.font = "600 18px Inter, sans-serif"; x.fillText(u, bx + 26 + tw, by + 84);
-        if (k === "FUEL") { x.fillStyle = "rgba(255,255,255,.12)"; x.fillRect(bx + 18, by + 98, cw - 36, 6); x.fillStyle = s.fuel < 25 ? "#ff4455" : "#3dff8a"; x.fillRect(bx + 18, by + 98, (cw - 36) * s.fuel / 100, 6); }
       });
-      x.fillStyle = "#a9a9b2"; x.font = "600 17px Inter, sans-serif"; x.fillText(`About ${Math.round(s.fuel * 1.9)} km of glide left`, 36 + 3 * (cw + 14), H - 160);
       hudT.needsUpdate = true;
     },
   };

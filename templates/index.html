@@ -7,7 +7,7 @@
   <meta name="description" content="VOID: the Hydra LTE242, an black-and-red hypercar concept that drives a loop and then flies. Watch the film, play the game, build your own. Made by Awsaa.">
   <meta name="theme-color" content="#10131b">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800;900&family=Inter:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v={{ v }}">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%23050506%27/%3E%3Ccircle cx=%2732%27 cy=%2732%27 r=%2716%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%275%27/%3E%3C/svg%3E">
   <script type="importmap">
@@ -25,7 +25,6 @@
 </div>
 
 <canvas id="gl" aria-label="The VOID car in 3D"></canvas>
-<div id="grain" aria-hidden="true"></div>
 <div id="fade" aria-hidden="true"></div>
 
 <nav id="nav">
@@ -45,8 +44,8 @@
       <p class="lede">It takes the loop. Then it flies.</p>
     </div>
     <div class="choices">
-      <button class="choice main" data-go="watch"><b>&#9654;&ensp;Watch</b><span>The 48-second film, with music</span></button>
-      <button class="choice" data-go="play"><b>Play</b><span>Drive it, fly it, land it</span></button>
+      <button class="choice main" data-go="watch"><b>&#9654;&ensp;Watch</b><span>The 44-second film, with music</span></button>
+      <button class="choice" data-go="play"><b>Play</b><span>Free roam in al-Tubaishi, Dammam</span></button>
       <button class="choice" data-go="build"><b>Build</b><span>Paint it your way</span></button>
     </div>
     <a class="more" href="#specs">Specs</a>
@@ -69,7 +68,7 @@
     </div>
     <footer>
       <div class="foot-logo">VOID</div>
-      <p><b>Made by Awsaa.</b> The Hydra LTE242 is the creator&rsquo;s dream car, if it existed. It&rsquo;s a concept, not a real car for sale. Its shape is inspired by the McLaren 765LT, and this site isn&rsquo;t made by or linked to McLaren. The music is original and made in code.</p>
+      <p><b>Made by Awsaa.</b> The Hydra LTE242 is the creator&rsquo;s dream car, if it existed. It&rsquo;s a concept, not a real car for sale. Its shape is inspired by the McLaren 765LT, and this site isn&rsquo;t made by or linked to McLaren. The music is original and made in code. The city is al-Tubaishi, Dammam, built from real map data: <span id="osmCredit"></span>.</p>
     </footer>
   </section>
 </main>
@@ -79,8 +78,7 @@
   <div class="cap" id="wCap"><div class="num" id="wNum"></div><h2 id="wTitle"></h2><p id="wSub"></p></div>
   <div class="telem" id="telem">
     <div><span>Speed</span><b id="tSpd">0</b><i>km/h</i></div>
-    <div><span>Load</span><b id="tG">1.0</b><i>g</i></div>
-    <div><span>Alt</span><b id="tAlt">0</b><i>m</i></div>
+    <div hidden><b id="tG"></b><b id="tAlt"></b></div>
   </div>
   <div class="dream" id="dream">
     <div class="d0">HYDRA LTE242</div>
@@ -103,26 +101,25 @@
 <div id="playUI" class="mode">
   <div class="g-hint" id="gHint"></div>
   <div class="g-target"><i id="gArrow">&#11014;</i><span id="gTgt"></span></div>
-  <div class="g-stats">
+  <div class="g-stats two">
     <div><span>Speed</span><b id="gSpd">0</b><i>km/h</i></div>
-    <div><span>Load</span><b id="gG">1.0</b><i>g</i></div>
-    <div><span>Alt</span><b id="gAlt">0</b><i>m</i></div>
-    <div><span>Vert</span><b id="gVs">0</b><i>m/s</i></div>
-    <div class="fuel"><span>Fuel</span><b id="gFuel">100</b><i>%</i><div class="fbar"><i id="gFuelBar"></i></div></div>
-    <div><span>Mode</span><b id="gMode">Drive</b></div>
+    <div><span>Height</span><b id="gAlt">0</b><i>m &middot; <em id="gVs">0</em> m/s</i></div>
+    <div hidden><b id="gG"></b><b id="gMode"></b></div>
   </div>
-  <button class="pill g-view" id="gView">Front seat</button>
+  <div class="g-score"><span>Score</span><b id="gScore">0</b></div>
+  <canvas class="g-map" id="gMap" width="180" height="180" aria-label="Minimap"></canvas>
+  <div class="g-btns"><button class="pill solid" id="gFly">Fly</button><button class="pill" id="gGarage">Customize</button><button class="pill" id="gView">Front seat</button></div>
   <div class="pads">
     <div class="pad-l"><button data-pad="left" aria-label="Left">&#9664;</button><button data-pad="right" aria-label="Right">&#9654;</button></div>
-    <div class="pad-r"><button data-pad="brake">Brake</button><button data-pad="gas" class="big">Gas</button><button data-pad="thrust" class="big air">Thrust</button></div>
+    <div class="pad-r"><button data-pad="brake">Brake</button><button data-pad="gas" class="big">Gas</button><button data-pad="thrust" class="big air">Lift</button></div>
   </div>
   <div class="g-card" id="gReady">
-    <h2>Fly the Hydra</h2>
+    <h2>Drive al-Tubaishi</h2>
     <ol>
-      <li><b>Drive:</b> hold <kbd>W</kbd> / <kbd>&uarr;</kbd> (Gas). Too slow at the top of the loop and you fall.</li>
-      <li><b>Ramp:</b> hit it flat out and you take off.</li>
-      <li><b>Fly:</b> <kbd>Space</kbd> thrust lifts you, <kbd>W</kbd> boosts, <kbd>A</kbd> <kbd>D</kbd> steer. The wings open on their own at speed.</li>
-      <li><b>Land:</b> follow the arrow to a <span class="ok">green</span> pad. <kbd>S</kbd> brakes, so touch down under 6 m/s.</li>
+      <li><b>Drive anywhere:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrows. The real streets of al-Tubaishi, Dammam, with traffic and people.</li>
+      <li><b>Stunts:</b> the loop and the ramp are right in front of you. Too slow at the top of the loop and you fall.</li>
+      <li><b>Fly:</b> press <kbd>F</kbd> (or Fly). <kbd>Space</kbd> lifts, <kbd>W</kbd> boosts, <kbd>F</kbd> again to land. Land soft and keep driving.</li>
+      <li><b>Missions:</b> land on a <span class="ok">green</span> pad for points. <kbd>G</kbd> opens the garage.</li>
     </ol>
     <p class="small"><kbd>C</kbd> switches to the front seat. On a phone, use the buttons.</p>
     <button class="pill solid" id="gGo">Start</button>
@@ -141,7 +138,7 @@
 <div id="buildUI" class="mode">
   <div class="drag-hint">Drag to turn it</div>
   <aside class="cfg" id="cfg">
-    <div class="cfg-head"><h2>Your Hydra LTE242</h2><button class="pill" id="rev">Start engine</button></div>
+    <div class="cfg-head"><h2>Your Hydra LTE242</h2><button class="pill" id="rev">Start engine</button><button class="pill solid" id="gGarageClose">Drive</button></div>
     <div id="cfgBody"></div>
     <div class="cfg-foot">
       <div class="sum" id="sum"></div>

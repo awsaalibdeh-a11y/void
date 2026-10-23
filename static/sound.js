@@ -13,18 +13,18 @@ const RIFF_A = [[0, 0], [2, 0], [3, 3], [6, 0], [8, 7], [10, 5], [11, 3], [14, 0
 const RIFF_B = [[0, 0], [2, 0], [3, 3], [6, 0], [8, 10], [10, 8], [11, 7], [13, 5], [14, 3]];
 const RIFF_C = [[0, 12], [1, 12], [3, 10], [4, 7], [6, 8], [8, 7], [9, 5], [11, 3], [12, 5], [14, 0]];
 
-// the Watch arrangement, bar by bar (26 bars, 48 s)
-export const SONG_BARS = 26;
+// the Watch arrangement, bar by bar (24 bars, 44 s)
+export const SONG_BARS = 24;
 function songMix(bar) {
   const m = { pad: .45, hat: 0, kick: 0, clap: 0, bass: 0, bell: 0, chop: 0, rise: 0, half: false, riff: 0, open: 900 };
   if (bar < 2) Object.assign(m, { pad: .55, chop: .6, open: 500 + bar * 400 });
-  else if (bar < 4) Object.assign(m, { hat: .7, bass: .55, kick: .7, half: true, chop: .5, open: 1400 });
-  else if (bar < 8) Object.assign(m, { hat: .9, kick: 1, clap: .8, bass: .9, chop: .45, open: 2200 });
-  else if (bar < 10) Object.assign(m, { pad: .7, hat: .3, rise: (bar - 8) / 2, open: 1200 + (bar - 8) * 2000 });
-  else if (bar < 16) Object.assign(m, { pad: .5, hat: 1, kick: 1, clap: 1, bass: 1, bell: 1, chop: .7, riff: bar % 2, open: 4200 });
-  else if (bar < 20) Object.assign(m, { pad: .55, hat: .7, kick: .9, clap: .8, bass: .9, bell: .9, chop: .4, riff: 2, half: true, open: 3000 });
-  else if (bar < 24) Object.assign(m, { pad: .7, hat: .3, kick: .6, bass: .6, bell: .35, riff: bar % 2, half: true, open: 800 });
-  else Object.assign(m, { pad: .8 * Math.max(0, 1 - (bar - 24) / 2), open: 1000 });
+  else if (bar < 4.5) Object.assign(m, { hat: .8, bass: .6, kick: .8, half: true, chop: .5, open: 1500 });
+  else if (bar < 6) Object.assign(m, { hat: 1, kick: 1, clap: .9, bass: 1, chop: .5, open: 2400 });
+  else if (bar < 8) Object.assign(m, { pad: .7, hat: .35, rise: (bar - 6) / 2, open: 1200 + (bar - 6) * 2000 });
+  else if (bar < 14) Object.assign(m, { pad: .5, hat: 1, kick: 1, clap: 1, bass: 1, bell: 1, chop: .7, riff: Math.floor(bar) % 2, open: 4200 });
+  else if (bar < 17.5) Object.assign(m, { pad: .55, hat: .7, kick: .9, clap: .8, bass: .9, bell: .9, chop: .4, riff: 2, half: true, open: 3000 });
+  else if (bar < 22) Object.assign(m, { pad: .7, hat: .3, kick: .6, bass: .6, bell: .35, riff: Math.floor(bar) % 2, half: true, open: 800 });
+  else Object.assign(m, { pad: .8 * Math.max(0, 1 - (bar - 22) / 2), open: 1000 });
   return m;
 }
 // the Play (game) arrangement, by what the player is doing
@@ -58,7 +58,7 @@ export class Sound {
     this.noise = buf;
     const rev = C.createConvolver(), ir = C.createBuffer(2, C.sampleRate * 1.8, C.sampleRate);
     for (let ch = 0; ch < 2; ch++) { const x = ir.getChannelData(ch); for (let i = 0; i < x.length; i++) x[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / x.length, 3); }
-    rev.buffer = ir; this.rev = C.createGain(); this.rev.gain.value = .28; this.rev.connect(rev).connect(this.musicIn);
+    rev.buffer = ir; this.revBus = C.createGain(); this.revBus.gain.value = .28; this.revBus.connect(rev).connect(this.musicIn);
 
     this.bus = {};
     for (const k of ["pad", "hat", "kick", "clap", "bass", "bell", "chop"]) {
@@ -68,8 +68,8 @@ export class Sound {
     // the cowbell gets crushed through heavy drive, then a touch of room
     this.bellIn = C.createGain(); const bd = C.createWaveShaper(); bd.curve = this.curve(9); bd.oversample = "4x";
     const bellTone = C.createBiquadFilter(); bellTone.type = "peaking"; bellTone.frequency.value = 2200; bellTone.gain.value = 5;
-    this.bellIn.connect(bd).connect(bellTone).connect(this.bus.bell); bellTone.connect(this.rev);
-    this.bus.chop.connect(this.rev);
+    this.bellIn.connect(bd).connect(bellTone).connect(this.bus.bell); bellTone.connect(this.revBus);
+    this.bus.chop.connect(this.revBus);
 
     // pad: detuned saws through a lowpass that opens with the section
     this.padF = C.createBiquadFilter(); this.padF.type = "lowpass"; this.padF.frequency.value = 900; this.padF.Q.value = .8;
@@ -112,7 +112,7 @@ export class Sound {
     this.init(); const C = this.ctx;
     this.mode = "song"; this.songStart = C.currentTime + .06 - atSeconds;
     const n = Math.max(0, Math.ceil((C.currentTime + .06 - this.songStart) / STEP));
-    this.songStep = n; this.next = this.songStart + n * STEP; this.dropped = atSeconds > 10 * BAR;
+    this.songStep = n; this.next = this.songStart + n * STEP; this.dropped = atSeconds > 8 * BAR;
   }
   stopSong() { this.mode = "idle"; this.songStart = null; }
   songTime() { return this.songStart == null ? null : this.ctx.currentTime - this.songStart; }
@@ -126,9 +126,9 @@ export class Sound {
         const bar = Math.floor(this.songStep / 16);
         if (bar >= SONG_BARS) { this.mode = "idle"; break; }
         this.applyMix(songMix(bar + (this.songStep % 16) / 16), this.next);
-        if (bar === 10 && this.songStep % 16 === 0) this.impact(this.next);
-        if (bar === 9 && this.songStep % 16 === 12) this.chop(this.next, "ey", 1.2);
-        if (bar !== 9 || this.songStep % 16 < 12) this.playStep(this.songStep, this.next, songMix(bar));
+        if (bar === 8 && this.songStep % 16 === 0) this.impact(this.next);
+        if (bar === 7 && this.songStep % 16 === 12) this.chop(this.next, "ey", 1.2);
+        if (bar !== 7 || this.songStep % 16 < 12) this.playStep(this.songStep, this.next, songMix(bar + (this.songStep % 16) / 16));
         this.songStep++; this.next += STEP;
       }
     } else {
@@ -176,7 +176,7 @@ export class Sound {
     s.buffer = this.noise; f.type = type; f.frequency.value = freq; f.Q.value = q;
     this.env(g, t, .001, peak, dec); s.connect(f).connect(g).connect(bus); s.start(t, Math.random()); s.stop(t + dec + .05);
   }
-  clap(t) { for (const d of [0, .01, .022]) this.noiseHit(t + d, "bandpass", 1700, 1.4, .6, .14, this.bus.clap); this.noiseHit(t, "highpass", 3000, .5, .2, .2, this.rev); }
+  clap(t) { for (const d of [0, .01, .022]) this.noiseHit(t + d, "bandpass", 1700, 1.4, .6, .14, this.bus.clap); this.noiseHit(t, "highpass", 3000, .5, .2, .2, this.revBus); }
   hat(t, v, open) { this.noiseHit(t, "highpass", 8500, .8, .16 * v, open ? .16 : .035, this.bus.hat); }
   bell(t, fr) {
     const C = this.ctx, f = C.createBiquadFilter(), g = C.createGain();

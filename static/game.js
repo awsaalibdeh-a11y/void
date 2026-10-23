@@ -1,26 +1,30 @@
-// Play: drive the loop (too slow at the top and you fall), hit the ramp, then fly it yourself:
-// thrusters to lift, boost to push, wings open on their own at speed. Land soft on a green pad.
+// Play: free roam. Drive anywhere (the loop and the ramp are stunts you can hit), press Fly to lift
+// off on the thrusters, land anywhere soft to drive on. Green pads are missions worth points.
+// Customize opens the garage without leaving the game. A minimap shows the roads, traffic and pads.
 import * as THREE from "three";
-import { clamp, lerp, G, R, PAD_R, ZONES, frame, loc, zonesFrom } from "./world.js";
+import { clamp, lerp, G, R, LZ, HW, RAMP_X, PAD_R, ZONES, frame, loc, zonesFrom } from "./world.js";
 import { HEAD } from "./interior.js";
+import { pip } from "./city.js";
 
 const $ = id => document.getElementById(id);
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
+const UP = new THREE.Vector3(0, 1, 0);
 
-export function createGame(W, car, sound) {
-  const T = W.track, fr = frame(), basis = new THREE.Matrix4(), q = new THREE.Quaternion();
+export function createGame(W, car, sound, life, opts = {}) {
+  const T = W.track, fr = frame(), back = frame(), basis = new THREE.Matrix4(), q = new THREE.Quaternion();
   const keys = new Set(), touch = new Set();
   const held = k => keys.has(k) || touch.has(k);
-  const KEYMAP = { ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", Space: "thrust", ShiftLeft: "thrust", ShiftRight: "thrust" };
-  let g = null, view = "chase", active = false;
+  const KEYMAP = { ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", Space: "thrust" };
+  let g = null, view = "chase", active = false, paused = false;
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+  const LOOP_X = T.P[T.loopIn].x, RAMP_END = RAMP_X + 14;
 
   addEventListener("keydown", e => {
-    if (!active) return;
+    if (!active || paused) return;
     if (KEYMAP[e.code]) { keys.add(KEYMAP[e.code]); e.preventDefault(); }
+    if (e.code === "KeyF") toggleFly();
     if (e.code === "KeyC" || e.code === "KeyV") toggleView();
-    if (e.code === "KeyR" && g && g.phase === "over") start();
-    if (e.code === "Enter" && g && g.phase === "ready") go();
+    if (e.code === "KeyG") opts.garage && opts.garage();
   });
   addEventListener("keyup", e => { if (KEYMAP[e.code]) keys.delete(KEYMAP[e.code]); });
   addEventListener("blur", () => { keys.clear(); touch.clear(); });
@@ -32,140 +36,185 @@ export function createGame(W, car, sound) {
   }
   const toggleView = () => { view = view === "chase" ? "seat" : "chase"; $("gView").textContent = view === "chase" ? "Front seat" : "Chase cam"; };
   $("gView").onclick = toggleView;
-  $("gGo").onclick = () => go();
-  $("gRetry").onclick = () => start();
+  $("gFly").onclick = () => toggleFly();
+  $("gGarage").onclick = () => opts.garage && opts.garage();
+  $("gGo").onclick = () => { $("gReady").hidden = true; if (!sound.on) sound.setOn(true); g.started = true; };
 
+  function spawn(at) {
+    const s = at || { x: -55, z: 0, yaw: 0 };
+    Object.assign(g, { mode: "drive", x: s.x, z: s.z, y: 0, yaw: s.yaw, v: 0, vel: new THREE.Vector3(), pitch: 0, roll: 0, wings: 0, thr: 0, ang: 0, gForce: 1, d: 0, hover: false, landing: false, wreck: 0 });
+  }
   function start() {
-    g = { phase: "ready", d: T.D[T.idxX(0)], v: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0, fuel: 100, time: 0, wings: 0, thr: 0, ang: 0, gForce: 1, msg: "" };
-    T.sample(g.d, fr); camPos.copy(loc(fr, -9, 3, 0)); camLook.copy(fr.p);
-    $("gReady").hidden = false; $("gOver").hidden = true; $("gBest").textContent = best() ? `Best score: ${best()}` : "";
+    g = { score: 0, started: false, last: { x: -55, z: 0, yaw: 0 }, msg: "", msgT: 0, done: new Set() };
+    spawn(); $("gReady").hidden = false; $("gScore").textContent = "0"; $("gBest").textContent = best() ? `Best score: ${best()}` : "";
     sound.setGame("idle");
   }
-  function go() { if (!g || g.phase !== "ready") return; g.phase = "drive"; $("gReady").hidden = true; if (!sound.on) sound.setOn(true); }
-  const best = () => store.get("void.best") || 0;
+  const best = () => store.get("void.best2") || 0;
+  const say = (m, t = 3) => { g.msg = m; g.msgT = t; };
+  function addScore(n, why) { g.score += n; $("gScore").textContent = g.score; if (g.score > best()) store.set("void.best2", g.score); say(`${why}  +${n}`); sound.win(); }
 
-  function over(kind, title, msg) {
-    g.phase = "over"; g.kind = kind;
-    let score = 0;
-    if (kind === "win") score = 1000 + Math.round(g.fuel * 10) + Math.round(Math.max(0, 150 - g.time) * 5) + Math.round(Math.max(0, 6 + g.vel.y) * 40);
-    if (score > best()) store.set("void.best", score);
-    $("gTitle").textContent = title; $("gTitle").className = kind;
-    $("gMsg").textContent = msg;
-    $("gStats").innerHTML = kind === "win"
-      ? `<div><b>${score}</b><span>Score</span></div><div><b>${Math.round(g.fuel)}%</b><span>Fuel left</span></div><div><b>${g.time.toFixed(1)}s</b><span>Time</span></div><div><b>${Math.abs(g.vel.y).toFixed(1)}</b><span>Touchdown m/s</span></div>`
-      : `<div><b>${g.time.toFixed(1)}s</b><span>Time</span></div><div><b>${Math.round(g.fuel)}%</b><span>Fuel left</span></div>`;
-    $("gOverBest").textContent = `Best score: ${best()}`;
-    $("gOver").hidden = false;
-    if (kind === "win") sound.win(); else sound.crash();
-    sound.setGame("end");
+  function toggleFly() {
+    if (!g || g.wreck > 0 || !g.started) return;
+    if (g.mode === "drive") { g.mode = "air"; g.hover = true; g.landing = false; g.vel.set(Math.cos(g.yaw) * g.v, 2, Math.sin(g.yaw) * g.v); say("Thrusters on. Space lifts, W boosts, Land brings you down."); }
+    else if (g.mode === "air") { g.landing = !g.landing; if (!g.landing) g.hover = true; say(g.landing ? "Coming down gently" : "Flying"); }
   }
+  function wreck(why) { g.wreck = 2.2; g.v = 0; g.vel.set(0, 0, 0); say(why + ". Respawning…", 2.2); sound.crash(); }
+  const rampH = (x, z) => (x >= RAMP_X && x <= RAMP_END && Math.abs(z - LZ) < HW + .3) ? 4.5 * ((x - RAMP_X) / 14) ** 2 : 0;
+  const hitBuilding = (x, z, y, pad) => W.buildings.find(b => Math.abs(x - b.x) < b.hw + pad && Math.abs(z - b.z) < b.hd + pad && y < b.h && (!b.poly || pip(x, z, b.poly) || [[pad, 0], [-pad, 0], [0, pad], [0, -pad]].some(([a, c]) => pip(x + a, z + c, b.poly))));
 
   function step(dt) {
-    if (g.phase === "drive") {
-      g.time += dt;
-      T.sample(g.d, fr);
-      const onLoop = fr.i >= T.loopIn && fr.i <= T.loopOut;
-      const acc = (held("gas") ? 11 * (1 - g.v / 95) : 0) - (held("brake") ? 16 : 0) - (.4 + .00035 * g.v * g.v) - G * fr.f.y;
-      g.v = clamp(g.v + acc * dt, 0, 95); g.d += g.v * dt;
-      const n = g.v * g.v / R + G * fr.u.y;
-      g.gForce = onLoop ? n / G : 1;
-      if (onLoop && n < 0) return over("crash", "Fell off the loop", "Too slow over the top. You need about 34 km/h up there, so carry more speed into it. Hold GAS.");
-      if (onLoop && g.v < .5) return over("crash", "Stalled in the loop", "You stopped on the way up. Hit it faster.");
-      g.pos.copy(fr.p); basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis);
-      if (g.d >= T.D[T.roadEnd]) {
-        g.phase = "air"; g.vel.copy(fr.f).multiplyScalar(g.v);
-        g.yaw = Math.atan2(fr.f.z, fr.f.x); g.pitch = Math.asin(fr.f.y);
-        if (g.v < 25) g.msg = "Slow off the ramp. Use THRUST to stay up!";
+    if (g.msgT > 0) g.msgT -= dt;
+    if (g.wreck > 0) { g.wreck -= dt; if (g.wreck <= 0) spawn(g.last); return; }
+    const turn = (held("right") ? 1 : 0) - (held("left") ? 1 : 0);
+
+    if (g.mode === "drive") {
+      const acc = (held("gas") ? (g.v < 0 ? 18 : 10 * (1 - g.v / 92)) : 0) - (held("brake") ? (g.v > .5 ? 16 : 6) : 0) - Math.sign(g.v) * (.35 + .0004 * g.v * g.v);
+      g.v = clamp(g.v + acc * dt, -12, 92);
+      if (!held("gas") && !held("brake") && Math.abs(g.v) < .3) g.v = 0;
+      const steer = turn * .5 / (1 + Math.abs(g.v) / 22);
+      g.yaw += g.v * Math.tan(steer) / 2.8 * dt;
+      const nx = g.x + Math.cos(g.yaw) * g.v * dt, nz = g.z + Math.sin(g.yaw) * g.v * dt, ny = rampH(nx, nz);
+      if (hitBuilding(nx, nz, ny + .5, 1.3)) { g.v *= -.25; sound.pop(); say("Bump!", 1); }
+      else {
+        // leave the ramp lip fast and you fly
+        if (rampH(g.x, g.z) > 2 && nx > RAMP_END - .01 && Math.cos(g.yaw) > .7 && g.v > 8) {
+          g.mode = "air"; g.hover = false; const th = Math.atan(2 * 4.5 / 14);
+          g.vel.set(Math.cos(g.yaw) * Math.cos(th) * g.v, Math.sin(th) * g.v, Math.sin(g.yaw) * Math.cos(th) * g.v); g.y = 4.5; g.x = nx; g.z = nz;
+          if (g.v > 30) addScore(250, "Ramp jump"); return;
+        }
+        g.x = nx; g.z = nz; g.y = ny;
       }
-      g.hint = fr.i < T.loopIn ? "Hold GAS. Hit the loop above 70 km/h." : onLoop ? "Keep it pinned through the loop." : "Full speed at the ramp!";
+      // drive into the loop and the track takes you round
+      if (g.x > LOOP_X - 1.5 && g.x < LOOP_X + .5 && Math.abs(g.z) < HW && Math.cos(g.yaw) > .8 && g.v > 3) { g.mode = "rail"; g.d = T.D[T.loopIn]; return; }
+      for (const c of life ? life.cars : []) { const dx = g.x - c.x, dz = g.z - c.z, d = Math.hypot(dx, dz); if (d < 3 && d > 0) { g.x += dx / d * (3 - d); g.z += dz / d * (3 - d); g.v *= .4; if (c.bump <= 0) { c.bump = 1; sound.pop(); } } }
+      g.pitch = lerp(g.pitch, ny > 0 ? Math.atan(2 * 4.5 * ((g.x - RAMP_X) / 14) / 14) : 0, clamp(dt * 10)); g.roll = lerp(g.roll, -steer * g.v * .02, clamp(dt * 5));
+      if (g.y === 0 && Math.abs(g.v) < 30) g.last = { x: g.x, z: g.z, yaw: g.yaw };
+      g.gForce = 1 + Math.abs(g.v * g.v * Math.tan(steer) / 2.8) / G * .4;
       return;
     }
-    if (g.phase !== "air") return;
-    g.time += dt;
-    const turn = (held("right") ? 1 : 0) - (held("left") ? 1 : 0), lift = held("thrust") && g.fuel > 0, boost = held("gas") && g.fuel > 0, brake = held("brake");
+
+    if (g.mode === "rail") {
+      T.sample(g.d, fr);
+      g.v = clamp(g.v + ((held("gas") ? 10 * (1 - g.v / 92) : 0) - (held("brake") ? 16 : 0) - .4 - G * fr.f.y) * dt, 0, 92);
+      g.d += g.v * dt;
+      const n = g.v * g.v / R + G * fr.u.y; g.gForce = n / G;
+      if (n < 0 || g.v < .5) {               // too slow: you come off the loop and fall
+        g.mode = "air"; g.hover = false; g.vel.copy(fr.f).multiplyScalar(g.v); g.x = fr.p.x; g.y = fr.p.y; g.z = fr.p.z; g.yaw = 0; say("Too slow for the loop!", 2); return;
+      }
+      g.x = fr.p.x; g.y = fr.p.y; g.z = fr.p.z;
+      if (g.d >= T.D[T.loopOut]) { g.mode = "drive"; g.y = 0; g.yaw = 0; g.pitch = 0; g.x = T.P[T.loopOut].x; g.z = T.P[T.loopOut].z; addScore(500, "Full loop"); }
+      return;
+    }
+
+    // air
+    const lift = held("thrust"), boost = held("gas"), brake = held("brake");
     g.yaw += turn * .85 * dt;
     const vh = Math.hypot(g.vel.x, g.vel.z);
-    g.wings = clamp(g.wings + (vh > 38 ? 1 : -1) * dt * 1.4);
+    g.wings = clamp(g.wings + (vh > 34 ? 1 : -1) * dt * 1.4);
     const dir = new THREE.Vector3(Math.cos(g.yaw), 0, Math.sin(g.yaw));
-    // steer the horizontal velocity toward the nose
     const h = new THREE.Vector3(g.vel.x, 0, g.vel.z), hl = h.length();
     if (hl > .1) { h.lerp(dir.clone().multiplyScalar(hl), clamp(dt * (1.4 + g.wings))); g.vel.x = h.x; g.vel.z = h.z; }
-    const a = new THREE.Vector3(0, -G, 0);
-    const ceiling = clamp(1 - (g.pos.y - 260) / 140);                                  // thin air: less lift and thrust up high
-    a.y += g.wings * G * Math.min(.96, (vh / 80) ** 2) * (.4 + .6 * ceiling);            // wings never quite hold it up: it glides down
-    if (lift) { a.y += 18 * ceiling; g.fuel -= 5 * dt; }
-    if (boost) { a.addScaledVector(dir, 7); g.fuel -= 2.4 * dt; }
-    const k = .0008 + (brake ? .003 : 0) + (1 - g.wings) * .0004;                       // about 330 km/h flat out on boost
-    a.addScaledVector(g.vel, -(k * g.vel.length() + (brake ? .25 : .01)));
-    for (const z of ZONES) if (z.id === "CHARLIE" && Math.hypot(g.pos.x - z.x, g.pos.z - z.z) < 450) a.z += 7;
-    g.vel.addScaledVector(a, dt); g.pos.addScaledVector(g.vel, dt);
-    g.fuel = Math.max(0, g.fuel);
-    g.thr = lerp(g.thr, lift ? 1 : boost ? .85 : .18, clamp(dt * 6)); g.ang = lerp(g.ang, lift ? .05 : 1, clamp(dt * 3));
-    g.roll = lerp(g.roll, -turn * .45, clamp(dt * 4)); g.pitch = lerp(g.pitch, clamp(Math.atan2(g.vel.y, Math.max(1, vh)), -.6, .6), clamp(dt * 3));
-    const f = new THREE.Vector3(Math.cos(g.yaw) * Math.cos(g.pitch), Math.sin(g.pitch), Math.sin(g.yaw) * Math.cos(g.pitch));
-    const s0 = new THREE.Vector3().crossVectors(f, new THREE.Vector3(0, 1, 0)).normalize(), u0 = new THREE.Vector3().crossVectors(s0, f);
-    const s = s0.clone().applyAxisAngle(f, g.roll), u = u0.clone().applyAxisAngle(f, g.roll);
-    fr.p.copy(g.pos); fr.f.copy(f); fr.s.copy(s); fr.u.copy(u);
-    basis.makeBasis(f, u, s); q.setFromRotationMatrix(basis);
+    const a = new THREE.Vector3(0, -G, 0), ceiling = clamp(1 - (g.y - 260) / 140);
+    a.y += g.wings * G * Math.min(.96, (vh / 80) ** 2) * (.4 + .6 * ceiling);
+    if (lift) a.y += 18 * ceiling;
+    if (g.hover && !lift && !g.landing) a.y += clamp(G - g.vel.y * 2.5, 0, 16);          // hover assist: holds height when you let go
+    if (g.landing) a.y += clamp(G + (-3.5 - g.vel.y) * 3, 0, 18);                      // settle down at about 3.5 m/s
+    if (boost) a.addScaledVector(dir, 7);
+    const k = .0008 + (brake ? .003 : 0) + (1 - g.wings) * .0004;
+    a.addScaledVector(g.vel, -(k * g.vel.length() + (brake || g.landing ? .35 : .01)));
+    g.vel.addScaledVector(a, dt);
+    g.x += g.vel.x * dt; g.y += g.vel.y * dt; g.z += g.vel.z * dt;
+    g.thr = lerp(g.thr, lift ? 1 : boost ? .85 : g.hover || g.landing ? .55 : .15, clamp(dt * 6)); g.ang = lerp(g.ang, lift || g.hover || g.landing ? .05 : 1, clamp(dt * 3));
+    g.roll = lerp(g.roll, -turn * .45, clamp(dt * 4)); g.pitch = lerp(g.pitch, clamp(Math.atan2(g.vel.y, Math.max(1, vh)), -.6, .6) * (g.hover ? .3 : 1), clamp(dt * 3));
     g.gForce = 1 + (lift ? .9 : 0) + Math.abs(turn) * .3;
-    for (const b of W.buildings) if (Math.abs(g.pos.x - b.x) < b.hw + 1.5 && Math.abs(g.pos.z - b.z) < b.hd + 1.2 && g.pos.y < b.h) return over("crash", "Hit a building", "Fly higher over the city, or steer round it.");
-    if (g.pos.y <= 0) {
-      g.pos.y = 0;
-      const zone = ZONES.find(z => Math.hypot(g.pos.x - z.x, g.pos.z - z.z) < PAD_R);
-      if (g.vel.y < -6.5 || vh > 24) return over("crash", "Came in too hard", `Touchdown at ${Math.abs(g.vel.y).toFixed(1)} m/s down and ${Math.round(vh * 3.6)} km/h. Brake and thrust to land under 6 m/s and 86 km/h.`);
-      if (zone && zone.safe) return over("win", `Landed at LZ ${zone.id}`, `${zone.note}. Safe landing.`);
-      if (zone) return over("lose", `LZ ${zone.id} is unsafe`, `${zone.note}. The scan marked it red, so pick a green zone.`);
-      return over("lose", "Landed off the pads", "Soft landing, but not on a landing zone. Follow the arrow to a green pad.");
+    if (hitBuilding(g.x, g.z, g.y, .8)) return wreck(vh > 15 ? "Hit a building" : "Scraped a building");
+    const ground = rampH(g.x, g.z);
+    if (g.y <= ground) {
+      g.y = ground;
+      if (g.vel.y < -7.5 || vh > 34) return wreck(`Landed too hard (${Math.abs(g.vel.y).toFixed(1)} m/s)`);
+      const zone = ZONES.find(z => Math.hypot(g.x - z.x, g.z - z.z) < PAD_R);
+      if (zone && !g.done.has(zone.id)) { g.done.add(zone.id); if (zone.safe) addScore(1000 + Math.round(Math.max(0, 7 + g.vel.y) * 60), `Landed at LZ ${zone.id}`); else say(`LZ ${zone.id} is unsafe: ${zone.note}`); }
+      g.mode = "drive"; g.v = Math.cos(Math.atan2(g.vel.z, g.vel.x) - g.yaw) * vh; g.y = ground; g.wings = 0; g.hover = false; g.landing = false; g.pitch = 0;
     }
-    const target = zonesFrom(g.pos, dir).find(z => z.safe && z.dist <= 5);
-    g.hint = g.msg || (target ? `Head for LZ ${target.id}: ${target.dist.toFixed(1)} km${target.dist < .5 ? ". Brake and thrust to land soft." : ""}` : "No safe zone in 5 km. Keep gliding.");
-    if (g.time > 4) g.msg = "";
   }
 
+  // ---- minimap: the map drawn once, then turned with the car ----
+  const MM = 2.4, bounds = W.bounds, mapC = document.createElement("canvas");
+  mapC.width = Math.ceil((bounds.x1 - bounds.x0) / MM); mapC.height = Math.ceil((bounds.z1 - bounds.z0) / MM);
+  {
+    const x = mapC.getContext("2d"); x.fillStyle = "#2a2621"; x.fillRect(0, 0, mapC.width, mapC.height);
+    const P = ([px, pz]) => [(px - bounds.x0) / MM, (pz - bounds.z0) / MM];
+    const poly = (pts, fill) => { x.beginPath(); pts.forEach((p, i) => { const [a, b] = P(p); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.closePath(); x.fillStyle = fill; x.fill(); };
+    for (const w of W.water || []) poly(w, "#14374f");
+    for (const b of W.beaches || []) poly(b, "#8a7650");
+    for (const p of W.parks || []) poly(p, "#2c4a2e");
+    for (const b of W.footprints || []) poly(b, "#4a4642");
+    x.lineCap = "round"; x.lineJoin = "round";
+    for (const r of W.roads || []) { x.beginPath(); r.p.forEach((p, i) => { const [a, b] = P(p); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.strokeStyle = r.w >= 10 ? "#d6d3cc" : "#9a958c"; x.lineWidth = Math.max(1.5, r.w / MM); x.stroke(); }
+  }
+  const mm = $("gMap"), mx = mm.getContext("2d");
+  function drawMap() {
+    const S = mm.width, c = S / 2;
+    mx.save(); mx.clearRect(0, 0, S, S); mx.beginPath(); mx.arc(c, c, c - 2, 0, 7); mx.clip();
+    mx.fillStyle = "#1b1814"; mx.fillRect(0, 0, S, S);
+    mx.translate(c, c); mx.rotate(-g.yaw - Math.PI / 2);
+    mx.drawImage(mapC, -(g.x - bounds.x0) / MM, -(g.z - bounds.z0) / MM);
+    for (const z of ZONES) { const px = (z.x - g.x) / MM, pz = (z.z - g.z) / MM; mx.fillStyle = z.safe ? (g.done.has(z.id) ? "#888" : "#3dff8a") : "#ff4455"; mx.beginPath(); mx.arc(px, pz, 5, 0, 7); mx.fill(); }
+    if (life) { mx.fillStyle = "#ffd23d"; for (const n of life.cars) { const px = (n.x - g.x) / MM, pz = (n.z - g.z) / MM; if (Math.abs(px) < c && Math.abs(pz) < c) mx.fillRect(px - 1.5, pz - 1.5, 3, 3); } }
+    mx.restore();
+    mx.fillStyle = "#fff"; mx.beginPath(); mx.moveTo(c, c - 8); mx.lineTo(c - 6, c + 6); mx.lineTo(c + 6, c + 6); mx.closePath(); mx.fill();
+    mx.strokeStyle = "rgba(255,255,255,.35)"; mx.lineWidth = 2; mx.beginPath(); mx.arc(c, c, c - 2, 0, 7); mx.stroke();
+  }
+
+  let mapT = 0;
   return {
     get state() { return g; },
     enter() { active = true; start(); },
     exit() { active = false; keys.clear(); touch.clear(); sound.setGame("off"); },
-    update(dt, time, aspect) {
+    pause(v) { paused = v; keys.clear(); touch.clear(); },
+    update(dt) {
       if (!g) start();
-      if (g.phase !== "over") step(dt);
-      if (g.phase === "ready") { T.sample(g.d, fr); basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis); g.pos.copy(fr.p); }
-      const air = g.phase === "air" || (g.phase === "over" && g.vel.lengthSq() > 0 && g.d >= T.D[T.roadEnd]);
-      const speed = air ? g.vel.length() * 3.6 : g.v * 3.6;
-      // camera
-      car.group.position.copy(g.pos); car.group.quaternion.copy(q); car.group.updateMatrixWorld(true);
+      if (g.started && !paused) step(dt);
+      const air = g.mode === "air", speed = air ? g.vel.length() * 3.6 : Math.abs(g.v) * 3.6;
+      if (g.mode === "rail") { basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis); }
+      else {
+        const f = new THREE.Vector3(Math.cos(g.yaw) * Math.cos(g.pitch), Math.sin(g.pitch), Math.sin(g.yaw) * Math.cos(g.pitch));
+        const s0 = new THREE.Vector3().crossVectors(f, UP).normalize(), u0 = new THREE.Vector3().crossVectors(s0, f);
+        fr.f.copy(f); fr.s.copy(s0.applyAxisAngle(f, g.roll)); fr.u.copy(u0.applyAxisAngle(f, g.roll));
+        basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis);
+      }
+      fr.p.set(g.x, g.y, g.z);
+      car.group.position.copy(fr.p); car.group.quaternion.copy(q); car.group.updateMatrixWorld(true);
       let cam;
       if (view === "seat") cam = { pos: HEAD.clone().applyMatrix4(car.group.matrixWorld), look: loc(fr, 30, .5, HEAD.z), up: fr.u.clone(), fov: 72 };
       else {
-        let wantPos, wantLook, up = new THREE.Vector3(0, 1, 0);
-        if (!air) { wantPos = loc(fr, -8.5, 2.6, 0); wantLook = loc(fr, 6, .8, 0); up = fr.u.clone(); }
-        else { const d = new THREE.Vector3(Math.cos(g.yaw), 0, Math.sin(g.yaw)); wantPos = g.pos.clone().addScaledVector(d, -11).add(new THREE.Vector3(0, 3.6, 0)); wantLook = g.pos.clone().addScaledVector(d, 8).add(new THREE.Vector3(0, .6, 0)); }
-        const k = clamp(dt * (air ? 4 : 9));
-        camPos.lerp(wantPos, k); camLook.lerp(wantLook, k);
-        cam = { pos: camPos.clone(), look: camLook.clone(), up, fov: lerp(52, 62, clamp(speed / 330)) };
+        let up = UP.clone();
+        if (g.mode === "rail") { T.sample(Math.max(T.D[T.loopIn] - 6, g.d - 7.5), back); camPos.copy(loc(back, 0, 2.4, 0)); camLook.copy(loc(fr, 5, .8, 0)); up = back.u.clone(); }
+        else {
+          const d = new THREE.Vector3(Math.cos(g.yaw), 0, Math.sin(g.yaw)), far = air ? 11 : 7.5 + speed * .012;
+          const wantPos = fr.p.clone().addScaledVector(d, -far).add(new THREE.Vector3(0, air ? 3.6 : 2.4, 0)), wantLook = fr.p.clone().addScaledVector(d, 6).add(new THREE.Vector3(0, .8, 0));
+          const k = clamp(dt * (air ? 4 : 6)); camPos.lerp(wantPos, k); camLook.lerp(wantLook, k);
+        }
+        cam = { pos: camPos.clone(), look: camLook.clone(), up, fov: lerp(54, 64, clamp(speed / 330)) };
       }
-      const altitude = Math.max(0, g.pos.y);
-      sound.setGame(g.phase === "over" ? "end" : g.phase === "ready" ? "idle" : !air ? "drive" : altitude < 60 && g.vel.y < 0 ? "land" : "air");
+      sound.setGame(!g.started ? "idle" : g.wreck > 0 ? "end" : air ? (g.y < 50 && g.vel.y < 0 ? "land" : "air") : "drive");
       let gear = 1; const GEARS = [0, 60, 100, 140, 185, 235, 285, 340];
       for (let i = 1; i < GEARS.length; i++) if (speed >= GEARS[i]) gear = i + 1;
       gear = Math.min(7, gear);
       const rpm = !air ? 1800 + clamp((speed - GEARS[gear - 1]) / ((GEARS[gear] || 340) - GEARS[gear - 1])) * 5800 : 900;
-      const zones = zonesFrom(g.pos, fr.f);
-      // HUD
-      $("gSpd").textContent = Math.round(speed); $("gAlt").textContent = Math.round(altitude); $("gVs").textContent = (air ? g.vel.y : 0).toFixed(1);
-      $("gFuel").textContent = Math.round(g.fuel); $("gFuelBar").style.width = g.fuel + "%";
-      $("gG").textContent = g.gForce.toFixed(1);
-      $("gHint").textContent = g.phase === "ready" ? "" : g.hint || "";
-      $("gMode").textContent = !air ? "Drive" : g.wings > .9 ? "Glide" : "Thrust";
+      const zones = zonesFrom(fr.p, fr.f);
+      $("gSpd").textContent = Math.round(speed); $("gAlt").textContent = Math.round(Math.max(0, g.y)); $("gVs").textContent = (air ? g.vel.y : 0).toFixed(1);
+      $("gHint").textContent = g.msgT > 0 ? g.msg : "";
+      $("gFly").textContent = g.mode === "air" ? (g.landing ? "Hover" : "Land") : "Fly";
       document.body.classList.toggle("g-air", air);
-      const tgt = zones.find(z => z.safe && z.dist <= 5);
-      const arrow = $("gArrow");
-      if (air && tgt) { arrow.style.opacity = 1; arrow.style.transform = `rotate(${Math.atan2(tgt.side, tgt.fwd)}rad)`; $("gTgt").textContent = `LZ ${tgt.id} · ${tgt.dist.toFixed(2)} km`; }
+      const tgt = zones.find(z => z.safe && z.dist <= 5 && !g.done.has(z.id)), arrow = $("gArrow");
+      if (tgt) { arrow.style.opacity = 1; arrow.style.transform = `rotate(${Math.atan2(tgt.side, tgt.fwd)}rad)`; $("gTgt").textContent = `Mission: land at LZ ${tgt.id} · ${tgt.dist.toFixed(2)} km`; }
       else { arrow.style.opacity = 0; $("gTgt").textContent = ""; }
+      if ((mapT += dt) > .05) { mapT = 0; drawMap(); }
       return {
-        pos: g.pos, quat: q, fr, speed, g: g.gForce, alt: altitude, vs: air ? g.vel.y : 0,
+        pos: fr.p.clone(), quat: q, fr, speed, g: g.gForce, alt: Math.max(0, g.y), vs: air ? g.vel.y : 0, player: { x: g.x, y: g.y, z: g.z },
         thrust: { power: air ? g.thr : 0, angle: g.ang, deploy: air ? 1 : 0 }, wings: g.wings, air, cam,
-        inside: view === "seat", screenOn: view === "seat", fuel: g.fuel, mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : "THRUST",
+        inside: view === "seat", screenOn: view === "seat", mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : g.hover ? "HOVER" : "THRUST",
         rpm, gear, load: held("gas") ? 1 : .2, engine: !air ? 1 : .15, zones, reveal: 1,
       };
     },

@@ -6,6 +6,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { buildCity } from "./city.js";
 
 export const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x)), lerp = (a, b, t) => a + (b - a) * t;
 export const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -14,20 +15,20 @@ export const keyed = (K, p) => {
   for (let i = 1; i < K.length; i++) if (p <= K[i][0]) return lerp(K[i - 1][1], K[i][1], (p - K[i - 1][0]) / (K[i][0] - K[i - 1][0]));
   return K[K.length - 1][1];
 };
-export const G = 9.81, R = 9, LZ = 4.2, HW = 2.3;
+export const G = 9.81, R = 9, LZ = 4.2, HW = 2.3, RAMP_X = 120;
 
 // landing zones, metres in world space (x forward from the start line, z to the right)
 export const ZONES = [
-  { id: "ALPHA", x: 1450, z: 240, safe: true, note: "Plaza pad, clear" },
-  { id: "BRAVO", x: 2700, z: -650, safe: true, note: "Open field, flat" },
-  { id: "CHARLIE", x: 3600, z: 1300, safe: false, note: "Crosswind 41 km/h" },
-  { id: "DELTA", x: 4700, z: -260, safe: true, note: "Highway rest stop" },
-  { id: "ECHO", x: 1100, z: -1700, safe: false, note: "Power lines" },
-  { id: "FOXTROT", x: 6900, z: 800, safe: true, note: "Airfield" },
+  { id: "ALPHA", x: -168, z: 339, safe: true, note: "Neighbourhood park" },
+  { id: "BRAVO", x: -1321, z: 1267, safe: true, note: "Big park, open lawn" },
+  { id: "CHARLIE", x: -206, z: -900, safe: false, note: "Over the Gulf, water" },
+  { id: "DELTA", x: -1870, z: 590, safe: true, note: "Stadium car park" },
+  { id: "ECHO", x: 1150, z: 640, safe: false, note: "Power lines" },
+  { id: "FOXTROT", x: 5200, z: 2600, safe: true, note: "Airport apron" },
 ];
 export const PAD_R = 28;
 
-export function createWorld(canvas, COARSE) {
+export async function createWorld(canvas, COARSE) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.localClippingEnabled = true;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
@@ -44,20 +45,19 @@ export function createWorld(canvas, COARSE) {
   const studio = new THREE.Scene();
   studio.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), new THREE.MeshBasicMaterial({ color: 0x232838, side: THREE.BackSide })));
   const strip = (w, h, x, y, z, ry, rx, k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); studio.add(m); };
-  for (const z of [-3, 0, 3]) strip(22, 1.2, 0, 12, z, 0, Math.PI / 2, 4);       // long strips overhead
-  for (const s of [-1, 1]) strip(18, 2.5, 0, 4, s * 14, 0, 0, 2.4);               // a softbox each side
-  strip(10, 6, -16, 5, 0, Math.PI / 2, 0, 1.5); strip(10, 6, 16, 5, 0, Math.PI / 2, 0, 1.3);
+  strip(20, 8, 0, 12, 0, 0, Math.PI / 2, 1.1);                                    // one big soft panel overhead
+  for (const s of [-1, 1]) strip(16, 4, 0, 4, s * 14, 0, 0, .7);                  // a soft panel each side
   studio.add(new THREE.Mesh(new THREE.PlaneGeometry(100, 100).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3a4050 })));
   scene.environment = new THREE.PMREMGenerator(renderer).fromScene(studio, .02).texture;
   const camera = new THREE.PerspectiveCamera(40, 1, .03, 9000);
   scene.add(new THREE.HemisphereLight(0xb8c2de, 0x2a2a32, 1.3));
-  const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(-6, 10, 8); scene.add(key);
-  const rimL = new THREE.DirectionalLight(0xbfd4ff, 1.2); rimL.position.set(8, 4, -10); scene.add(rimL);
-  const camLight = new THREE.DirectionalLight(0xffffff, 1.6); scene.add(camLight, camLight.target); // follows the camera so black paint always catches light
+  const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(-6, 10, 8); scene.add(key);
+  const rimL = new THREE.DirectionalLight(0xbfd4ff, .6); rimL.position.set(8, 4, -10); scene.add(rimL);
+  const camLight = new THREE.DirectionalLight(0xffffff, .35); scene.add(camLight, camLight.target); // follows the camera so black paint always catches light
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .42, .3, .95);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .28, .25, .97);
   composer.addPass(bloom); composer.addPass(new OutputPass());
 
   const canvasTex = (w, h, draw, repeat) => {
@@ -68,38 +68,14 @@ export function createWorld(canvas, COARSE) {
   };
   const radial = (inner, outer) => canvasTex(128, 128, (g, w, h) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, inner); r.addColorStop(1, outer); g.fillStyle = r; g.fillRect(0, 0, w, h); });
 
-  // floor, stars, city
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(20000, 20000), new THREE.MeshStandardMaterial({
-    color: 0xb0b6c4, roughness: .55, metalness: .1, envMapIntensity: .4,
-    map: canvasTex(256, 256, (g, w) => { g.fillStyle = "#22252e"; g.fillRect(0, 0, w, w); g.strokeStyle = "rgba(255,255,255,.09)"; g.lineWidth = 2; g.strokeRect(0, 0, w, w); }, [5000, 5000]),
-  }));
-  floor.rotation.x = -Math.PI / 2; floor.position.y = -.02; scene.add(floor);
+  // stars over the Gulf, then the city itself (city.js)
   {
     const n = 1400, pos = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { const th = Math.random() * Math.PI * 2, ph = Math.acos(Math.random() * .9), r = 6000; pos.set([Math.cos(th) * Math.sin(ph) * r, Math.cos(ph) * r * .8 + 80, Math.sin(th) * Math.sin(ph) * r], i * 3); }
     const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, fog: false, transparent: true, opacity: .7 })));
   }
-  const buildings = [];
-  {
-    const win = canvasTex(64, 128, (g, w, h) => {
-      g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
-      for (let y = 4; y < h; y += 8) for (let x = 4; x < w; x += 8) if (Math.random() < .3) { g.fillStyle = `rgba(255,${200 + Math.random() * 55 | 0},${150 + Math.random() * 100 | 0},${.4 + Math.random() * .6})`; g.fillRect(x, y, 4, 4); }
-    });
-    const n = COARSE ? 340 : 620, city = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, .5, 0),
-      new THREE.MeshStandardMaterial({ color: 0x2a2e3a, metalness: .5, roughness: .45, emissive: 0xffffff, emissiveMap: win, emissiveIntensity: .55 }), n);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion();
-    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;   // same city every visit
-    for (let i = 0; i < n;) {
-      const x = -300 + rnd() * 3800, z = -1400 + rnd() * 2800;
-      if (x > -60 && x < 160 && z > -70 && z < 80) continue;
-      if (ZONES.some(zn => Math.hypot(x - zn.x, z - zn.z) < 120)) continue;
-      const h = 8 + 90 * rnd() ** 3, w = 8 + rnd() * 18, d = w * (.6 + rnd() * .8);
-      m.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(w, h, d)); city.setMatrixAt(i++, m);
-      buildings.push({ x, z, hw: w / 2, hd: d / 2, h });
-    }
-    scene.add(city);
-  }
+  const city = await buildCity(scene, canvasTex, COARSE), buildings = city.buildings;
 
   // landing zones: a glowing ring, an H, and a tall beacon you can see from far away
   for (const z of ZONES) {
@@ -120,12 +96,13 @@ export function createWorld(canvas, COARSE) {
   const loopIn = P.length, LOOPN = 420;
   for (let i = 0; i <= LOOPN; i++) { const t = i / LOOPN, th = -Math.PI / 2 + t * Math.PI * 2; P.push(new THREE.Vector3(16 + R * Math.cos(th), R + R * Math.sin(th), LZ * smooth(0, 1, t))); }
   const loopOut = P.length - 1;
-  for (let x = 16.25; x <= 34; x += .25) P.push(new THREE.Vector3(x, 0, LZ));
+  for (let x = 16.25; x <= RAMP_X; x += .25) P.push(new THREE.Vector3(x, 0, LZ));
   const rampIn = P.length - 1;
-  for (let x = 34.25; x <= 48.001; x += .25) { const u = (x - 34) / 14; P.push(new THREE.Vector3(x, 4.5 * u * u, LZ)); }
+  for (let x = RAMP_X + .25; x <= RAMP_X + 14.001; x += .25) { const u = (x - RAMP_X) / 14; P.push(new THREE.Vector3(x, 4.5 * u * u, LZ)); }
   const roadEnd = P.length - 1;
-  const air = new THREE.CatmullRomCurve3([[48, 4.5, LZ], [53, 8.2, LZ], [58, 13, LZ + .1], [63, 20, LZ + .4], [69, 30, LZ + 1], [77, 43, LZ + 2], [90, 60, 11], [110, 80, 13], [140, 100, 16],
-    [180, 114, 20], [240, 124, 26], [320, 129, 34], [420, 130, 44], [540, 128, 56], [700, 125, 70], [900, 122, 88]].map(a => new THREE.Vector3(...a)), false, "centripetal").getSpacedPoints(1600);
+  const X1 = RAMP_X + 14;   // the ramp lip; then up on the thrusters and out over the city, the corniche and downtown
+  const air = new THREE.CatmullRomCurve3([[X1, 4.5, LZ], [X1 + 5, 8.2, LZ], [X1 + 10, 13, LZ + .1], [X1 + 15, 20, LZ + .4], [X1 + 21, 30, LZ + 1], [X1 + 29, 43, LZ + 2], [X1 + 42, 62, 8], [X1 + 66, 90, 14],
+    [X1 + 110, 125, 26], [X1 + 180, 160, 48], [X1 + 300, 190, 90], [X1 + 480, 205, 150], [X1 + 720, 210, 210], [X1 + 1000, 208, 250], [X1 + 1300, 205, 255], [X1 + 1650, 200, 230], [X1 + 2050, 196, 190], [X1 + 2500, 192, 150]].map(a => new THREE.Vector3(...a)), false, "centripetal").getSpacedPoints(3200);
   for (let i = 1; i < air.length; i++) P.push(air[i]);
   const N = P.length, D = new Float32Array(N), F = [], S = [], U = [], Z = new THREE.Vector3(0, 0, 1);
   for (let i = 1; i < N; i++) D[i] = D[i - 1] + P[i].distanceTo(P[i - 1]);
@@ -173,12 +150,8 @@ export function createWorld(canvas, COARSE) {
   }
   {
     const pm = new THREE.MeshStandardMaterial({ color: 0x141418, metalness: .7, roughness: .4 });
-    for (let x = 36; x <= 47; x += 2.75) { const y = 4.5 * ((x - 34) / 14) ** 2 - .4; for (const s of [-1, 1]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(.14, .18, y, 12).translate(0, y / 2, 0), pm); c.position.set(x, 0, LZ + s * 1.8); scene.add(c); } }
-    for (const s of [-1, 1]) for (const dx of [-7, 7]) {
-      const top = new THREE.Vector3(16 + dx * .55, R * 1.62, s < 0 ? -HW - 5 : LZ + HW + 5), base = new THREE.Vector3(16 + dx, 0, top.z);
-      const c = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, top.distanceTo(base), 10), pm);
-      c.position.copy(top).add(base).multiplyScalar(.5); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(base).normalize()); scene.add(c);
-    }
+    for (let x = RAMP_X + 2; x <= RAMP_X + 13; x += 2.75) { const y = 4.5 * ((x - RAMP_X) / 14) ** 2 - .4; for (const s of [-1, 1]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(.14, .18, y, 12).translate(0, y / 2, 0), pm); c.position.set(x, 0, LZ + s * 1.8); scene.add(c); } }
+    for (const dx of [-4.5, 4.5]) { const foot = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.6, LZ + HW * 2 + .6).translate(0, .8, 0), pm); foot.position.set(16 + dx, -.4, LZ / 2); scene.add(foot); }
   }
 
   // effects
@@ -194,6 +167,7 @@ export function createWorld(canvas, COARSE) {
 
   return {
     renderer, scene, camera, composer, bloom, camLight, canvasTex, radial, buildings,
+    roads: city.roads, footprints: city.footprints, parks: city.parks, water: city.water, beaches: city.beaches, walkways: city.walkways, bounds: city.bounds, credit: city.credit,
     track: { P, F, S, U, D, N, loopIn, loopOut, rampIn, roadEnd, idxX, sample },
     fx: { shadow, glow, lines, LINES, lineSeed, puffs, puffI: 0 },
   };

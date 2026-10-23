@@ -6,13 +6,13 @@ const V = new URL(import.meta.url).search;
 const $ = id => document.getElementById(id);
 const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); };
 setLoad(15);
-const [{ createWorld, clamp, lerp, smooth, frame, PAD_R }, { buildCar }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }] = await Promise.all(
-  ["world", "car", "interior", "sound", "watch", "game"].map(n => import(`./${n}.js${V}`)));
+const [{ createWorld, clamp, lerp, smooth, frame, PAD_R }, { buildCar }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
+  ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
-const W = createWorld($("gl"), COARSE), { renderer, scene, camera, composer, bloom, camLight, fx } = W;
+const W = await createWorld($("gl"), COARSE), { renderer, scene, camera, composer, bloom, camLight, fx } = W;
 setLoad(55);
 
 const car = buildCar();
@@ -21,7 +21,12 @@ setLoad(80);
 const interior = addInterior(car, renderer);
 const sound = new Sound();
 const watch = createWatch(W, car, interior);
-const game = createGame(W, car, sound);
+const life = createLife(scene, W.roads, W.walkways, COARSE);
+const game = createGame(W, car, sound, life, { garage: () => openGarage(true) });
+$("osmCredit").textContent = W.credit;
+// the garage: the Build panel over the game, the game paused underneath
+function openGarage(on) { document.body.classList.toggle("garage", on); game.pause(on); }
+$("gGarageClose").onclick = () => openGarage(false);
 const nozzles = (car.nozzles || [[.9, .3, 1], [.9, .3, -1], [-.95, .38, 1], [-.95, .38, -1]]).map(([x, y, s]) => new THREE.Vector3(x, y - .5, s));
 
 // ---------- configurator ----------
@@ -71,7 +76,7 @@ function go(next) {
   if (next === mode) return;
   $("fade").classList.add("on");
   setTimeout(() => {
-    if (mode === "play") game.exit();
+    if (mode === "play") { game.exit(); openGarage(false); }
     if (mode === "watch") { sound.stopSong(); w.playing = false; }
     mode = next; document.body.dataset.mode = next;
     if (next === "home") scrollTo(0, 0);
@@ -140,7 +145,7 @@ function showroom(dt, time) {
   else if (mode === "build") { const right = new THREE.Vector3().subVectors(cam.look, cam.pos).cross(new THREE.Vector3(0, 1, 0)).normalize(); cam.look.addScaledVector(right, 1.7); }
   const pos = showFr.p.clone(); pos.x += introX; const fr = { ...showFr, p: pos };
   if (introX < -.01) cam.look.x = Math.max(introX * .35, -8);
-  return { pos, quat: new THREE.Quaternion(), fr, speed: introV * 3.6, g: 1, alt: 0, vs: 0, thrust: { power: 0, angle: 0, deploy: 0 }, wings: 0, air: false, cam, inside: false, screenOn: false, reveal: 1, rpm: 900, gear: 1, load: .1, engine: .6, fuel: 100, mode: "PARK", zones: [] };
+  return { pos, quat: new THREE.Quaternion(), fr, speed: introV * 3.6, g: 1, alt: 0, vs: 0, thrust: { power: 0, angle: 0, deploy: 0 }, wings: 0, air: false, cam, inside: false, screenOn: false, reveal: 1, rpm: 900, gear: 1, load: .1, engine: .6, mode: "PARK", zones: [] };
 }
 
 // ---------- per frame ----------
@@ -161,11 +166,12 @@ function frameLoop() {
     $("wTime").textContent = `${fmt(w.t)} / ${fmt(TOTAL)}`;
     const ch = S.chapter, cap = $("wCap");
     if (cap.dataset.ch !== ch[1]) { cap.dataset.ch = ch[1]; cap.classList.add("hide"); setTimeout(() => { $("wNum").textContent = ch[1] ? String(CHAPTERS.indexOf(ch) + 1).padStart(2, "0") : ""; $("wTitle").textContent = ch[1]; $("wSub").textContent = ch[2]; cap.classList.toggle("hide", !ch[1]); }, 250); }
-    $("telem").style.opacity = S.bar > 2 && !S.inside ? 1 : 0;
+    $("telem").style.opacity = S.bar > 2 && !S.inside && S.bar < 17.5 ? 1 : 0;
     $("tSpd").textContent = Math.round(S.speed); $("tG").textContent = S.g.toFixed(1); $("tAlt").textContent = Math.round(S.alt);
     $("dream").style.opacity = S.dream; $("fade").style.opacity = S.fade;
   } else if (mode === "play") S = game.update(dt, time, camera.aspect);
   else S = showroom(dt, time);
+  life.update(dt, time, mode === "play" ? S.player : null);
   if (mode !== "watch") $("fade").style.opacity = "";
 
   // the car
@@ -182,7 +188,7 @@ function frameLoop() {
   fx.shadow.position.set(S.pos.x, .01, S.pos.z); fx.shadow.material.opacity = ground; fx.shadow.rotation.z = Math.atan2(-fr.f.z, fr.f.x);
   const glowOn = !!OPTS.glow.items[build.glow][1];
   fx.glow.position.copy(fx.shadow.position); fx.glow.rotation.z = fx.shadow.rotation.z; fx.glow.material.opacity = glowOn ? ground * .85 : 0;
-  if (S.thrust.power > .3) for (const n of nozzles) if (Math.random() < .55) {
+  if (S.thrust.power > .3) for (const n of nozzles) if (Math.random() < .18) {
     const pf = fx.puffs[fx.puffI++ % fx.puffs.length], wp = n.clone().applyMatrix4(car.group.matrixWorld);
     pf.s.position.copy(wp); pf.life = 1; pf.s.visible = true; pf.s.scale.setScalar(.4);
     pf.v.copy(fr.u).multiplyScalar(-(1 - S.thrust.angle) * 7).addScaledVector(fr.f, -S.thrust.angle * 9 - S.speed / 3.6 * .2).add(new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(1.5));
@@ -191,8 +197,8 @@ function frameLoop() {
     pf.life -= dt * .9; pf.s.position.addScaledVector(pf.v, dt); pf.v.multiplyScalar(.97);
     pf.s.scale.setScalar(.4 + (1 - pf.life) * 4.5); pf.s.material.opacity = Math.max(0, pf.life) * .5; if (pf.life <= 0) pf.s.visible = false;
   }
-  const lineA = smooth(110, 230, S.speed) * (S.inside ? .3 : 1);
-  fx.lines.material.opacity = lineA * .2;
+  const lineA = smooth(240, 320, S.speed) * (S.inside ? 0 : 1);
+  fx.lines.material.opacity = lineA * .08;
   if (lineA > .01) {
     const d = new THREE.Object3D();
     for (let i = 0; i < fx.LINES; i++) {
@@ -208,14 +214,14 @@ function frameLoop() {
     if (!COARSE || (feedFlip++ & 1)) interior.renderFeed(scene);
     if (time - lastHud > .1) {
       lastHud = time;
-      const hud = { time, speed: S.speed, alt: S.alt, vs: S.vs, fuel: S.fuel, mode: S.mode, zones: S.zones, gear: S.gear, rpm: S.rpm };
+      const hud = { time, speed: S.speed, alt: S.alt, vs: S.vs, mode: S.mode, zones: S.zones, gear: S.gear, rpm: S.rpm };
       interior.drawHud(hud); interior.drawCluster(hud);
     }
   }
   interior.wheel.rotation.x = 0;
 
   // camera
-  const c = S.cam, shake = REDUCED ? 0 : (Math.max(0, S.g - 1.6) * .012 + S.thrust.power * .03) * (S.inside ? .25 : 1);
+  const c = S.cam, shake = REDUCED ? 0 : (Math.max(0, S.g - 2) * .004 + S.thrust.power * .01) * (S.inside ? .25 : 1);
   camera.position.copy(c.pos).add(new THREE.Vector3(Math.sin(time * 53) * shake, Math.sin(time * 61 + 1) * shake, Math.sin(time * 47 + 2) * shake));
   camera.up.copy(c.up || new THREE.Vector3(0, 1, 0)); camera.lookAt(c.look);
   camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .02 : .05; camera.updateProjectionMatrix();

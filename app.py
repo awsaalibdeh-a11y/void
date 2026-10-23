@@ -13,7 +13,7 @@ app = Flask(__name__)
 import hubguard  # noqa: E402  (the owner's universal switches, kept in Cramly)
 hubguard.install(app, "void")
 
-ASSETS = ("main.js", "car.js", "sound.js", "world.js", "watch.js", "game.js", "interior.js", "style.css")
+ASSETS = ("main.js", "car.js", "sound.js", "world.js", "watch.js", "game.js", "interior.js", "city.js", "npc.js", "style.css")
 
 
 def asset_version():
