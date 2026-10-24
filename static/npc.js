@@ -7,7 +7,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { GRID, phase } from "./city.js";
 
 // vehicle kinds: length, width, share of traffic, paint choices
-const KINDS = [
+export const KINDS = [
   { id: "sedan", L: 4.7, W: 1.85, share: 26, cols: [0xf2f2f0, 0xc8ccd2, 0x1b1c20, 0x8a8f96, 0x6b1a1a, 0x24364f, 0x2f4a3a, 0xd8cfb8] },
   { id: "taxi", L: 4.9, W: 1.9, share: 22, cols: [0xf7c414] },
   { id: "suv", L: 4.9, W: 2.0, share: 16, cols: [0x111214, 0xf2f2f0, 0x3b3f46, 0x5a1e1e, 0x1e2a44] },
@@ -22,7 +22,7 @@ const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32A
 const B = (w, h, d, x, y, z, c) => tint(new THREE.BoxGeometry(w, h, d).translate(x, y, z).toNonIndexed(), c);
 const BODY = [1, 1, 1], GLASS = [.03, .035, .045], TYRE = [.03, .03, .03], DARK = [.18, .18, .19], CHROME = [.55, .55, .58];
 function wheelsOf(L, W, r = .36) { const out = [], ax = L / 2 - .95; for (const x of [ax, -ax]) for (const z of [W / 2 - .2, -W / 2 + .2]) out.push(tint(new THREE.CylinderGeometry(r, r, .28, 12).rotateX(Math.PI / 2).translate(x, r, z).toNonIndexed(), TYRE)); return out; }
-function vehicle(k) {
+export function vehicle(k) {
   const { L, W } = k, p = [], lt = [];
   const H = [1, .95, .95], R = [1, .15, .15], A = [1, .7, .2], Wt = [1, 1, 1];
   const lights = (h, y, extra = 0) => { lt.push(B(.06, h, W * .28, L / 2 + .01, y, W * .3, H), B(.06, h, W * .28, L / 2 + .01, y, -W * .3, H), B(.06, h, W * .3, -L / 2 - .01, y + extra, W * .3, R), B(.06, h, W * .3, -L / 2 - .01, y + extra, -W * .3, R)); };
@@ -71,7 +71,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   const cross = (axis, k) => axis === 0 ? ax(k) : sz(k);               // the coordinate of the k-th crossing road along this axis
   const crossW = (axis, k) => axis === 0 ? avW(k) : stW(k);
   const roadC = (axis, road) => axis === 0 ? sz(road) : ax(road);
-  const N = COARSE ? 1400 : 4000, NP = COARSE ? 2200 : 6000;
+  const N = COARSE ? 600 : 1500, NP = COARSE ? 2200 : 6000;
 
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });

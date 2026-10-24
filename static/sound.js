@@ -199,6 +199,11 @@ export class Sound {
   whoosh() { if (this.on) this.noiseHit(this.ctx.currentTime, "bandpass", 700, .8, .5, .9, this.sfx); }
   pop() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "bandpass", 300, 1, .9, .07, this.sfx); this.noiseHit(t + .06, "bandpass", 260, 1, .6, .06, this.sfx); } }
   crash() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "lowpass", 2500, .4, 1, 1.2, this.sfx); this.noiseHit(t, "bandpass", 180, 1, 1, .6, this.sfx); } }
+  siren(level) {            // a wailing two-tone siren whose volume follows how close the nearest cruiser is
+    if (!this.ctx || !this.on) return; const c = this.ctx, t = c.currentTime;
+    if (!this.sir) { const o = c.createOscillator(), lfo = c.createOscillator(), lg = c.createGain(), g = c.createGain(); o.type = "square"; o.frequency.value = 760; lfo.frequency.value = .45; lg.gain.value = 260; lfo.connect(lg); lg.connect(o.frequency); const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1800; o.connect(lp); lp.connect(g); g.gain.value = 0; g.connect(this.sfx); o.start(); lfo.start(); this.sir = g; }
+    this.sir.gain.setTargetAtTime(Math.max(0, level) * .09, t, .2);
+  }
   horn(type = 0) {          // classic two-tone, an air horn, or a little tune
     if (!this.on || !this.ctx) return; const t = this.ctx.currentTime, c = this.ctx;
     const tone = (f, at, len, wave = "sawtooth", vol = .18) => { const o = c.createOscillator(), g = c.createGain(), lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2400; o.type = wave; o.frequency.value = f; g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(vol, at + .02); g.gain.setValueAtTime(vol, at + len - .05); g.gain.linearRampToValueAtTime(0, at + len); o.connect(lp); lp.connect(g); g.connect(this.sfx); o.start(at); o.stop(at + len + .02); };

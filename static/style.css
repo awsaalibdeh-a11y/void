@@ -229,3 +229,60 @@ body.g-photo #playUI > *:not(.g-hint) { opacity: 0; pointer-events: none; }
 .pads .nos { background: rgba(40,90,255,.45) !important; } .pads .nos.on { background: #3df5ff !important; }
 body.g-air .pads .ground { display: none; }
 @media (max-width: 560px) { .g-bars { top: calc(112px + var(--top)); width: 130px; } .g-btns .pill { padding: 7px 11px; font-size: 11px; } }
+
+/* police, races, GPS, online */
+.g-stars { position: absolute; left: 50%; top: calc(14px + var(--top)); transform: translateX(-50%); font-size: 26px; letter-spacing: 4px; color: #ffd23d; text-shadow: 0 0 12px rgba(255,60,60,.8), 0 2px 4px #000; pointer-events: none; }
+.g-stars.bust { color: #ff3040; animation: hpPulse .3s infinite alternate; }
+.g-race { position: absolute; left: 50%; top: calc(52px + var(--top)); transform: translateX(-50%); display: flex; gap: 14px; align-items: center; padding: 8px 10px 8px 18px; border-radius: 999px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,210,61,.5); font: 700 13px var(--body); white-space: nowrap; backdrop-filter: blur(8px); }
+.g-race b { font: 800 13px var(--wide); color: #ffd23d; } .g-race .pill { padding: 5px 12px; font-size: 11px; }
+.g-count { position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%); font: 900 120px var(--wide); color: #fff; text-shadow: 0 0 40px rgba(255,210,61,.9); pointer-events: none; }
+.g-raceres { max-width: 380px; } .g-raceres ol { padding-left: 20px; margin: 10px 0 14px; } .g-raceres li { display: flex; justify-content: space-between; padding: 4px 0; } .g-raceres li.me { color: #ffd23d; font-weight: 800; }
+.g-racego { position: absolute; left: 50%; bottom: calc(110px + var(--bot)); transform: translateX(-50%); }
+.g-gps { position: absolute; left: 50%; top: calc(96px + var(--top)); transform: translateX(-50%); padding: 7px 16px; border-radius: 12px; background: rgba(8,40,52,.75); border: 1px solid rgba(61,252,255,.45); color: #bff9ff; font: 700 14px var(--body); white-space: nowrap; pointer-events: none; }
+.g-gps:empty { display: none; }
+.g-panel { max-width: 460px; width: calc(100% - 32px); max-height: 80vh; overflow: auto; z-index: 30; }
+.g-panel h3 { margin: 0 0 8px; font: 800 18px var(--wide); } .g-panel .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.g-panel input { flex: 1; min-width: 120px; padding: 10px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.35); color: #fff; font: inherit; }
+.g-panel label { display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.g-panel .places { display: flex; flex-wrap: wrap; gap: 8px; } .g-panel .emotes { display: flex; flex-wrap: wrap; gap: 6px; }
+.g-panel .emotes .pill { padding: 6px 10px; font-size: 12px; }
+.pill.on { background: #3dfcff !important; color: #001 !important; }
+.g-feed { position: absolute; left: var(--pad); bottom: calc(130px + var(--bot)); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+.g-feed div { padding: 5px 10px; border-radius: 8px; background: rgba(0,0,0,.55); font-size: 13px; animation: rise .3s ease; }
+.g-players { position: absolute; right: var(--pad); top: calc(300px + var(--top)); display: grid; gap: 3px; text-align: right; font-size: 12px; pointer-events: none; text-shadow: 0 1px 3px #000; }
+.g-lookhint { position: absolute; left: 50%; bottom: calc(14px + var(--bot)); transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,.55); pointer-events: none; }
+body.g-locked .g-lookhint, .pads ~ .g-lookhint { display: none; }
+@media (pointer: coarse) { .g-lookhint { display: none; } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@media (max-width: 560px) { .g-race { gap: 8px; font-size: 11px; padding-left: 12px; } .g-gps { font-size: 12px; top: calc(150px + var(--top)); } .g-players { top: calc(250px + var(--top)); } }
+
+/* phones: one Fly button and a More menu instead of nine buttons, a 2x2 pedal block, and the banners stacked under the top bar */
+#gMore { display: none; }
+@media (max-width: 820px) {
+  #gMore { display: inline-flex; }
+  .g-btns { flex-direction: column; align-items: flex-end; max-width: none; }
+  .g-btns .pill:not(#gFly):not(#gMore) { display: none; }
+  body.g-more .g-btns { background: rgba(10,12,18,.92); padding: 10px; border-radius: 18px; border: 1px solid rgba(255,255,255,.15); z-index: 25; }
+  body.g-more .g-btns .pill:not(#gFly):not(#gMore) { display: inline-flex; width: 150px; justify-content: center; }
+  body.g-more .g-map { visibility: hidden; }
+  .g-stars { top: calc(58px + var(--top)); font-size: 18px; letter-spacing: 2px; }
+  .g-race { top: calc(84px + var(--top)); left: 12px; right: 12px; transform: none; justify-content: space-between; gap: 6px; padding: 6px 6px 6px 12px; font-size: 11px; }
+  .g-race b { font-size: 10px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+  .g-gps { top: auto; bottom: calc(300px + var(--bot)); max-width: calc(100% - 24px); white-space: normal; text-align: center; font-size: 12px; }
+  .g-players { top: calc(290px + var(--top)); }
+  .g-count { font-size: 84px; }
+}
+@media (pointer: coarse) and (max-width: 560px) {
+  .pad-r { display: grid; grid-template-columns: repeat(2, auto); gap: 8px; justify-items: center; align-items: end; }
+  .pads button { width: 58px; height: 58px; }
+  .pads .big { width: 70px; height: 70px; }
+  body.g-air .pad-r .ground { display: none; }
+}
+@media (max-width: 820px) {
+  .g-race { top: calc(58px + var(--top)); }
+  .g-score { top: calc(104px + var(--top)); }
+  .g-bars { top: calc(160px + var(--top)); }
+  .g-stars { left: var(--pad); transform: none; top: calc(206px + var(--top)); }
+  .g-gps { top: calc(300px + var(--top)); bottom: auto; left: 50%; transform: translateX(-50%); }
+}
+@media (max-width: 820px) { .g-bars { top: calc(172px + var(--top)); } .g-stars { top: calc(218px + var(--top)); } .g-map { top: calc(196px + var(--top)); } .g-players { top: calc(326px + var(--top)); } .g-gps { top: calc(330px + var(--top)); } }

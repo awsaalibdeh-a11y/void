@@ -6,8 +6,9 @@ const V = new URL(import.meta.url).search;
 const $ = id => document.getElementById(id);
 const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); };
 setLoad(15);
-const [{ createWorld, clamp, lerp, smooth, frame, PAD_R }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
+const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }] = await Promise.all(["police", "race", "net", "nav"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -28,7 +29,7 @@ function useModel(id) {
   Object.assign(car, { wheels: inner.wheels, clip: car.clip || inner.clip, materials: inner.materials, model: id, name: inner.name });
   carMats.clear();
   inner.group.traverse(o => { if (o.isMesh) { o.castShadow = true; if (o.material && o.material.isMeshStandardMaterial) carMats.add(o.material); } });
-  for (const m of carMats) { m.envMap = carEnv.texture; m.needsUpdate = true; }
+  if (!COARSE) for (const m of carMats) { m.envMap = carEnv.texture; m.needsUpdate = true; }     // phones skip the live cube and use the city reflection
 }
 // live reflections on the paint: a small cube camera that rides with the car
 const carEnv = new THREE.WebGLCubeRenderTarget(COARSE ? 64 : 128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
@@ -44,8 +45,69 @@ const watch = createWatch(W, car, interior);
 const life = createLife(scene, W.roads, W.walkways, COARSE);
 const TIMES = ["night", "sunset", "day"];
 function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % 3]; W.setTime(k); store.set("void.time", k); toast({ night: "Night in the city", sunset: "Golden hour", day: "Daytime" }[k]); cubeN = 0; }
-const game = createGame(W, car, sound, life, { garage: () => openGarage(true), cycleTime, hornType: () => build.horn });
+let police, races, nav;
+const net = createNet();
+setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
+const game = createGame(W, car, sound, life, {
+  garage: () => openGarage(true), cycleTime, hornType: () => build.horn,
+  onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
+  autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
+  mapExtra(mx, g, MM) {
+    const P = (x, z) => [(x - g.x) / MM, (z - g.z) / MM];
+    if (nav && nav.pts.length > 1) { mx.strokeStyle = "#3dfcff"; mx.lineWidth = 3; mx.beginPath(); nav.pts.forEach(([x, z], k) => { const [a, b] = P(x, z); k ? mx.lineTo(a, b) : mx.moveTo(a, b); }); mx.stroke(); }
+    if (police) for (const c of police.cops) if (c.on) { const [a, b] = P(c.x, c.z); mx.fillStyle = Math.sin(performance.now() / 90) > 0 ? "#ff3040" : "#3060ff"; mx.beginPath(); mx.arc(a, b, 4, 0, 7); mx.fill(); }
+    if (races && races.race && races.race.next) { const [a, b] = P(races.race.next[0], races.race.next[2]); mx.strokeStyle = "#ffd23d"; mx.lineWidth = 3; mx.beginPath(); mx.arc(a, b, 7, 0, 7); mx.stroke(); }
+    for (const r of remotes.values()) if (r.at) { const [a, b] = P(r.at.x, r.at.z); mx.fillStyle = "#c07dff"; mx.beginPath(); mx.arc(a, b, 4.5, 0, 7); mx.fill(); }
+  },
+});
+// phones: the row of buttons folds into a menu behind "More", which closes again after a choice
+{ const more = document.getElementById("gMore"); more.onclick = () => { const on = !document.body.classList.contains("g-more"); document.body.classList.toggle("g-more", on); more.setAttribute("aria-expanded", on); };
+  document.querySelector(".g-btns").addEventListener("click", e => { const b = e.target.closest("button"); if (b && b.id !== "gMore") document.body.classList.remove("g-more"); }); }
+police = createPolice(scene, game.api, sound, life);
+races = createRaces(scene, game.api, sound, W.canvasTex, net);
+nav = createNav(scene, game.api, W, ZONES, races.starts);
+
+// ---------- online: other real players' cars, name tags, emotes, proximity voice ----------
+const remotes = new Map();
+const tagTex = (text, col = "#ffffff") => W.canvasTex(512, 96, (g, w, h) => { g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(0, 0, w, h); g.fillStyle = col; g.font = "800 50px Inter, sans-serif"; g.textAlign = "center"; g.fillText(text, w / 2, 66); });
+function remoteFor(p) {
+  let r = remotes.get(p.id);
+  const model = Object.keys(MODELS)[p.model | 0] || "hydra";
+  if (r && r.model !== model) { scene.remove(r.root); remotes.delete(p.id); r = null; }
+  if (!r) {
+    const c = buildCar(model), root = new THREE.Group(); root.add(c.group); c.setReveal(1); c.setThrust(0, 0, 0, 0); c.setWings(0, 0);
+    c.group.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tagTex(p.name), depthTest: false, toneMapped: false })); tag.scale.set(5, .95, 1); tag.position.y = 2.6; root.add(tag);
+    const emo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tagTex(""), depthTest: false, toneMapped: false })); emo.scale.set(6, 1.15, 1); emo.position.y = 3.8; emo.visible = false; root.add(emo);
+    scene.add(root); r = { root, car: c, tag, emo, model, name: p.name, paint: null, emoT: 0 }; remotes.set(p.id, r);
+  }
+  if (r.name !== p.name) { r.name = p.name; r.tag.material.map = tagTex(p.name); }
+  if (p.paint && r.paint !== p.paint) { r.paint = p.paint; r.car.setPaint(p.paint); }
+  return r;
+}
+net.on("change", () => { for (const id of [...remotes.keys()]) if (!net.players().some(p => p.id === id)) { scene.remove(remotes.get(id).root); remotes.delete(id); } renderPlayers(); });
+net.on("status", t => { document.getElementById("gNetStatus").textContent = t; document.getElementById("gNetBtn").classList.toggle("on", net.online()); });
+net.on("mic", on => { const b = document.getElementById("gMic"); b.classList.toggle("on", on); b.textContent = on ? "🎙 Mic on" : "🎙 Voice chat"; });
+net.on("emote", (m, from) => { const r = remotes.get(from), e = EMOTES[m.e | 0]; if (r) { r.emo.material.map = tagTex(e, "#ffd23d"); r.emo.visible = true; r.emoT = 4; } feed(`${net.nameOf(from)}: ${e}`); });
+function feed(t) { const f = document.getElementById("gFeed"); const d = document.createElement("div"); d.textContent = t; f.prepend(d); setTimeout(() => d.remove(), 7000); while (f.children.length > 5) f.lastChild.remove(); }
+function renderPlayers() { document.getElementById("gPlayers").innerHTML = net.online() ? [`<b>${net.name} (you)</b>`, ...net.players().map(p => `<span>${p.vc ? "🎙 " : ""}${p.name}</span>`)].join("") : ""; }
+{
+  const $ = id => document.getElementById(id), panel = $("gNetPanel");
+  $("gNetName").value = store.get("void.name") || "";
+  $("gNetBtn").onclick = () => { panel.hidden = !panel.hidden; };
+  $("gNetClose").onclick = () => panel.hidden = true;
+  const go = room => { const nm = $("gNetName").value; store.set("void.name", nm); net.join(room, nm); panel.hidden = true; };
+  $("gNetPublic").onclick = () => go("public-1");
+  $("gNetCreate").onclick = () => { const code = Math.random().toString(36).slice(2, 7); $("gNetCode").value = code; go("room-" + code); toast(`Room code: ${code}. Tell your friends!`); };
+  $("gNetJoin").onclick = () => { const code = $("gNetCode").value.trim().toLowerCase(); if (code) go("room-" + code); };
+  $("gNetLeave").onclick = () => { net.leave(); panel.hidden = true; };
+  $("gMic").onclick = () => net.setMic(!net.mic);
+  $("gEmotes").innerHTML = EMOTES.map((e, k) => `<button class="pill" data-e="${k}">${e}</button>`).join("");
+  $("gEmotes").onclick = ev => { const b = ev.target.closest("[data-e]"); if (!b || !net.online()) return; net.send({ t: "emote", e: +b.dataset.e }); feed(`You: ${EMOTES[+b.dataset.e]}`); };
+}
 W.setTime(store.get("void.time") || "night");
+// fill the car's reflection cube once before the first frame, so the paint never samples an empty one
+if (!COARSE) { carCube.position.set(0, 1.2, 0); carCube.update(renderer, scene); carEnv.texture.needsPMREMUpdate = true; }
 $("osmCredit").textContent = W.credit;
 // the garage: the Build panel over the game, the game paused underneath
 function openGarage(on) { document.body.classList.toggle("garage", on); game.pause(on); }
@@ -218,6 +280,25 @@ function frameLoop(fixed) {
   } else if (mode === "play") S = game.update(dt, time, camera.aspect);
   else S = showroom(dt, time);
   life.update(dt, time, mode === "play" ? S.player : null, camera.position);
+  if (mode === "play") {
+    police.update(dt, time); races.update(dt, time); nav.update();
+    const st = game.state, stars = police.stars;
+    document.getElementById("gStars").textContent = stars ? "★".repeat(stars) + "☆".repeat(5 - stars) : "";
+    document.getElementById("gStars").classList.toggle("bust", police.bust > .5);
+    const pr = races.progress();
+    net.tick(dt, { p: [st.x, st.y, st.z, st.yaw, st.pitch, st.roll].map(v => Math.round(v * 100) / 100), m: Object.keys(MODELS).indexOf(car.model), c: OPTS.paint.items[build.paint][1], v: Math.round(S.speed), a: S.air ? 1 : 0, r: pr ? pr.race : 0, rp: pr ? pr.rp : 0, rf: pr ? pr.rf : 0, w: stars });
+    for (const p of net.players()) {
+      const at = net.sample(p); const r = remoteFor(p); r.at = at;
+      if (!at || at.stale) { r.root.visible = false; continue; }
+      r.root.visible = true; r.root.position.set(at.x, at.y, at.z); r.root.rotation.set(0, -at.yaw, 0); r.car.group.rotation.set(at.roll, 0, at.pitch, "XYZ");
+      r.car.setThrust(at.air ? .6 : 0, at.air && at.v > 90 ? 1 : 0, at.air ? 1 : 0, time); r.car.setWings(at.air && at.v > 100 ? 1 : 0, time);
+      for (const wh of r.car.wheels) wh.rotation.z -= at.v / 3.6 * dt / .37;
+      if (r.emoT > 0 && (r.emoT -= dt) <= 0) r.emo.visible = false;
+      const dx = st.x - at.x, dz = st.z - at.z, d = Math.hypot(dx, dz);
+      net.setVolume(p.id, 1 - d / 260);
+      if (d < 3.4 && d > .01 && Math.abs(st.y - at.y) < 2) { st.x += dx / d * (3.4 - d) * .5; st.z += dz / d * (3.4 - d) * .5; st.vel.multiplyScalar(.9); }
+    }
+  } else { for (const r of remotes.values()) r.root.visible = false; net.tick(dt, null); }     // the host keeps relaying from the menus
   W.city.update(time);
   W.follow(S.pos);
   if (mode !== "watch") $("fade").style.opacity = "";
@@ -304,7 +385,8 @@ function frameLoop(fixed) {
 setLoad(95);
 renderer.compile(scene, camera);
 let raf;
-const loop = () => { raf = requestAnimationFrame(loop); frameLoop(); };
+let frameErr = 0;
+const loop = () => { raf = requestAnimationFrame(loop); try { frameLoop(); } catch (e) { if (frameErr++ < 3) console.error(e); } };   // one bad frame never stops the game
 loop();
 setLoad(100);
 setTimeout(() => { $("loader").classList.add("done"); setTimeout(() => { intro.t = 0; if (sound.on) sound.rev(); }, 450); }, 900);
@@ -312,4 +394,4 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { cancelAnimationFrame(raf); if (mode === "watch" && w.playing) pause(); if (sound.ctx) sound.ctx.suspend(); }
   else { clock.getDelta(); loop(); if (sound.on && sound.ctx) sound.ctx.resume(); }
 });
-window.VOID = { step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frameLoop(dt); }, W, car, life, carCube, carEnv, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console
+window.VOID = { step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frameLoop(dt); }, W, car, life, carCube, carEnv, get police() { return police; }, get races() { return races; }, get nav() { return nav; }, net, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console

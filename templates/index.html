@@ -100,6 +100,26 @@
 <!-- Play -->
 <div id="playUI" class="mode">
   <div class="g-hint" id="gHint"></div>
+  <div class="g-stars" id="gStars"></div>
+  <div class="g-race" id="gRace" hidden></div>
+  <div class="g-count" id="gCount" hidden></div>
+  <div class="g-card g-raceres" id="gRaceRes" hidden></div>
+  <button class="pill solid g-racego" id="gRaceGo" hidden>Start race</button>
+  <div class="g-gps" id="gGps"></div>
+  <div class="g-card g-panel" id="gGpsPanel" hidden></div>
+  <div class="g-feed" id="gFeed"></div>
+  <div class="g-players" id="gPlayers"></div>
+  <div class="g-lookhint">Click the game to look around with the mouse · Esc frees the mouse</div>
+  <div class="g-card g-panel" id="gNetPanel" hidden>
+    <h3>Play online</h3>
+    <p class="small">Drive with real people. Your car, name and position are shared with the players in your room. Voice chat is off until you turn your mic on.</p>
+    <label>Your name <input id="gNetName" maxlength="14" placeholder="Driver"></label>
+    <div class="row"><button class="pill solid" id="gNetPublic">Join the public city</button><button class="pill" id="gNetCreate">Create a private room</button></div>
+    <div class="row"><input id="gNetCode" maxlength="8" placeholder="Room code"><button class="pill" id="gNetJoin">Join room</button></div>
+    <div class="row"><button class="pill" id="gMic">🎙 Voice chat</button><button class="pill" id="gNetLeave">Leave</button><button class="pill" id="gNetClose">Close</button></div>
+    <div class="emotes" id="gEmotes"></div>
+    <p class="small" id="gNetStatus">Offline</p>
+  </div>
   <div class="g-target"><i id="gArrow">&#11014;</i><span id="gTgt"></span></div>
   <div class="g-stats two">
     <div><span>Speed</span><b id="gSpd">0</b><i>km/h</i></div>
@@ -109,7 +129,7 @@
   <div class="g-score"><span>Score</span><b id="gScore">0</b><em id="gCombo"></em></div>
   <div class="g-bars"><div class="bar hp" id="gHp"><i></i><span>Health</span></div><div class="bar nos" id="gNos"><i></i><span>Nitro</span></div></div>
   <canvas class="g-map" id="gMap" width="180" height="180" aria-label="Minimap"></canvas>
-  <div class="g-btns"><button class="pill solid" id="gFly">Fly</button><button class="pill" id="gGarage">Garage</button><button class="pill" id="gView">Front seat</button><button class="pill" id="gTime">Time</button><button class="pill" id="gHorn">Horn</button><button class="pill" id="gPhoto">Photo</button></div>
+  <div class="g-btns"><button class="pill solid" id="gFly">Fly</button><button class="pill" id="gMore" aria-expanded="false">☰ More</button><button class="pill" id="gGarage">Garage</button><button class="pill" id="gView">Front seat</button><button class="pill" id="gTime">Time</button><button class="pill" id="gHorn">Horn</button><button class="pill" id="gPhoto">Photo</button><button class="pill" id="gGpsBtn">GPS</button><button class="pill" id="gAuto">Autopilot</button><button class="pill" id="gNetBtn">Online</button></div>
   <div class="pads">
     <div class="pad-l"><button data-pad="left" aria-label="Left">&#9664;</button><button data-pad="right" aria-label="Right">&#9654;</button></div>
     <div class="pad-r"><button data-pad="nitro" class="nos">Nitro</button><button data-pad="drift" class="ground">Drift</button><button data-pad="brake">Brake</button><button data-pad="gas" class="big">Gas</button><button data-pad="down" class="air">Down</button><button data-pad="up" class="big air">Up</button></div>
@@ -122,7 +142,9 @@
       <li><b>Fly:</b> <kbd>F</kbd>. Slow, the thrusters hover (<kbd>Space</kbd> up, <kbd>Q</kbd> down). Fast, the wings fly for real: <kbd>A</kbd>/<kbd>D</kbd> bank to turn, <kbd>Space</kbd>/<kbd>Q</kbd> pitch, too slow and it stalls.</li>
       <li><b>Stunts &amp; missions:</b> the loop and ramps, gold rings in the sky, near misses, drifts, and green pads on the park lawn and skyscraper rooftops.</li>
     </ol>
-    <p class="small"><kbd>C</kbd> camera · <kbd>G</kbd> garage · <kbd>T</kbd> day/night · <kbd>H</kbd> horn · <kbd>P</kbd> photo mode · <kbd>R</kbd> reset · drag to look around · gamepads work too.</p>
+    <ol start="5"><li><b>Police, races, online:</b> smash cars and the police come for you (lose them or get busted). Drive into a 🏁 marker and press <kbd>Enter</kbd> to race. Online plays with real people, with voice chat.</li>
+      <li><b>GPS &amp; autopilot:</b> <kbd>M</kbd> or tap the map to pick a place, <kbd>O</kbd> autopilot drives (or flies) you there. <kbd>L</kbd> lands on a glide slope.</li></ol>
+    <p class="small"><kbd>C</kbd> camera · move the mouse (or drag on a phone) to look around · <kbd>G</kbd> garage · <kbd>T</kbd> day/night · <kbd>H</kbd> horn · <kbd>P</kbd> photo mode · <kbd>R</kbd> reset · drag to look around · gamepads work too.</p>
     <button class="pill solid" id="gGo">Start</button>
     <div class="small" id="gBest"></div>
   </div>
