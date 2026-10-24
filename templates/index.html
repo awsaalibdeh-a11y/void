@@ -45,7 +45,7 @@
     </div>
     <div class="choices">
       <button class="choice main" data-go="watch"><b>&#9654;&ensp;Watch</b><span>The 44-second film, with music</span></button>
-      <button class="choice" data-go="play"><b>Play</b><span>Free roam in al-Tubaishi, Dammam</span></button>
+      <button class="choice" data-go="play"><b>Play</b><span>Free roam in VOID City: skyscrapers, traffic, stunts</span></button>
       <button class="choice" data-go="build"><b>Build</b><span>Paint it your way</span></button>
     </div>
     <a class="more" href="#specs">Specs</a>
@@ -68,7 +68,7 @@
     </div>
     <footer>
       <div class="foot-logo">VOID</div>
-      <p><b>Made by Awsaa.</b> The Hydra LTE242 is the creator&rsquo;s dream car, if it existed. It&rsquo;s a concept, not a real car for sale. Its shape is inspired by the McLaren 765LT, and this site isn&rsquo;t made by or linked to McLaren. The music is original and made in code. The city is al-Tubaishi, Dammam, built from real map data: <span id="osmCredit"></span>.</p>
+      <p><b>Made by Awsaa.</b> The Hydra LTE242 is the creator&rsquo;s dream car, if it existed. It&rsquo;s a concept, not a real car for sale. Its shape is inspired by the McLaren 765LT, and this site isn&rsquo;t made by or linked to McLaren. The music is original and made in code. The city is VOID City, a New York-style city made entirely in code (<span id="osmCredit"></span>).</p>
     </footer>
   </section>
 </main>
@@ -106,22 +106,23 @@
     <div><span>Height</span><b id="gAlt">0</b><i>m &middot; <em id="gVs">0</em> m/s</i></div>
     <div hidden><b id="gG"></b><b id="gMode"></b></div>
   </div>
-  <div class="g-score"><span>Score</span><b id="gScore">0</b></div>
+  <div class="g-score"><span>Score</span><b id="gScore">0</b><em id="gCombo"></em></div>
+  <div class="g-bars"><div class="bar hp" id="gHp"><i></i><span>Health</span></div><div class="bar nos" id="gNos"><i></i><span>Nitro</span></div></div>
   <canvas class="g-map" id="gMap" width="180" height="180" aria-label="Minimap"></canvas>
-  <div class="g-btns"><button class="pill solid" id="gFly">Fly</button><button class="pill" id="gGarage">Customize</button><button class="pill" id="gView">Front seat</button></div>
+  <div class="g-btns"><button class="pill solid" id="gFly">Fly</button><button class="pill" id="gGarage">Garage</button><button class="pill" id="gView">Front seat</button><button class="pill" id="gTime">Time</button><button class="pill" id="gHorn">Horn</button><button class="pill" id="gPhoto">Photo</button></div>
   <div class="pads">
     <div class="pad-l"><button data-pad="left" aria-label="Left">&#9664;</button><button data-pad="right" aria-label="Right">&#9654;</button></div>
-    <div class="pad-r"><button data-pad="brake">Brake</button><button data-pad="gas" class="big">Gas</button><button data-pad="down" class="air">Down</button><button data-pad="up" class="big air">Up</button></div>
+    <div class="pad-r"><button data-pad="nitro" class="nos">Nitro</button><button data-pad="drift" class="ground">Drift</button><button data-pad="brake">Brake</button><button data-pad="gas" class="big">Gas</button><button data-pad="down" class="air">Down</button><button data-pad="up" class="big air">Up</button></div>
   </div>
   <div class="g-card" id="gReady">
-    <h2>Drive al-Tubaishi</h2>
+    <h2>Welcome to VOID City</h2>
     <ol>
-      <li><b>Drive anywhere:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrows. The real streets of al-Tubaishi, Dammam, with traffic and people.</li>
-      <li><b>Stunts:</b> the loop and the ramp are right in front of you. Too slow at the top of the loop and you fall.</li>
-      <li><b>Fly:</b> press <kbd>F</kbd> (or Fly). <kbd>Space</kbd>/<kbd>E</kbd> up, <kbd>Q</kbd>/<kbd>Shift</kbd> down, <kbd>W</kbd> boost. Dive to pick up speed: you keep it when you touch down and roll on.</li>
-      <li><b>Missions:</b> land on a <span class="ok">green</span> pad for points. <kbd>G</kbd> opens the garage.</li>
+      <li><b>Drive:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrows. <kbd>Space</kbd> handbrake to drift, <kbd>Shift</kbd> nitro. Thousands of cars, cabs, buses and people.</li>
+      <li><b>Smash:</b> hit traffic faster than it is going and it breaks apart. Anything faster or heavier than you does the damage. Hit a wall hard and you get hurt too.</li>
+      <li><b>Fly:</b> <kbd>F</kbd>. Slow, the thrusters hover (<kbd>Space</kbd> up, <kbd>Q</kbd> down). Fast, the wings fly for real: <kbd>A</kbd>/<kbd>D</kbd> bank to turn, <kbd>Space</kbd>/<kbd>Q</kbd> pitch, too slow and it stalls.</li>
+      <li><b>Stunts &amp; missions:</b> the loop and ramps, gold rings in the sky, near misses, drifts, and green pads on the park lawn and skyscraper rooftops.</li>
     </ol>
-    <p class="small"><kbd>C</kbd> switches to the front seat. On a phone, use the buttons.</p>
+    <p class="small"><kbd>C</kbd> camera · <kbd>G</kbd> garage · <kbd>T</kbd> day/night · <kbd>H</kbd> horn · <kbd>P</kbd> photo mode · <kbd>R</kbd> reset · drag to look around · gamepads work too.</p>
     <button class="pill solid" id="gGo">Start</button>
     <div class="small" id="gBest"></div>
   </div>
@@ -138,7 +139,7 @@
 <div id="buildUI" class="mode">
   <div class="drag-hint">Drag to turn it</div>
   <aside class="cfg" id="cfg">
-    <div class="cfg-head"><h2>Your Hydra LTE242</h2><button class="pill" id="rev">Start engine</button><button class="pill solid" id="gGarageClose">Drive</button></div>
+    <div class="cfg-head"><h2>Your garage</h2><button class="pill" id="rev">Start engine</button><button class="pill solid" id="gGarageClose">Drive</button></div>
     <div id="cfgBody"></div>
     <div class="cfg-foot">
       <div class="sum" id="sum"></div>

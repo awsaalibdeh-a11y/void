@@ -213,3 +213,19 @@ body.garage[data-mode="play"] #playUI > *:not(.g-card) { opacity: .25; pointer-e
   .pads { bottom: calc(84px + var(--bot)); }
 }
 @media (prefers-reduced-motion: reduce) { #grain, .ld-word span { animation: none; } }
+
+/* VOID City HUD: health and nitro, combo, hurt flash, photo mode */
+.g-score em { font: 800 15px var(--wide); color: #ffd23d; font-style: normal; min-height: 18px; }
+.g-bars { position: absolute; left: var(--pad); top: calc(128px + var(--top)); display: grid; gap: 6px; width: 160px; }
+.g-btns { max-width: min(560px, 58vw); }
+.g-bars .bar { position: relative; height: 16px; border-radius: 8px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.18); overflow: hidden; backdrop-filter: blur(6px); }
+.g-bars .bar i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--v, 1)); transition: transform .2s; }
+.g-bars .hp i { background: linear-gradient(90deg, #ff2a3a, #3dff8a); } .g-bars .hp.low i { background: #ff2a3a; animation: hpPulse .6s infinite alternate; }
+.g-bars .nos i { background: linear-gradient(90deg, #3d7bff, #3df5ff); }
+.g-bars .bar span { position: relative; font: 700 9px var(--wide); letter-spacing: .18em; text-transform: uppercase; padding-left: 8px; line-height: 16px; text-shadow: 0 1px 3px #000; }
+@keyframes hpPulse { to { opacity: .45; } }
+body.g-hurt #gl { filter: saturate(1.6) brightness(1.15) sepia(.35) hue-rotate(-25deg); }
+body.g-photo #playUI > *:not(.g-hint) { opacity: 0; pointer-events: none; }
+.pads .nos { background: rgba(40,90,255,.45) !important; } .pads .nos.on { background: #3df5ff !important; }
+body.g-air .pads .ground { display: none; }
+@media (max-width: 560px) { .g-bars { top: calc(112px + var(--top)); width: 130px; } .g-btns .pill { padding: 7px 11px; font-size: 11px; } }
