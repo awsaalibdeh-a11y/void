@@ -2,6 +2,7 @@
 // (a rounded superellipse cross-section at every station), the wheel wells are carved out of
 // the sides, and a blueprint of grid lines can be swept away by a clipping plane to "build" it.
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const X0 = -2.3, LEN = 4.6;                 // rear tip to nose, along +x
 const WHEELS = [1.42, -1.38];               // front and rear axle x (a 2.8 m wheelbase)
@@ -130,7 +131,8 @@ export function buildCar(model = "hydra") {
   const lineMat = new THREE.LineBasicMaterial({ color: 0xeef0f5, transparent: true, opacity: .75, clippingPlanes: [wireClip] });
 
   const bodyHi = loft(BS, 220, 96), canHi = loft(CS, 90, 64);
-  solid.add(new THREE.Mesh(surface(bodyHi), paint), new THREE.Mesh(surface(canHi), glass));
+  const bodyMesh = new THREE.Mesh(surface(bodyHi), paint), canMesh = new THREE.Mesh(surface(canHi), glass);
+  solid.add(bodyMesh, canMesh);
   wire.add(new THREE.LineSegments(gridLines(loft(BS, 110, 48), 5, 4), lineMat), new THREE.LineSegments(gridLines(loft(CS, 40, 32), 5, 4), lineMat));
   const topAt = u => curve(BS.top, u), halfAt = u => curve(BS.half, u);
 
@@ -254,6 +256,20 @@ export function buildCar(model = "hydra") {
     wings.push({ w, s, nav });
   }
 
+  // fewer draw calls: the fixed detail parts (lights, vents, splitter, sills...) and each wheel's parts are merged per material
+  const mergeStatic = (grp, keep) => {
+    const by = new Map();
+    for (const o of [...grp.children]) {
+      if (!o.isMesh || keep.has(o) || o.children.length || o.material.map) continue;
+      o.updateMatrix(); const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(o.matrix);
+      for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "normal") g.deleteAttribute(k);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (!by.has(o.material)) by.set(o.material, []); by.get(o.material).push(g); grp.remove(o);
+    }
+    for (const [m, list] of by) { const mesh = new THREE.Mesh(mergeGeometries(list), m); mesh.castShadow = true; grp.add(mesh); }
+  };
+  mergeStatic(solid, new Set([bodyMesh, canMesh]));
+  for (const w of wheels) mergeStatic(w, new Set());
   // ---- garage parts: spoilers, liveries, exhaust flames ----
   const spoilers = new THREE.Group(); solid.add(spoilers);
   function setSpoiler(k) {
@@ -293,6 +309,14 @@ export function buildCar(model = "hydra") {
   const flameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x4fa8ff).multiplyScalar(3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const flames = exhausts.map(([x, y, z]) => { const f = new THREE.Mesh(new THREE.ConeGeometry(.07, 1, 12, 1, true).rotateZ(Math.PI / 2).translate(-.5, 0, 0), flameMat); f.position.set(x, y, z); f.visible = false; solid.add(f); return f; });
 
+  const bodyBase = bodyMesh.geometry.attributes.position.array.slice(), canBase = canMesh.geometry.attributes.position.array.slice();
+  const wear = { total: 0, burn: 0, cracked: false }; let paintHex = "#0d0d10";
+  const crackTex = () => {                                  // a starburst of cracks on the screen
+    const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d"); g.fillStyle = "#9aa4ae"; g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = "rgba(255,255,255,.95)"; g.lineWidth = 1.2;
+    for (let n = 0; n < 3; n++) { const ox = 60 + Math.random() * 140, oy = 60 + Math.random() * 140; for (let k = 0; k < 14; k++) { let x = ox, y = oy, a = Math.random() * 6.28; g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 7; j++) { a += (Math.random() - .5) * .7; x += Math.cos(a) * 14; y += Math.sin(a) * 14; g.lineTo(x, y); } g.stroke(); } for (let r = 8; r < 50; r += 12) { g.beginPath(); g.arc(ox, oy, r, 0, 6.3); g.stroke(); } }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1.5, 1.5); return t;
+  };
   return {
     group: car, wheels, clip, materials: { carbon, front }, model, name: M.name,
     setSpoiler, setLivery,
@@ -323,7 +347,32 @@ export function buildCar(model = "hydra") {
       scan.position.x = x; scan.material.opacity = t > .01 && t < .99 ? .55 : 0;
       wire.visible = t < .999;
     },
-    setPaint(hex) { paint.color.set(hex); },
+    setPaint(hex) { paint.color.set(hex); paintHex = hex; if (wear.burn) paint.color.lerp(new THREE.Color(0x141210), wear.burn); },
+    // damage you can see: dents pushed into the bodywork where the hit was, a cracking windscreen, scorched paint
+    damage(local, power) {
+      wear.total += power;
+      for (const [mesh, kk] of [[bodyMesh, 1], [canMesh, .6]]) {
+        const pos = mesh.geometry.attributes.position, r = .55 + Math.min(1.1, power * .025), depth = Math.min(.32, power * .006) * kk;
+        let hit = false;
+        for (let i = 0; i < pos.count; i++) {
+          const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), d = Math.hypot(x - local.x, (y - local.y) * 1.4, z - local.z);
+          if (d > r) continue;
+          // pushed in toward the middle of the car (and back from the nose or tail on a head-on hit)
+          const f = (1 - d / r) ** 2 * depth, dy = .6 - y, dz = -z, l = Math.hypot(dy, dz) || 1, ax = Math.abs(local.x) > 1.5 ? -Math.sign(local.x) * 1.4 : 0;
+          pos.setXYZ(i, x + ax * f, y + dy / l * f * .7, z + dz / l * f * 1.3); hit = true;
+        }
+        if (hit) { pos.needsUpdate = true; mesh.geometry.computeVertexNormals(); }
+      }
+      if (wear.total > 25 && !wear.cracked) { wear.cracked = true; glass.map = crackTex(); glass.needsUpdate = true; }
+      wear.burn = Math.min(.85, Math.max(wear.burn, (wear.total - 60) / 160)); if (wear.burn > 0) { paint.color.set(paintHex).lerp(new THREE.Color(0x141210), wear.burn); paint.roughness = Math.max(paint.roughness, .3 + wear.burn * .6); }
+    },
+    wreck() { wear.burn = .9; paint.color.set(0x161412); paint.roughness = .95; paint.clearcoat = 0; glass.opacity = .25; if (!wear.cracked) { wear.cracked = true; glass.map = crackTex(); glass.needsUpdate = true; } spoilers.visible = false; },
+    repair() {
+      bodyMesh.geometry.attributes.position.array.set(bodyBase); bodyMesh.geometry.attributes.position.needsUpdate = true; bodyMesh.geometry.computeVertexNormals();
+      canMesh.geometry.attributes.position.array.set(canBase); canMesh.geometry.attributes.position.needsUpdate = true; canMesh.geometry.computeVertexNormals();
+      wear.total = 0; wear.burn = 0; wear.cracked = false; glass.map = null; glass.needsUpdate = true; paint.color.set(paintHex); spoilers.visible = true;
+    },
+    get wear() { return wear; },
     setFinish(f) {
       const F = { gloss: [.35, .38, .6], satin: [.3, .55, .3], matte: [.15, .78, 0] }[f] || [.35, .38, .6];
       paint.metalness = F[0]; paint.roughness = F[1]; paint.clearcoat = F[2];

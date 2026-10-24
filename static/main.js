@@ -21,15 +21,15 @@ const carRoot = new THREE.Group(); scene.add(carRoot);
 const car = { group: carRoot, wheels: [] };
 const carMats = new Set();
 let inner = null;
-function useModel(id) {
-  if (inner && inner.model === id) return;
+function useModel(id, force) {
+  if (inner && inner.model === id && !force) return;
   if (inner) carRoot.remove(inner.group);
   inner = buildCar(id); carRoot.add(inner.group);
   for (const k of Object.keys(inner)) if (typeof inner[k] === "function") car[k] = inner[k];
   Object.assign(car, { wheels: inner.wheels, clip: car.clip || inner.clip, materials: inner.materials, model: id, name: inner.name });
   carMats.clear();
   inner.group.traverse(o => { if (o.isMesh) { o.castShadow = true; if (o.material && o.material.isMeshStandardMaterial) carMats.add(o.material); } });
-  if (!COARSE) for (const m of carMats) { m.envMap = carEnv.texture; m.needsUpdate = true; }     // phones skip the live cube and use the city reflection
+  for (const m of carMats) { m.envMap = null; m.needsUpdate = true; }   // the paint reflects the city capture (scene.environment)     // phones skip the live cube and use the city reflection
 }
 // live reflections on the paint: a small cube camera that rides with the car
 const carEnv = new THREE.WebGLCubeRenderTarget(COARSE ? 64 : 128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
@@ -107,10 +107,10 @@ function renderPlayers() { document.getElementById("gPlayers").innerHTML = net.o
 }
 W.setTime(store.get("void.time") || "night");
 // fill the car's reflection cube once before the first frame, so the paint never samples an empty one
-if (!COARSE) { carCube.position.set(0, 1.2, 0); carCube.update(renderer, scene); carEnv.texture.needsPMREMUpdate = true; }
+
 $("osmCredit").textContent = W.credit;
 // the garage: the Build panel over the game, the game paused underneath
-function openGarage(on) { document.body.classList.toggle("garage", on); game.pause(on); }
+function openGarage(on) { document.body.classList.toggle("garage", on); game.pause(on); if (on && car.repair) { car.repair(); applyBuild(); } }
 $("gGarageClose").onclick = () => openGarage(false);
 const nozzles = (car.nozzles || [[.9, .3, 1], [.9, .3, -1], [-.95, .38, 1], [-.95, .38, -1]]).map(([x, y, s]) => new THREE.Vector3(x, y - .5, s));
 
@@ -246,6 +246,7 @@ function showroom(dt, time) {
 
 // ---------- per frame ----------
 const clock = new THREE.Clock();
+let wasWrecked = false, wreckPose = null; const wrecks = [];
 const perf = { t: 0, n: 0, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio() };
 let lastHud = 0, prevGear = 1, feedFlip = 0;
 function frameLoop(fixed) {
@@ -308,7 +309,18 @@ function frameLoop(fixed) {
   car.setReveal(S.reveal);
   car.setThrust(S.thrust.power, S.thrust.angle, S.thrust.deploy, time);
   car.setFlame(S.nitro || 0, time);
-  carRoot.visible = !S.wrecked;
+  // damage: dent the model where it was hit; a destroyed car is left where it crashed and a fresh one is built for you
+  const gs = mode === "play" ? game.state : null;
+  if (gs && gs.impacts && gs.impacts.length && car.damage) { carRoot.updateMatrixWorld(true); for (const im of gs.impacts.splice(0)) car.damage(carRoot.worldToLocal(new THREE.Vector3(im.x, im.y, im.z)), im.p); }
+  if (S.wrecked && !wasWrecked) { car.wreck && car.wreck(); wreckPose = { p: carRoot.position.clone(), q: carRoot.quaternion.clone() }; }
+  if (!S.wrecked && wasWrecked && wreckPose && inner) {
+    const wg = inner.group; carRoot.remove(wg); wg.position.copy(wreckPose.p); wg.quaternion.copy(wreckPose.q); scene.add(wg);
+    wrecks.push({ g: wg, t: 30 }); if (wrecks.length > 4) { const o = wrecks.shift(); scene.remove(o.g); }
+    useModel(car.model, true); applyBuild(); wreckPose = null;
+  }
+  wasWrecked = !!S.wrecked;
+  for (const w of wrecks) { w.t -= dt; if (Math.random() < .25 && w.t > 10) { const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(w.g.position).add(new THREE.Vector3((Math.random() - .5) * 2, 1, (Math.random() - .5) * 2)); pf.life = 1; pf.s.visible = true; pf.grow = .6; pf.s.scale.setScalar(.6); pf.s.material.color.set(0x2a2a2a); pf.v.set(0, 2, 0); } }
+  for (let k = wrecks.length - 1; k >= 0; k--) if (wrecks[k].t <= 0) { scene.remove(wrecks[k].g); wrecks.splice(k, 1); }
   car.setWings(S.wings, time);
   const roll = S.speed / 3.6 * dt / .37;
   for (const wh of car.wheels) wh.rotation.z -= S.air ? roll * .15 : roll;
@@ -366,13 +378,10 @@ function frameLoop(fixed) {
   camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .02 : .05; camera.updateProjectionMatrix();
   camLight.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0)); camLight.target.position.copy(S.pos);
   scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)); scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt));
+  camera.far = scene.fog.far * 1.1 + 150; camera.updateProjectionMatrix();          // nothing past the fog gets drawn
   // refresh the car's reflections every few frames (the car hides from its own camera)
   // (no shadows, no crowds, a short view: it only has to look right in the paint)
-  if (!COARSE && (cubeN++ % 24) === 0) {
-    carRoot.visible = false; renderer.shadowMap.autoUpdate = false;
-    carCube.position.copy(S.pos).add(new THREE.Vector3(0, 1.2, 0)); carCube.update(renderer, scene); carEnv.texture.needsPMREMUpdate = true;
-    renderer.shadowMap.autoUpdate = true; carRoot.visible = !S.wrecked;
-  }
+
 
   // the car's own sound
   if (S.gear > prevGear && !S.air && S.speed > 20) sound.pop();

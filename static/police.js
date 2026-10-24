@@ -129,7 +129,7 @@ export function createPolice(scene, api, sound, life) {
             c.bump = .8;
             const cv = c.v, rel = Math.hypot(p.vel.x - Math.cos(c.yaw) * cv, p.vel.z - Math.sin(c.yaw) * cv);
             if (ps > cv + 6 && rel > 10) { c.wreck = 6; c.v = rel * .6; c.yaw = Math.atan2(p.vel.z, p.vel.x); api.addScore(250, "Took out a cruiser"); addHeat(2, "Police officer down"); sound.crash(); }
-            else { if (rel > 6) api.hurt(4 + rel * .55, "Rammed by the police"); p.vel.x = p.vel.x * .4 + Math.cos(c.yaw) * cv * .5; p.vel.z = p.vel.z * .4 + Math.sin(c.yaw) * cv * .5; c.v *= .4; sound.crash(); }
+            else { if (rel > 6) { api.hurt(4 + rel * .55, "Rammed by the police"); api.impact && api.impact((p.x + c.x) / 2, (p.z + c.z) / 2, rel); } p.vel.x = p.vel.x * .4 + Math.cos(c.yaw) * cv * .5; p.vel.z = p.vel.z * .4 + Math.sin(c.yaw) * cv * .5; c.v *= .4; sound.crash(); }
             const nx = (p.x - c.x) / (d || 1), nz = (p.z - c.z) / (d || 1); p.x += nx * (3.6 - d); p.z += nz * (3.6 - d);
           }
         }

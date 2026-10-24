@@ -18,6 +18,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   const KEYMAP = { ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right",
     Space: "up", KeyE: "up", KeyQ: "down", ControlLeft: "down", ShiftLeft: "nitro", ShiftRight: "nitro", KeyN: "nitro", KeyX: "drift" };
   let g = null, view = "chase", active = false, paused = false, photo = false;
+  const rig = { yaw: null, dist: 7 };
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), orbit = { yaw: 0, pitch: 0, drag: false, x: 0, y: 0, t: 0 };
   const LOOP_X = T.P[T.loopIn].x;
   const gp = { steer: 0, gas: 0, brake: 0, pitch: 0, on: false, prev: {} };
@@ -110,9 +111,9 @@ export function createGame(W, car, sound, life, opts = {}) {
   }
 
   function spawn(at) {
-    const s = at || SPAWN;
+    const s = at || SPAWN; rig.yaw = null;
     Object.assign(g, { mode: "drive", x: s.x, z: s.z, y: s.y || 0, yaw: s.yaw, vel: new THREE.Vector3(), pitch: 0, roll: 0, steer: 0, wings: 0, thr: 0, ang: 0, gForce: 1, d: 0, hover: false, landing: false, wreck: 0, boom: 0,
-      hp: 100, hurtT: 9, airT: 0, drift: 0, driftT: 0, nitro: g.nitro ?? 1, nitroOn: 0, stall: 0, sparks: 0 });
+      hp: 100, hurtT: 9, impacts: [], fresh: true, airT: 0, drift: 0, driftT: 0, nitro: g.nitro ?? 1, nitroOn: 0, stall: 0, sparks: 0 });
   }
   function start() {
     g = { score: 0, started: false, last: { ...SPAWN }, msg: "", msgT: 0, done: new Set(), combo: 1, comboT: 0, smashed: 0, near: new Map(), rings: 0, nitro: 1 };
@@ -126,6 +127,8 @@ export function createGame(W, car, sound, life, opts = {}) {
     const pts = Math.round(n * g.combo); g.score += pts; $("gScore").textContent = g.score; if (g.score > best()) store.set("void.best3", g.score);
     say(`${why}  +${pts}${g.combo > 1 ? `  ×${g.combo}` : ""}`, 2.2); if (!quiet) sound.win();
   }
+  // where the car was hit and how hard, for the dents (main.js turns these into real damage on the model)
+  const impact = (x, y, z, p) => { if (p > 3 && g.impacts.length < 8) g.impacts.push({ x, y, z, p }); };
   function hurt(n, why) {
     if (n <= 0 || g.wreck > 0) return;
     g.hp -= n; g.hurtT = 0; g.shake = Math.min(1, (g.shake || 0) + n / 40); document.body.classList.add("g-hurt"); setTimeout(() => document.body.classList.remove("g-hurt"), 160);
@@ -150,7 +153,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   }
   // buildings: an axis-aligned box test against the city's spatial hash; returns the push-out normal
   function hitBox(x, z, y, r) {
-    for (const b of city.nearR(x, z, r + 2)) {
+    for (const b of city.nearFast(x, z, r + 2)) {
       if (y >= b.h - .4) continue;
       const dx = x - b.x, dz = z - b.z, ox = b.hw + r - Math.abs(dx), oz = b.hd + r - Math.abs(dz);
       if (ox > 0 && oz > 0) return ox < oz ? { nx: Math.sign(dx), nz: 0, d: ox, b } : { nx: 0, nz: Math.sign(dz), d: oz, b };
@@ -173,13 +176,13 @@ export function createGame(W, car, sound, life, opts = {}) {
         if (c.bump > 0) continue;
         c.bump = .6;
         if (ps > c.v + 4 && rel > 7 && !(heavy && rel < 25)) {          // you are faster: it breaks apart
-          life.smash(c, pv.x, pv.z, rel); g.smashed++; opts.onSmash && opts.onSmash(c.kind.id);
+          life.smash(c, pv.x, pv.z, rel); g.smashed++; impact((g.x + c.x) / 2, .6, (g.z + c.z) / 2, rel * (heavy ? 1.2 : .5)); opts.onSmash && opts.onSmash(c.kind.id);
           pv.multiplyScalar(heavy ? .45 : .82); hurt(heavy ? rel * .9 : rel * .12, "Smashed a " + c.kind.id);
           addScore(heavy ? 400 : 150, heavy ? `Smashed a ${c.kind.id}!` : "Smash!", true); sound.crash(); g.sparks = 1;
         } else {                                                          // it is faster, or heavier: you take it
           const dmg = c.v > ps + 2 ? (c.v - ps) * 1.4 + rel * .3 : heavy ? rel * 1.1 : rel > 6 ? rel * .5 : 0;
           pv.x = pv.x * .3 + nvx * .6; pv.z = pv.z * .3 + nvz * .6; c.v *= .3;
-          hurt(dmg, `Hit by a ${c.kind.id}`); if (dmg > 2) { sound.crash(); g.sparks = .7; } else sound.pop();
+          hurt(dmg, `Hit by a ${c.kind.id}`); impact((g.x + c.x) / 2, .6, (g.z + c.z) / 2, Math.max(dmg, rel * .6)); if (dmg > 2) { sound.crash(); g.sparks = .7; } else sound.pop();
         }
       } else if (ps > 25 && Math.abs(along) < hl + 1 && Math.abs(side) < hw + 1.8 && Math.abs(side) >= hw) {
         const t = g.near.get(c) || 0; if (performance.now() - t > 4000) { g.near.set(c, performance.now()); addScore(60, "Near miss", true); }
@@ -237,7 +240,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         const vn = g.vel.x * hit.nx + g.vel.z * hit.nz;
         if (vn < 0) { g.vel.x -= 1.3 * vn * hit.nx; g.vel.z -= 1.3 * vn * hit.nz; g.vel.multiplyScalar(.75); }
         g.x = nx + hit.nx * hit.d; g.z = nz + hit.nz * hit.d;
-        const imp = -vn; if (imp > 9) { hurt((imp - 9) * 1.8, "Hit a building"); sound.crash(); g.sparks = 1; } else if (imp > 2) sound.pop();
+        const imp = -vn; impact(g.x - hit.nx * 1.3, .6, g.z - hit.nz * 1.3, imp * 1.5); if (imp > 9) { hurt((imp - 9) * 1.8, "Hit a building"); sound.crash(); g.sparks = 1; } else if (imp > 2) sound.pop();
       } else { g.x = nx; g.z = nz; }
       const gr = groundAt(g.x, g.z, g.y), prevY = g.y;
       if (gr.water) { wreck("Drove into the river"); return; }
@@ -345,6 +348,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     if (hit) {
       const vn = g.vel.x * hit.nx + g.vel.z * hit.nz, imp = Math.max(0, -vn);
       g.x += hit.nx * hit.d; g.z += hit.nz * hit.d; g.vel.x -= 1.4 * Math.min(0, vn) * hit.nx; g.vel.z -= 1.4 * Math.min(0, vn) * hit.nz; g.vel.multiplyScalar(.6);
+      impact(g.x - hit.nx * 1.3, g.y + .6, g.z - hit.nz * 1.3, imp * 1.5);
       if (imp > 4) { hurt(imp * 1.4, "Hit a building"); sound.crash(); g.sparks = 1; } else sound.pop();
       if (g.wreck > 0) return;
     }
@@ -354,6 +358,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (gr.water) { wreck("Splashed into the water"); return; }
       g.y = gr.h;
       const down2 = -g.vel.y, vh2 = Math.hypot(g.vel.x, g.vel.z), angle = Math.atan2(down2, Math.max(.1, vh2));
+      if (down2 > 12) impact(g.x, g.y, g.z, down2 * 1.2);
       if (down2 > 26 || (down2 > 15 && angle > 1.1)) { hurt(down2 * 3, `Hit the ground hard (${down2.toFixed(1)} m/s down)`); if (g.wreck > 0) return; }
       else if (down2 > 10) hurt((down2 - 10) * 1.5, "Hard landing");
       else if (g.airT > 2 && !g.jump) { if (down2 < 2) addScore(300, "Butter landing!"); else if (down2 < 4.5) addScore(150, "Smooth landing"); else say(`Firm landing (${down2.toFixed(1)} m/s)`, 2); }
@@ -416,8 +421,8 @@ export function createGame(W, car, sound, life, opts = {}) {
   const api = {
     get state() { return g; }, say: (m, t) => say(m, t), addScore: (n, w) => addScore(n, w), hurt: (n, w) => hurt(n, w), active: () => active && !paused,
     busted(msg) { say(msg, 4); g.hp = 100; g.vel.set(0, 0, 0); $("gScore").textContent = g.score; sound.crash(); },
-    freeze(t) { g.frozen = t; }, teleport(x, z, yaw) { Object.assign(g, { x, z, y: 0, yaw, mode: "drive", pitch: 0, roll: 0, wings: 0 }); g.vel.set(0, 0, 0); camPos.set(x - Math.cos(yaw) * 8, 3, z - Math.sin(yaw) * 8); },
-    hitBox, isWater: (x, z) => city.isWater(x, z), nearCars: (x, z, r) => life ? life.nearCars(x, z, r) : [], fly: () => { if (g.mode === "drive") toggleFly(); },
+    freeze(t) { g.frozen = t; }, teleport(x, z, yaw) { Object.assign(g, { x, z, y: 0, yaw, mode: "drive", pitch: 0, roll: 0, wings: 0 }); g.vel.set(0, 0, 0); camPos.set(x - Math.cos(yaw) * 8, 3, z - Math.sin(yaw) * 8); rig.yaw = yaw; orbit.yaw = orbit.pitch = 0; },
+    hitBox, isWater: (x, z) => city.isWater(x, z), impact: (x, z, p) => impact(x, .6, z, p), nearCars: (x, z, r) => life ? life.nearCars(x, z, r) : [], fly: () => { if (g.mode === "drive") toggleFly(); },
     policeClear: () => opts.policeClear && opts.policeClear(),
   };
   return {
@@ -429,7 +434,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     update(dt) {
       if (!g) start();
       pollPad();
-      if (g.started && !paused && !photo) { acc += dt; const H = 1 / 120; let n = 0; while (acc >= H && n < 12) { step(H); acc -= H; n++; } }
+      if (g.started && !paused && !photo) { acc += dt; const H = 1 / 60; let n = 0; while (acc >= H && n < 6) { step(H); acc -= H; n++; } }
       const air = g.mode === "air", speed = g.mode === "rail" ? g.v * 3.6 : g.vel.length() * 3.6;
       if (g.mode === "rail") { basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis); }
       else {
@@ -443,7 +448,8 @@ export function createGame(W, car, sound, life, opts = {}) {
       let cam;
       if (orbit.t > 0) orbit.t -= dt;
       const sp0 = g.mode === "rail" ? g.v : g.vel.length();
-      if (orbit.t <= 0 && !photo && sp0 > 12) { const k = clamp(dt * .8); orbit.yaw = lerp(orbit.yaw, 0, k); orbit.pitch = lerp(orbit.pitch, 0, k); }
+      // like GTA: once you stop moving the mouse (or finger) for a moment and the car is moving, the view eases back behind it
+      if (orbit.t <= 1.5 && !photo && sp0 > 3 && !orbit.drag) { const k = clamp(dt * 1.6); orbit.yaw = lerp(orbit.yaw, 0, k); orbit.pitch = lerp(orbit.pitch, 0, k); }
       const nitroFov = g.nitroOn * 9;
       if (photo) {
         const d = orbit.dist || 9, a = g.yaw + Math.PI + orbit.yaw, e = .25 + orbit.pitch;
@@ -454,17 +460,24 @@ export function createGame(W, car, sound, life, opts = {}) {
         let up = UP.clone();
         if (g.mode === "rail") { T.sample(Math.max(T.D[T.loopIn] - 6, g.d - 7.5), back); camPos.copy(loc(back, 0, 2.4, 0)); camLook.copy(loc(fr, 5, .8, 0)); up = back.u.clone(); }
         else {
-          // behind the direction of travel when moving fast (so drifts look like drifts), behind the nose when slow
-          const hv = new THREE.Vector3(g.vel.x, 0, g.vel.z), sp = hv.length(), head = new THREE.Vector3(Math.cos(g.yaw), 0, Math.sin(g.yaw));
-          const d = sp > 6 ? head.clone().lerp(hv.normalize(), air ? .7 : .45).normalize() : head;
-          d.applyAxisAngle(UP, orbit.yaw);
-          const far = (air ? 12 + speed * .01 : 6.8 + speed * .014) + (orbit.dist || 0), hgt = (air ? 3.4 : 2.9) + orbit.pitch * (far * .8) + (air ? -g.vel.y * .03 : 0);
-          const wantPos = fr.p.clone().addScaledVector(d, -far).add(new THREE.Vector3(0, hgt, 0)), wantLook = fr.p.clone().addScaledVector(d, air ? 10 : 6).add(new THREE.Vector3(0, .9, 0));
-          const k = clamp(dt * (air ? 4 : 7)); camPos.lerp(wantPos, k); camLook.lerp(wantLook, clamp(dt * 9));
-          if (air) up.lerp(fr.u, .25).normalize();
-          // camera collision: never behind a wall
-          const from = fr.p.clone().add(new THREE.Vector3(0, 1.6, 0)), seg = camPos.clone().sub(from), n = Math.ceil(seg.length() / .5);
-          for (let i = 1; i <= n; i++) { const pnt = from.clone().addScaledVector(seg, i / n); if (hitBox(pnt.x, pnt.z, pnt.y, .4)) { camPos.copy(from.addScaledVector(seg, Math.max(0, (i - 2) / n))); break; } }
+          // an orbit rig round the car: only the angles are smoothed, so the camera never lags behind at speed, never
+          // cuts through the car when you look round, and never swings in front when you reverse
+          const fx = Math.cos(g.yaw), fz = Math.sin(g.yaw), fwd = g.vel.x * fx + g.vel.z * fz, hsp = Math.hypot(g.vel.x, g.vel.z);
+          let base = g.yaw;
+          if (air && hsp > 10) base = Math.atan2(g.vel.z, g.vel.x);
+          else if (!air && fwd > 8) { let dv = Math.atan2(g.vel.z, g.vel.x) - g.yaw; while (dv > Math.PI) dv -= 2 * Math.PI; while (dv < -Math.PI) dv += 2 * Math.PI; base = g.yaw + clamp(dv, -.6, .6) * .5; }
+          if (rig.yaw == null) rig.yaw = base;
+          let dy = base - rig.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
+          rig.yaw += dy * clamp(dt * (air ? 3 : 5));
+          const yawC = rig.yaw + orbit.yaw, pitC = clamp((air ? .2 : .24) + orbit.pitch - (air ? g.vel.y * .004 : 0), -.12, 1.25);
+          const want = (air ? 12 + speed * .01 : 6.6 + speed * .012) + (orbit.dist || 0);
+          const pivot = fr.p.clone().add(new THREE.Vector3(0, air ? 1.4 : 1.3, 0)), dir = new THREE.Vector3(-Math.cos(yawC) * Math.cos(pitC), Math.sin(pitC), -Math.sin(yawC) * Math.cos(pitC));
+          // walls: pull in at once, ease back out
+          let room = want; for (let t = .8; t <= want; t += .5) { const q2 = pivot.clone().addScaledVector(dir, t); if (q2.y < .3 || hitBox(q2.x, q2.z, q2.y, .35)) { room = Math.max(1.6, t - .6); break; } }
+          rig.dist = room < rig.dist ? room : lerp(rig.dist, room, clamp(dt * 2.5));
+          camPos.copy(pivot).addScaledVector(dir, rig.dist);
+          camLook.copy(pivot).add(new THREE.Vector3(fx, 0, fz).multiplyScalar(air ? 3 : 1.5));
+          if (air) up.lerp(fr.u, .15).normalize();
           if (camPos.y < .4) camPos.y = .4;
         }
         cam = { pos: camPos.clone(), look: camLook.clone(), up, fov: lerp(56, 68, clamp(speed / 330)) + nitroFov };

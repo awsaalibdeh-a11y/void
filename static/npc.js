@@ -71,7 +71,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   const cross = (axis, k) => axis === 0 ? ax(k) : sz(k);               // the coordinate of the k-th crossing road along this axis
   const crossW = (axis, k) => axis === 0 ? avW(k) : stW(k);
   const roadC = (axis, road) => axis === 0 ? sz(road) : ax(road);
-  const N = COARSE ? 600 : 1500, NP = COARSE ? 2200 : 6000;
+  const N = COARSE ? 600 : 1500, NP = COARSE ? 1200 : 3000;
 
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });
@@ -134,7 +134,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   };
 
   // ---- per frame ----
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
+  const squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
   const buckets = new Map(), tmp = {}, cell = new Map(), CELL = 30;
   let frameN = 0;
   function decide(c, k) {       // at the crossing k: straight on, or turn onto the cross road
@@ -151,11 +151,22 @@ export function createLife(scene, roads, walkways, COARSE) {
     void cx;
     c.turn = { t: 0, len: R * 1.6, p0, p1: corner, p2, axis: oAxis, road: oRoad, dir: nd, lane };
   }
+  // how badly a car is hit decides what happens to it: a dent and a stop, a crumpled wreck that slides,
+  // or (really hard) it flips, flies and sheds parts
   function smash(c, vx, vz, power) {
-    c.wreck = { t: 0, vx: vx * .8 + (rnd() - .5) * 4, vz: vz * .8 + (rnd() - .5) * 4, vy: 4 + power * .25, wx: (rnd() - .5) * 8, wy: (rnd() - .5) * 6, wz: (rnd() - .5) * 8 };
+    if (power < 14 && !c.wreck) {
+      c.dent = Math.min(1, (c.dent || 0) + .45); c.stop = 5 + rnd() * 3; c.v = 0; c.col.multiplyScalar(.82); c.yaw += (rnd() - .5) * .5; c.x += vx * .05; c.z += vz * .05;
+      for (let k = 0; k < 4; k++) { const di = debI++ % DEB, d = deb[di]; d.life = 1.5; d.p.set(c.x, .8, c.z); d.v.set((rnd() - .5) * 6, 2 + rnd() * 3, (rnd() - .5) * 6); d.w.set(rnd() * 8, rnd() * 8, rnd() * 8); debris.setColorAt(di, col.setHex(c.color)); }
+      if (debris.instanceColor) debris.instanceColor.needsUpdate = true;
+      return;
+    }
+    const fly = power > 28;
+    c.crush = fly ? .72 : .82;
+    c.wreck = fly ? { t: 0, vx: vx * .8 + (rnd() - .5) * 4, vz: vz * .8 + (rnd() - .5) * 4, vy: 4 + power * .25, wx: (rnd() - .5) * 8, wy: (rnd() - .5) * 6, wz: (rnd() - .5) * 8 }
+      : { t: 0, vx: vx * .45, vz: vz * .45, vy: 0, wx: 0, wy: (rnd() - .5) * 3, wz: 0 };
     c.y = 0; c.rx = 0; c.rz = 0; c.v = 0; c.turn = null;
-    c.col.setHex(c.color).multiplyScalar(.3);
-    for (let k = 0; k < 14; k++) {
+    c.col.setHex(c.color).multiplyScalar(fly ? .28 : .45);
+    for (let k = 0; k < (fly ? 14 : 6); k++) {
       const di = debI++ % DEB, d = deb[di]; d.life = 3 + rnd() * 2; d.p.set(c.x, 1, c.z); d.v.set(vx * .6 + (rnd() - .5) * 14, 3 + rnd() * 9, vz * .6 + (rnd() - .5) * 14); d.w.set(rnd() * 12, rnd() * 12, rnd() * 12); d.c = k % 3 ? c.color : 0x222222;
       debris.setColorAt(di, col.setHex(d.c));
     }
@@ -190,7 +201,7 @@ export function createLife(scene, roads, walkways, COARSE) {
           if (c.y > 0 || w.vy > 0) { w.vy -= 9.81 * h; c.y = Math.max(0, c.y + w.vy * h); c.rx += w.wx * h; c.rz += w.wz * h; c.yaw += w.wy * h; if (c.y === 0) { w.vy = -w.vy * .3; w.wx *= .5; w.wz *= .5; w.wy *= .5; if (Math.abs(w.vy) < 1) w.vy = 0; } }
           c.x += w.vx * h; c.z += w.vz * h; const f = Math.pow(c.y > 0 ? .9 : .2, h); w.vx *= f; w.vz *= f;
           if (c.y === 0) { c.rx = Math.round(c.rx / Math.PI) * Math.PI * .02 + c.rx * .98; c.rz = Math.round(c.rz / Math.PI) * Math.PI * .02 + c.rz * .98; }
-          if (w.t > 14) { place(c); posOf(c); c.rx = c.rz = c.y = 0; c.col.setHex(c.color); }
+          if (w.t > 24) { place(c); posOf(c); c.rx = c.rz = c.y = 0; c.col.setHex(c.color); c.crush = 0; c.dent = 0; }
         } else if (c.turn) {
           const T = c.turn; T.t += c.v * h / T.len; const t = Math.min(1, T.t), a = 1 - t;
           const nx = a * a * T.p0.x + 2 * a * t * T.p1.x + t * t * T.p2.x, nz = a * a * T.p0.z + 2 * a * t * T.p1.z + t * t * T.p2.z;
@@ -212,12 +223,13 @@ export function createLife(scene, roads, walkways, COARSE) {
           if (c.lead) { const gap = (c.lead.s - c.s) * c.dir - (c.kind.L + c.lead.kind.L) / 2; want = Math.min(want, gap < 2.5 ? 0 : Math.max(0, (gap - 2.5) * 1.1), c.lead.v + gap * .4); }
           // and to the player
           if (player && player.y < 3) { const dx = player.x - c.x, dz = player.z - c.z, ah = dx * Math.cos(c.yaw) + dz * Math.sin(c.yaw), sd = -dx * Math.sin(c.yaw) + dz * Math.cos(c.yaw); if (ah > 0 && ah < 22 && Math.abs(sd) < 2.6) want = Math.min(want, Math.max(0, (ah - 6) * .8)); }
+          if (c.stop > 0) { c.stop -= h; want = 0; }                 // dented: it stops a while before driving on
           c.v += Math.max(-9 * h, Math.min(3 * h, want - c.v));
           if (!c.turn) { c.s += c.v * c.dir * h; posOf(c); }
         }
         const key = Math.floor(c.x / CELL) * 7919 + Math.floor(c.z / CELL); let b = cell.get(key); if (!b) cell.set(key, b = []); b.push(c);
         const lean = c.turn ? .05 : 0;
-        e.set(c.rx, -c.yaw, c.rz + lean, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(c.x, c.y, c.z), q, one);
+        e.set(c.rx, -c.yaw, c.rz + lean, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(c.x, c.y, c.z), q, squash.set(1, c.crush || 1 - (c.dent || 0) * .07, 1));
         const ddx = c.x - cx0, ddz = c.z - cz0;
         if (ddx * ddx + ddz * ddz < RC2) { const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
       }

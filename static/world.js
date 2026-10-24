@@ -24,7 +24,7 @@ export const PAD_R = 28;
 
 export async function createWorld(canvas, COARSE) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
-  renderer.shadowMap.enabled = !COARSE; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = !COARSE; renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.localClippingEnabled = true;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, COARSE ? 1.5 : 1.75));
@@ -90,7 +90,8 @@ export async function createWorld(canvas, COARSE) {
   ZONES.push({ id: "HUDSON", x: -1180, z: -200, y: 0, safe: false, note: "The Hudson River: water" });
   ZONES.push({ id: "TIMES", x: 160, z: -280, y: 0, safe: false, note: "Times Square: billboards and crowds" });
   // shadows: everything solid casts and catches them
-  scene.traverse(o => { if (o.isMesh && !o.material.transparent && !o.material.isMeshBasicMaterial) { o.receiveShadow = true; o.castShadow = true; } });
+  // (only buildings and the big solid pieces cast; the thousands of small props only catch shadows)
+  scene.traverse(o => { if (o.isMesh && !o.material.transparent && !o.material.isMeshBasicMaterial) { o.receiveShadow = true; o.castShadow = !!o.userData.solid; } });
   // the city reflected in its own glass: one cube photo from the middle of midtown, filtered for rough and smooth surfaces
   const cubeRT = new THREE.WebGLCubeRenderTarget(COARSE ? 128 : 256, { type: THREE.HalfFloatType });
   const cubeCam = new THREE.CubeCamera(1, 3000, cubeRT);
