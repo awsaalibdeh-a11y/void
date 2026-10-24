@@ -128,6 +128,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     if (g.comboT > 0) g.combo = Math.min(8, g.combo + 1); else g.combo = 1; g.comboT = 4;
     const pts = Math.round(n * g.combo); g.score += pts; $("gScore").textContent = g.score; if (g.score > best()) store.set("void.best3", g.score);
     say(`${why}  +${pts}${g.combo > 1 ? `  ×${g.combo}` : ""}`, 2.2); if (!quiet) sound.win();
+    opts.onScore && opts.onScore(n, why);
   }
   // where the car was hit and how hard, for the dents (main.js turns these into real damage on the model)
   const impact = (x, y, z, p) => { if (p > 3 && g.impacts.length < 8) g.impacts.push({ x, y, z, p }); };

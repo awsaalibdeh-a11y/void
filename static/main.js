@@ -8,7 +8,7 @@ const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent 
 setLoad(15);
 const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
-const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }] = await Promise.all(["police", "race", "net", "nav", "vehicles"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -49,9 +49,10 @@ let police, races, nav;
 const net = createNet();
 setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
 // settings: graphics quality, look speed, auto gas, touch steering (kept on this device)
-const SET = Object.assign({ q: COARSE ? "medium" : "high", sens: 1, autogas: "off", steer: "stick" }, store.get("void.settings") || {});
+const SET = Object.assign({ q: COARSE ? "medium" : "high", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score" }, store.get("void.settings") || {});
 const gameOpts = {
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
+  onScore: (n, why) => { if (why === "Drift") goals.drift(n); goals.note(why); },
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
   mapExtra(mx, g, MM) {
@@ -65,11 +66,23 @@ const gameOpts = {
 };
 const game = createGame(W, car, sound, life, gameOpts);
 const vehicles = createVehicles(scene, game.api, W); gameOpts.vehicles = vehicles;
+const atmos = createAtmos(W, sound, COARSE);
+// trophies: a banner slides in at the top when a challenge is done
+const goals = createGoals(gl => { const t = document.getElementById("gTrophy"); t.innerHTML = `<b>${gl.icon}</b><div><span>Challenge complete</span>${gl.name}<em>+1000</em></div>`; t.classList.remove("on"); void t.offsetWidth; t.classList.add("on"); if (game.state) { game.state.score += 1000; } sound.win(); renderGoals(); });
+function renderGoals() {
+  const S = goals.stats;
+  document.getElementById("gGoals").innerHTML = GOALS.map(g => { const v = Math.min(1, (S[g.stat] || 0) / g.need), ok = goals.done.has(g.id); return `<div class="goal${ok ? " ok" : ""}"><b>${g.icon}</b><div><span>${g.name}</span><small>${g.text}</small><i style="--v:${v}"></i></div>${ok ? "🏆" : `<em>${Math.floor(v * 100)}%</em>`}</div>`; }).join("");
+  document.getElementById("gStatsRow").innerHTML = `<div><b>${(S.best || 0).toLocaleString()}</b><span>Best score</span></div><div><b>${Math.round(S.top)}</b><span>Top km/h</span></div><div><b>${S.km.toFixed(1)}</b><span>km travelled</span></div><div><b>${goals.done.size}/${GOALS.length}</b><span>Trophies</span></div>`;
+}
+const WX_ICON = { clear: "☀️ Clear", rain: "🌧 Rain", storm: "⛈ Storm", fog: "🌫 Fog", snow: "❄️ Snow" }, RADIO = { score: "🎵 VOID Score", voidfm: "📻 VOID FM", off: "🔇 Radio off" };
+function chips() { document.getElementById("gChips").innerHTML = `<span>${{ night: "🌙", sunset: "🌇", day: "☀️" }[W.timeOfDay]} ${W.timeOfDay}</span><span>${WX_ICON[atmos.weather]}</span>`; document.getElementById("gWeather").innerHTML = `<b>${WX_ICON[SET.weather].split(" ")[0]}</b>${WX_ICON[SET.weather].split(" ").slice(1).join(" ")}`; document.getElementById("gRadio").innerHTML = `<b>${RADIO[SET.radio].split(" ")[0]}</b>${RADIO[SET.radio].split(" ").slice(1).join(" ")}`; }
+document.getElementById("gWeather").onclick = () => { SET.weather = WEATHERS[(WEATHERS.indexOf(SET.weather) + 1) % WEATHERS.length]; atmos.setWeather(SET.weather); store.set("void.settings", SET); chips(); toast(WX_ICON[SET.weather]); };
+document.getElementById("gRadio").onclick = () => { const k = Object.keys(RADIO); SET.radio = k[(k.indexOf(SET.radio) + 1) % k.length]; if (!sound.on) setSound(true); sound.setRadio(SET.radio); store.set("void.settings", SET); chips(); toast(RADIO[SET.radio]); };
 // ---------- the menu (☰ or Esc): everything that isn't driving lives here ----------
 const menuEl = document.getElementById("gMenu");
 function menu(open) {
   if (open == null) open = menuEl.hidden;
-  menuEl.hidden = !open; document.body.classList.toggle("g-menu-open", open);
+  menuEl.hidden = !open; document.body.classList.toggle("g-menu-open", open); if (open) { renderGoals(); chips(); }
   if (open && document.pointerLockElement) document.exitPointerLock();
   if (!net.online()) game.pause(open);
 }
@@ -86,7 +99,8 @@ function applySettings(save = true) {
   const cap = W.setQuality(SET.q); perf.max = cap; perf.pr = Math.min(perf.pr, cap); if (renderer.getPixelRatio() > cap) { renderer.setPixelRatio(cap); composer.setPixelRatio(cap); lastW = 0; resize(); }
   if (save) store.set("void.settings", SET);
 }
-menuEl.querySelectorAll(".seg[data-set]").forEach(seg => seg.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); SET[seg.dataset.set] = b.dataset.v; if (seg.dataset.set === "q") { perf.pr = W.QUALITY[b.dataset.v].pr; perf.down = 0; } applySettings(); }));
+menuEl.querySelectorAll(".seg[data-set]").forEach(seg => seg.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); SET[seg.dataset.set] = b.dataset.v; if (seg.dataset.set === "q") { perf.pr = W.QUALITY[b.dataset.v].pr; perf.down = 0; } applySettings();
+atmos.setWeather(SET.weather); }));
 document.getElementById("gSens").addEventListener("input", e => { SET.sens = +e.target.value; applySettings(); });
 // the touch joystick: drag the knob; left/right steers, up/down pitches when flying
 {
@@ -213,7 +227,8 @@ function go(next) {
     mode = next; document.body.dataset.mode = next;
     if (next === "home") scrollTo(0, 0);
     if (next === "watch") { if (!sound.on) setSound(true); playFrom(0); }
-    if (next === "play") game.enter();
+    if (next === "play") { game.enter(); if (SET.radio !== "score") sound.setRadio(SET.radio); }
+    if (mode !== "play" && sound.radio && sound.radio !== "score") sound.setRadio("score");
     $("fade").classList.remove("on");
   }, 320);
 }
@@ -283,7 +298,7 @@ function showroom(dt, time) {
 
 // ---------- per frame ----------
 const clock = new THREE.Clock();
-let lastGauge = 0;
+let lastGauge = 0, lastChips = 0;
 // the speedometer: a dial with a glowing arc, the speed, the gear (or altitude when flying) and what you're in
 const gauge = document.getElementById("gGauge"), gx = gauge.getContext("2d");
 function drawGauge(S) {
@@ -371,6 +386,10 @@ function frameLoop(fixed) {
   const night = W.timeOfDay !== "day";
   heads.intensity = night && veh === "car" ? (W.timeOfDay === "night" ? 260 : 120) : 0;
   W.sky.position.copy(camera.position); W.grade.uniforms.time.value = time % 100;
+  W.grade.uniforms.blur.value = mode === "play" ? Math.max(0, Math.min(1, (S.speed - 160) / 220)) * .9 + (S.nitro || 0) * .5 : 0;
+  atmos.update(dt, time, S, mode === "play" ? game.state : null);
+  W.city.poolMat.opacity = W.timeOfDay === "night" ? 1 : W.timeOfDay === "sunset" ? .45 : 0; W.city.poolMat.visible = W.timeOfDay !== "day";
+  if (mode === "play") { goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat);
   car.setReveal(S.reveal);
@@ -444,7 +463,7 @@ function frameLoop(fixed) {
   camera.up.copy(c.up || new THREE.Vector3(0, 1, 0)); camera.lookAt(c.look);
   camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .02 : .05; camera.updateProjectionMatrix();
   camLight.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0)); camLight.target.position.copy(S.pos);
-  scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)); scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt));
+  scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)) * W.weatherFog; scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt)) * W.weatherFog;
   camera.far = scene.fog.far * 1.1 + 150; camera.updateProjectionMatrix();          // nothing past the fog gets drawn
   // refresh the car's reflections every few frames (the car hides from its own camera)
   // (no shadows, no crowds, a short view: it only has to look right in the paint)

@@ -147,7 +147,8 @@ export async function buildCity(scene, canvasTex, COARSE) {
     const g = new THREE.PlaneGeometry(b - a, 40000).rotateX(-Math.PI / 2), uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (b - a) / 10, uv.getY(k) * 4000);
     const m = new THREE.Mesh(g, grassMat); m.position.set((a + b) / 2, -.12, 0); scene.add(m);
   }
-  const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(XB - XA + 40, ZB - ZA + 40).rotateX(-Math.PI / 2), mat({ map: asphaltTex, roughness: .82, envMapIntensity: .35 }));
+  const asphaltMat = mat({ map: asphaltTex, roughness: .82, envMapIntensity: .35 });
+  const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(XB - XA + 40, ZB - ZA + 40).rotateX(-Math.PI / 2), asphaltMat);
   asphaltTex.repeat.set((XB - XA) / 8, (ZB - ZA) / 8); asphalt.position.set((XA + XB) / 2, 0, (ZA + ZB) / 2); scene.add(asphalt);
   const walkG = [], parkG = [];
   const slab = (list, x0, x1, z0, z1, y) => list.push(new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2).translate((x0 + x1) / 2, y, (z0 + z1) / 2));
@@ -447,6 +448,10 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const leafGeo = mergeGeometries([new THREE.IcosahedronGeometry(2.2, 0).translate(0, 4.4, 0), new THREE.IcosahedronGeometry(1.7, 0).translate(.8, 5.8, .3), new THREE.IcosahedronGeometry(1.5, 0).translate(-.9, 5.3, -.4)].map(g => g.toNonIndexed()));
   instT(leafGeo, mat({ roughness: .85, flatShading: true }), P.trees, ([x, z, s], i) => at(x, 0, z, i, s), () => new THREE.Color().setHSL(.26 + rnd() * .08, .45 + rnd() * .2, .26 + rnd() * .12), 520);
   // street lamps: a pole, an arm and a warm head
+  // pools of warm light under every lamp (only at night)
+  const poolTex = canvasTex(128, 128, (g, w) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, "rgba(255,200,130,.55)"); r.addColorStop(.5, "rgba(255,180,110,.18)"); r.addColorStop(1, "rgba(255,170,100,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
+  const poolMat = new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -3 });
+  instT(new THREE.PlaneGeometry(16, 16).rotateX(-Math.PI / 2), poolMat, P.lamps, ([x, z, ry]) => { at(0, 0, 0, ry); v.set(0, .08, 1.8).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); }, null, 260);
   const lampHead = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffcf8a).multiplyScalar(2.4), toneMapped: false }); emissive.push(lampHead); lampHead.userData.glow = 2.4; lampHead.userData.base = new THREE.Color(0xffcf8a);
   instT(mergeGeometries([new THREE.CylinderGeometry(.1, .14, 8, 6).translate(0, 4, 0), new THREE.BoxGeometry(.1, .1, 2).translate(0, 7.9, 1)].map(g => g.toNonIndexed())), darkM, P.lamps, ([x, z, ry]) => at(x, 0, z, ry));
   instT(new THREE.BoxGeometry(.5, .14, .8), lampHead, P.lamps, ([x, z, ry]) => { at(0, 0, 0, ry); v.set(0, 7.85, 1.8).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); });
@@ -521,7 +526,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     buildings, footprints, roads, parks: [[[PX0, PZ0], [PX1, PZ0], [PX1, PZ1], [PX0, PZ1]]], water: [[[HW0, -9000], [W1, -9000], [W1, 9000], [HW0, 9000]], [[W2, -9000], [EW1, -9000], [EW1, 9000], [W2, 9000]], Array.from({ length: 24 }, (_, k) => [lake.x + Math.cos(k / 24 * 6.283) * lake.rx, lake.z + Math.sin(k / 24 * 6.283) * lake.rz])],
     WATER_Y, rivers: { hudson: [HW0, W1], east: [W2, EW1] },
     beaches: [], walkways: [], bounds: { x0: XA - 220, x1: brooklyn + 300, z0: ZA - 160, z1: ZB + 160 }, credit: "a made-up city in code",
-    near, nearR, nearFast, helipads, lawn, lake, stations, emissive, glassMats, billboards,
+    near, nearR, nearFast, helipads, lawn, lake, stations, asphaltMat, poolMat, emissive, glassMats, billboards,
     // ground under a point: rooftops count (so you can land and drive on them), water is -1
     roofAt(x, z) { let h = 0; for (const b of near(x, z)) if (Math.abs(x - b.x) < b.hw && Math.abs(z - b.z) < b.hd && b.h > h) h = b.h; return h; },
     isWater(x, z) {

@@ -117,11 +117,16 @@ export function buildCar(model = "hydra") {
   const wireClip = new THREE.Plane(new THREE.Vector3(1, 0, 0), 3);
   const clip = [solidClip];
 
-  const paint = new THREE.MeshPhysicalMaterial({ color: 0x0d0d10, metalness: .35, roughness: .38, clearcoat: .6, clearcoatRoughness: .2, envMapIntensity: .9, clippingPlanes: clip });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0a0d12, metalness: .1, roughness: .03, clearcoat: 1, envMapIntensity: 1.0, transparent: true, opacity: .6, depthWrite: false, clippingPlanes: clip });  // tinted, so you can see the cabin
+  const flakes = (() => {                                     // a fine noise normal map: the metallic flake that sparkles under the clear coat
+    const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d"), img = g.createImageData(256, 256);
+    for (let i = 0; i < 256 * 256; i++) { const a = Math.random() * 6.28, r = Math.random() * .55; img.data[i * 4] = 128 + Math.cos(a) * r * 127; img.data[i * 4 + 1] = 128 + Math.sin(a) * r * 127; img.data[i * 4 + 2] = 255; img.data[i * 4 + 3] = 255; }
+    g.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(30, 30); return t;
+  })();
+  const paint = new THREE.MeshPhysicalMaterial({ color: 0x0d0d10, metalness: .6, roughness: .32, normalMap: flakes, normalScale: new THREE.Vector2(.12, .12), clearcoat: 1, clearcoatRoughness: .03, envMapIntensity: 1.5, clippingPlanes: clip });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0a0d12, metalness: .2, roughness: .02, clearcoat: 1, envMapIntensity: 1.8, transparent: true, opacity: .6, depthWrite: false, clippingPlanes: clip });  // tinted, so you can see the cabin
   const carbon = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, metalness: .4, roughness: .55, clippingPlanes: clip });
   const rubber = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: .9, clippingPlanes: clip });
-  const rim = new THREE.MeshStandardMaterial({ color: 0x121215, metalness: .9, roughness: .28, clippingPlanes: clip });
+  const rim = new THREE.MeshStandardMaterial({ color: 0x121215, metalness: 1, roughness: .16, envMapIntensity: 1.6, clippingPlanes: clip });
   const caliper = new THREE.MeshStandardMaterial({ color: 0xc1121f, metalness: .3, roughness: .4, clippingPlanes: clip });
   const front = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xe8fbff).multiplyScalar(3), toneMapped: false, clippingPlanes: clip });
   const rear = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2a3a).multiplyScalar(2.6), toneMapped: false, clippingPlanes: clip });
@@ -317,6 +322,27 @@ export function buildCar(model = "hydra") {
     for (let n = 0; n < 3; n++) { const ox = 60 + Math.random() * 140, oy = 60 + Math.random() * 140; for (let k = 0; k < 14; k++) { let x = ox, y = oy, a = Math.random() * 6.28; g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 7; j++) { a += (Math.random() - .5) * .7; x += Math.cos(a) * 14; y += Math.sin(a) * 14; g.lineTo(x, y); } g.stroke(); } for (let r = 8; r < 50; r += 12) { g.beginPath(); g.arc(ox, oy, r, 0, 6.3); g.stroke(); } }
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1.5, 1.5); return t;
   };
+  // ---- finishing details: panel seams (doors, hood), LED light strips, number plates ----
+  {
+    const seamMat = new THREE.MeshBasicMaterial({ color: 0x050505, side: THREE.DoubleSide, clippingPlanes: clip, polygonOffset: true, polygonOffsetFactor: -2, transparent: true, opacity: .85 });
+    const seamPatch = (i0, js, push) => {
+      const pos = [];
+      for (let a = 0; a < js.length - 1; a++) { const q = [pt(i0, js[a]), pt(i0 + 1, js[a]), pt(i0 + 1, js[a + 1]), pt(i0, js[a + 1])].map(([x, y, z]) => [x, y + push[1], z + Math.sign(z) * push[2]]); pos.push(...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]); }
+      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); solid.add(new THREE.Mesh(g, seamMat));
+    };
+    const sideJ = (c) => Array.from({ length: 11 }, (_, k) => c - 5 + k);           // the side of the car from the sill up to the waist
+    for (const u of [.36, .55]) { const i = Math.round(LNU * u); seamPatch(i, sideJ(0), [0, 0, .004]); seamPatch(i, sideJ(LNV / 2), [0, 0, .004]); }
+    const hoodI = Math.round(LNU * .8); seamPatch(hoodI, Array.from({ length: 13 }, (_, k) => T4 - 6 + k), [0, .004, 0]);
+    // LED strips: a light bar across the nose and a full-width tail bar
+    const nose = X0 + LEN;
+    const drl = new THREE.Mesh(new THREE.BoxGeometry(.03, .025, halfAt(.93) * 1.5), front); drl.position.set(nose - .14, topAt(.93) - .02, 0); solid.add(drl);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(.03, .04, halfAt(.03) * 1.7), rear); tail.position.set(X0 + .02, topAt(.03) - .07, 0); solid.add(tail);
+    // number plates
+    const plateT = (() => { const c = document.createElement("canvas"); c.width = 256; c.height = 64; const g = c.getContext("2d"); g.fillStyle = "#f4f4f0"; g.fillRect(0, 0, 256, 64); g.strokeStyle = "#111"; g.lineWidth = 4; g.strokeRect(3, 3, 250, 58); g.fillStyle = "#111"; g.font = "900 40px Inter, sans-serif"; g.textAlign = "center"; g.fillText("VOID·242", 128, 47); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+    const plateM = new THREE.MeshStandardMaterial({ map: plateT, roughness: .4, metalness: .2, clippingPlanes: clip });
+    const pf = new THREE.Mesh(new THREE.PlaneGeometry(.52, .13), plateM); pf.position.set(nose + .005, curve(BS.bot, .98) + .14, 0); pf.rotation.y = Math.PI / 2; solid.add(pf);
+    const pr = new THREE.Mesh(new THREE.PlaneGeometry(.52, .13), plateM); pr.position.set(X0 - .005, curve(BS.bot, .03) + .22, 0); pr.rotation.y = -Math.PI / 2; solid.add(pr);
+  }
   return {
     group: car, wheels, clip, materials: { carbon, front }, model, name: M.name,
     setSpoiler, setLivery,
@@ -374,8 +400,8 @@ export function buildCar(model = "hydra") {
     },
     get wear() { return wear; },
     setFinish(f) {
-      const F = { gloss: [.35, .38, .6], satin: [.3, .55, .3], matte: [.15, .78, 0] }[f] || [.35, .38, .6];
-      paint.metalness = F[0]; paint.roughness = F[1]; paint.clearcoat = F[2];
+      const F = { gloss: [.6, .32, 1, .12], satin: [.4, .5, .35, .06], matte: [.15, .8, 0, 0] }[f] || [.6, .32, 1, .12];
+      paint.metalness = F[0]; paint.roughness = F[1]; paint.clearcoat = F[2]; paint.normalScale.setScalar(F[3]);
     },
     setAccent(hex) { caliper.color.set(hex); },
     setTrim(hex) { trim.color.set(hex); },

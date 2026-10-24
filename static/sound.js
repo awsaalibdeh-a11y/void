@@ -124,7 +124,7 @@ export class Sound {
     if (this.mode === "song") {
       while (this.next < C.currentTime + .12) {
         const bar = Math.floor(this.songStep / 16);
-        if (bar >= SONG_BARS) { this.mode = "idle"; break; }
+        if (bar >= SONG_BARS) { if (this.radio === "voidfm") { this.startSong(0); continue; } this.mode = "idle"; break; }
         this.applyMix(songMix(bar + (this.songStep % 16) / 16), this.next);
         if (bar === 8 && this.songStep % 16 === 0) this.impact(this.next);
         if (bar === 7 && this.songStep % 16 === 12) this.chop(this.next, "ey", 1.2);
@@ -199,6 +199,8 @@ export class Sound {
   whoosh() { if (this.on) this.noiseHit(this.ctx.currentTime, "bandpass", 700, .8, .5, .9, this.sfx); }
   pop() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "bandpass", 300, 1, .9, .07, this.sfx); this.noiseHit(t + .06, "bandpass", 260, 1, .6, .06, this.sfx); } }
   crash() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "lowpass", 2500, .4, 1, 1.2, this.sfx); this.noiseHit(t, "bandpass", 180, 1, 1, .6, this.sfx); } }
+  // the car radio: "score" is the game's own music, "voidfm" loops the film track, "off" is engine and city only
+  setRadio(st) { this.init(); this.radio = st; this.musicIn.gain.setTargetAtTime(st === "off" ? 0 : .5, this.ctx.currentTime, .3); if (st === "voidfm") this.startSong(0); else if (this.mode === "song") this.stopSong(); }
   siren(level) {            // a wailing two-tone siren whose volume follows how close the nearest cruiser is
     if (!this.ctx || !this.on) return; const c = this.ctx, t = c.currentTime;
     if (!this.sir) { const o = c.createOscillator(), lfo = c.createOscillator(), lg = c.createGain(), g = c.createGain(); o.type = "square"; o.frequency.value = 760; lfo.frequency.value = .45; lg.gain.value = 260; lfo.connect(lg); lg.connect(o.frequency); const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1800; o.connect(lp); lp.connect(g); g.gain.value = 0; g.connect(this.sfx); o.start(); lfo.start(); this.sir = g; }
