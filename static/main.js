@@ -8,7 +8,7 @@ const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent 
 setLoad(15);
 const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
-const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }] = await Promise.all(["police", "race", "net", "nav"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }] = await Promise.all(["police", "race", "net", "nav", "vehicles"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -48,8 +48,10 @@ function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % 3]; W.
 let police, races, nav;
 const net = createNet();
 setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
-const game = createGame(W, car, sound, life, {
-  garage: () => openGarage(true), cycleTime, hornType: () => build.horn,
+// settings: graphics quality, look speed, auto gas, touch steering (kept on this device)
+const SET = Object.assign({ q: COARSE ? "medium" : "high", sens: 1, autogas: "off", steer: "stick" }, store.get("void.settings") || {});
+const gameOpts = {
+  garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
   mapExtra(mx, g, MM) {
@@ -58,11 +60,45 @@ const game = createGame(W, car, sound, life, {
     if (police) for (const c of police.cops) if (c.on) { const [a, b] = P(c.x, c.z); mx.fillStyle = Math.sin(performance.now() / 90) > 0 ? "#ff3040" : "#3060ff"; mx.beginPath(); mx.arc(a, b, 4, 0, 7); mx.fill(); }
     if (races && races.race && races.race.next) { const [a, b] = P(races.race.next[0], races.race.next[2]); mx.strokeStyle = "#ffd23d"; mx.lineWidth = 3; mx.beginPath(); mx.arc(a, b, 7, 0, 7); mx.stroke(); }
     for (const r of remotes.values()) if (r.at) { const [a, b] = P(r.at.x, r.at.z); mx.fillStyle = "#c07dff"; mx.beginPath(); mx.arc(a, b, 4.5, 0, 7); mx.fill(); }
+    mx.font = "bold 12px sans-serif"; mx.textAlign = "center"; for (const st of W.city.stations) { const [a, b] = P(st.x, st.z); if (Math.abs(a) < 90 && Math.abs(b) < 90) { mx.save(); mx.translate(a, b); mx.rotate(g.yaw + Math.PI / 2); mx.fillText("⛽", 0, 4); mx.restore(); } }
   },
-});
-// phones: the row of buttons folds into a menu behind "More", which closes again after a choice
-{ const more = document.getElementById("gMore"); more.onclick = () => { const on = !document.body.classList.contains("g-more"); document.body.classList.toggle("g-more", on); more.setAttribute("aria-expanded", on); };
-  document.querySelector(".g-btns").addEventListener("click", e => { const b = e.target.closest("button"); if (b && b.id !== "gMore") document.body.classList.remove("g-more"); }); }
+};
+const game = createGame(W, car, sound, life, gameOpts);
+const vehicles = createVehicles(scene, game.api, W); gameOpts.vehicles = vehicles;
+// ---------- the menu (☰ or Esc): everything that isn't driving lives here ----------
+const menuEl = document.getElementById("gMenu");
+function menu(open) {
+  if (open == null) open = menuEl.hidden;
+  menuEl.hidden = !open; document.body.classList.toggle("g-menu-open", open);
+  if (open && document.pointerLockElement) document.exitPointerLock();
+  if (!net.online()) game.pause(open);
+}
+document.getElementById("gMenuBtn").onclick = () => menu(true);
+document.getElementById("gMenuClose").onclick = () => menu(false);
+document.getElementById("gExit").onclick = () => { menu(false); go("home"); };
+menuEl.addEventListener("click", e => { const t = e.target.closest(".tile"); if (t && !t.closest(".set")) setTimeout(() => menu(false), 60); if (e.target === menuEl) menu(false); });
+menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.setVehicle(b.dataset.veh));
+document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
+function applySettings(save = true) {
+  for (const seg of menuEl.querySelectorAll(".seg[data-set]")) for (const b of seg.children) b.classList.toggle("on", SET[seg.dataset.set] === b.dataset.v);
+  document.getElementById("gSens").value = SET.sens; game.api.sens = +SET.sens;
+  document.body.classList.toggle("steer-buttons", SET.steer === "buttons");
+  const cap = W.setQuality(SET.q); perf.max = cap; perf.pr = Math.min(perf.pr, cap); if (renderer.getPixelRatio() > cap) { renderer.setPixelRatio(cap); composer.setPixelRatio(cap); lastW = 0; resize(); }
+  if (save) store.set("void.settings", SET);
+}
+menuEl.querySelectorAll(".seg[data-set]").forEach(seg => seg.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); SET[seg.dataset.set] = b.dataset.v; if (seg.dataset.set === "q") { perf.pr = W.QUALITY[b.dataset.v].pr; perf.down = 0; } applySettings(); }));
+document.getElementById("gSens").addEventListener("input", e => { SET.sens = +e.target.value; applySettings(); });
+// the touch joystick: drag the knob; left/right steers, up/down pitches when flying
+{
+  const st = document.getElementById("gStick"), knob = st.querySelector("i"); let id = null, cx = 0, cy = 0;
+  const set = (x, y) => { const r = st.clientWidth / 2 - 10, l = Math.min(1, Math.hypot(x, y) / r), a = Math.atan2(y, x), kx = Math.cos(a) * l * r, ky = Math.sin(a) * l * r; knob.style.transform = `translate(${kx}px, ${ky}px)`; game.api.setStick(kx / r, ky / r); };
+  st.addEventListener("pointerdown", e => { id = e.pointerId; const b = st.getBoundingClientRect(); cx = b.left + b.width / 2; cy = b.top + b.height / 2; try { st.setPointerCapture(id); } catch { } set(e.clientX - cx, e.clientY - cy); e.preventDefault(); });
+  st.addEventListener("pointermove", e => { if (e.pointerId === id) set(e.clientX - cx, e.clientY - cy); });
+  const end = e => { if (e.pointerId !== id) return; id = null; knob.style.transform = ""; game.api.setStick(0, 0); };
+  st.addEventListener("pointerup", end); st.addEventListener("pointercancel", end);
+}
+// headlights that light the road at night
+const heads = new THREE.SpotLight(0xfff1d6, 0, 70, .55, .6, 1.2); heads.position.set(2.2, .7, 0); heads.target.position.set(18, -1.5, 0); carRoot.add(heads, heads.target);
 police = createPolice(scene, game.api, sound, life);
 races = createRaces(scene, game.api, sound, W.canvasTex, net);
 nav = createNav(scene, game.api, W, ZONES, races.starts);
@@ -110,7 +146,7 @@ W.setTime(store.get("void.time") || "night");
 
 $("osmCredit").textContent = W.credit;
 // the garage: the Build panel over the game, the game paused underneath
-function openGarage(on) { document.body.classList.toggle("garage", on); game.pause(on); if (on && car.repair) { car.repair(); applyBuild(); } }
+function openGarage(on) { document.body.classList.toggle("garage", on); game.pause(on); if (on && car.repair) { car.repair(); applyBuild(); if (game.state) game.state.hp = 100; } }
 $("gGarageClose").onclick = () => openGarage(false);
 const nozzles = (car.nozzles || [[.9, .3, 1], [.9, .3, -1], [-.95, .38, 1], [-.95, .38, -1]]).map(([x, y, s]) => new THREE.Vector3(x, y - .5, s));
 
@@ -184,6 +220,7 @@ function go(next) {
 document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) { e.preventDefault(); go(b.dataset.go); } });
 $("exit").onclick = () => go("home");
 addEventListener("keydown", e => {
+  if (e.code === "Escape" && mode === "play" && !document.body.classList.contains("garage")) { menu(); return; }
   if (e.code === "Escape" && mode !== "home") go("home");
   if (mode === "watch") {
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
@@ -246,8 +283,26 @@ function showroom(dt, time) {
 
 // ---------- per frame ----------
 const clock = new THREE.Clock();
+let lastGauge = 0;
+// the speedometer: a dial with a glowing arc, the speed, the gear (or altitude when flying) and what you're in
+const gauge = document.getElementById("gGauge"), gx = gauge.getContext("2d");
+function drawGauge(S) {
+  const W2 = gauge.width, c = W2 / 2, r = c - 22, a0 = Math.PI * .75, a1 = Math.PI * 2.25, max = S.veh === "plane" ? 600 : S.veh === "boat" ? 140 : 360, f = Math.min(1, S.speed / max);
+  gx.clearRect(0, 0, W2, W2);
+  gx.beginPath(); gx.arc(c, c, r + 14, 0, 7); gx.fillStyle = "rgba(6,8,14,.62)"; gx.fill();
+  gx.lineCap = "round"; gx.lineWidth = 14; gx.beginPath(); gx.arc(c, c, r, a0, a1); gx.strokeStyle = "rgba(255,255,255,.12)"; gx.stroke();
+  const grd = gx.createLinearGradient(0, W2, W2, 0); grd.addColorStop(0, "#3df5ff"); grd.addColorStop(.6, "#ffffff"); grd.addColorStop(1, "#ff2a3a");
+  gx.beginPath(); gx.arc(c, c, r, a0, a0 + (a1 - a0) * f); gx.strokeStyle = grd; gx.shadowColor = "#3df5ff"; gx.shadowBlur = 16; gx.stroke(); gx.shadowBlur = 0;
+  gx.lineWidth = 2; gx.strokeStyle = "rgba(255,255,255,.5)"; for (let k = 0; k <= 12; k++) { const a = a0 + (a1 - a0) * k / 12, i = r - 18, o = r - (k % 3 ? 24 : 30); gx.beginPath(); gx.moveTo(c + Math.cos(a) * i, c + Math.sin(a) * i); gx.lineTo(c + Math.cos(a) * o, c + Math.sin(a) * o); gx.stroke(); }
+  gx.fillStyle = "#fff"; gx.textAlign = "center"; gx.font = `900 ${W2 * .22}px Unbounded, Inter, sans-serif`; gx.fillText(Math.round(S.speed), c, c + W2 * .06);
+  gx.font = `700 ${W2 * .055}px Inter, sans-serif`; gx.fillStyle = "rgba(255,255,255,.6)"; gx.fillText("KM/H", c, c + W2 * .14);
+  gx.font = `800 ${W2 * .07}px Unbounded, Inter, sans-serif`; gx.fillStyle = S.air ? "#3df5ff" : "#ffd23d";
+  gx.fillText(S.air || S.veh === "plane" || S.veh === "heli" ? `${Math.round(S.alt)} m` : S.veh === "boat" ? "BOAT" : `GEAR ${S.gear}`, c, c + W2 * .3);
+  if (S.nitro > .1) { gx.font = `800 ${W2 * .05}px Inter, sans-serif`; gx.fillStyle = "#3df5ff"; gx.fillText("NITRO", c, c - W2 * .16); }
+}
 let wasWrecked = false, wreckPose = null; const wrecks = [];
-const perf = { t: 0, n: 0, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio() };
+const perf = { t: 0, n: 0, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio(), down: 0 };
+applySettings();
 let lastHud = 0, prevGear = 1, feedFlip = 0;
 function frameLoop(fixed) {
   const raw = fixed ? 0 : clock.getDelta(), dt = fixed || Math.min(.05, raw), time = clock.elapsedTime;
@@ -257,6 +312,9 @@ function frameLoop(fixed) {
     if (perf.t > 1.5) {
       const avg = perf.t / perf.n, was = perf.pr;
       if (avg > 1 / 45 && perf.pr > .6) perf.pr = Math.max(.6, perf.pr - (avg > 1 / 25 ? .25 : .12));
+      else if (avg > 1 / 40 && mode === "play" && ++perf.down >= 3 && SET.q !== "low") {      // still slow at the lowest resolution: drop a quality level
+        perf.down = 0; SET.q = { ultra: "high", high: "medium", medium: "low" }[SET.q]; perf.pr = W.QUALITY[SET.q].pr; applySettings(false); toast(`Graphics set to ${SET.q} to keep it smooth`);
+      }
       else if (avg < 1 / 58 && perf.pr < perf.max) perf.pr = Math.min(perf.max, perf.pr + .08);
       if (perf.pr !== was) { renderer.setPixelRatio(perf.pr); composer.setPixelRatio(perf.pr); lastW = 0; resize(); }
       perf.t = perf.n = 0;
@@ -300,11 +358,20 @@ function frameLoop(fixed) {
       if (d < 3.4 && d > .01 && Math.abs(st.y - at.y) < 2) { st.x += dx / d * (3.4 - d) * .5; st.z += dz / d * (3.4 - d) * .5; st.vel.multiplyScalar(.9); }
     }
   } else { for (const r of remotes.values()) r.root.visible = false; net.tick(dt, null); }     // the host keeps relaying from the menus
-  W.city.update(time);
+  W.city.update(time, camera.position);
   W.follow(S.pos);
   if (mode !== "watch") $("fade").style.opacity = "";
 
-  // the car
+  // the car, or the plane / helicopter / boat
+  const veh = mode === "play" ? S.veh || "car" : "car";
+  carRoot.visible = veh === "car";
+  vehicles.show(veh === "car" ? null : veh, S.pos, S.quat, S, time, dt);
+  if (S.splash) for (let k = 0; k < 6; k++) { const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(S.pos).add(new THREE.Vector3((Math.random() - .5) * 3, .3, (Math.random() - .5) * 3)); pf.life = 1; pf.s.visible = true; pf.grow = .8; pf.s.scale.setScalar(.8); pf.s.material.color.set(0xeaf6ff); pf.v.set((Math.random() - .5) * 6, 4 + Math.random() * 4, (Math.random() - .5) * 6); }
+  if (veh === "boat" && S.speed > 12 && Math.random() < .6) { const back = new THREE.Vector3(-3.6, .1, (Math.random() - .5) * 2).applyQuaternion(S.quat).add(S.pos); const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(back); pf.life = 1; pf.s.visible = true; pf.grow = .5; pf.s.scale.setScalar(.5); pf.s.material.color.set(0xf4fbff); pf.v.set((Math.random() - .5) * 2, .6, (Math.random() - .5) * 2); }
+  const night = W.timeOfDay !== "day";
+  heads.intensity = night && veh === "car" ? (W.timeOfDay === "night" ? 260 : 120) : 0;
+  W.sky.position.copy(camera.position); W.grade.uniforms.time.value = time % 100;
+  if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat);
   car.setReveal(S.reveal);
   car.setThrust(S.thrust.power, S.thrust.angle, S.thrust.deploy, time);
@@ -328,7 +395,7 @@ function frameLoop(fixed) {
 
   // shadow, underglow, exhaust, speed lines
   const fr = S.fr, ground = clamp(1 - S.pos.y / 3) * (fr.u.y > .8 ? 1 : 0);
-  fx.shadow.position.set(S.pos.x, S.pos.y > .5 ? .07 : S.pos.y + .07, S.pos.z); fx.shadow.material.opacity = ground; fx.shadow.rotation.z = Math.atan2(-fr.f.z, fr.f.x);
+  fx.shadow.position.set(S.pos.x, S.pos.y > .5 ? .07 : S.pos.y + .07, S.pos.z); fx.shadow.material.opacity = veh === "car" ? ground : 0; fx.shadow.rotation.z = Math.atan2(-fr.f.z, fr.f.x);
   const glowOn = !!OPTS.glow.items[build.glow][1];
   fx.glow.position.copy(fx.shadow.position).y += .01; fx.glow.rotation.z = fx.shadow.rotation.z; fx.glow.material.opacity = glowOn ? ground * .85 : 0;
   if (S.thrust.power > .3) for (const n of nozzles) if (Math.random() < .18) {

@@ -136,7 +136,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const nearR = (x, z, r) => { const out = new Set(); for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) for (let cz = Math.floor((z - r) / CELL); cz <= Math.floor((z + r) / CELL); cz++) for (const b of hash.get(cx * 10007 + cz) || []) out.add(b); return [...out]; };
 
   // instanced props, gathered as lists then placed at the end
-  const P = { trees: [], lamps: [], hydrants: [], towers: [], subway: [], aviation: [], helipads: [], benches: [], burgers: [], pizzas: [], signs: [], awn: [], stoops: [], bins: [] };
+  const P = { acs: [], trees: [], lamps: [], hydrants: [], towers: [], subway: [], aviation: [], helipads: [], benches: [], burgers: [], pizzas: [], signs: [], awn: [], stoops: [], bins: [] };
 
   // ---- ground: grass everywhere, asphalt under the grid, sidewalks on every block ----
   // land: Manhattan between the rivers, New Jersey west of the Hudson, Brooklyn east of the East River (the rivers are gaps)
@@ -255,6 +255,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     walls(o, x0, x1, z0, z1, 4.5, h); top(roofB, x0, x1, z0, z1, h); walls(trimB, x0 - .35, x1 + .35, z0 - .35, z1 + .35, h - .7, h + .5);
     solid(x0, x1, z0, z1, h + .5);
     if (rnd() < .65) P.towers.push([x0 + (x1 - x0) * range(.25, .75), h + .5, z0 + (z1 - z0) * range(.25, .75), range(.85, 1.15)]);
+    for (let k = 0, n = 1 + Math.floor(rnd() * 3); k < n; k++) P.acs.push([range(x0 + 2, x1 - 2), h, range(z0 + 2, z1 - 2), rnd() * 3]);
     footprints.push([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]);
   };
   const brownstones = (x0, x1, zEdge, side) => {                            // a row along a street: side +1 = the row faces +z
@@ -338,7 +339,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     }
     g.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
   })();
-  const waterMat = new THREE.MeshPhysicalMaterial({ color: 0x1d5268, roughness: .08, metalness: .1, normalMap: waveTex, normalScale: new THREE.Vector2(.45, .45), clearcoat: 1, clearcoatRoughness: .08, envMapIntensity: 1.3 });
+  const waterMat = new THREE.MeshPhysicalMaterial({ color: 0x1f6fa8, roughness: .05, metalness: .05, normalMap: waveTex, normalScale: new THREE.Vector2(.35, .35), clearcoat: 1, clearcoatRoughness: .04, clearcoatNormalMap: waveTex, clearcoatNormalScale: new THREE.Vector2(.6, .6), sheen: .3, sheenColor: new THREE.Color(0x7fd4ff), envMapIntensity: 1.6, ior: 1.33, specularIntensity: 1 });
   waveTex.repeat.set(60, 400);
   glassMats.push(waterMat);
   const water = waterMat;
@@ -349,7 +350,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(2, 3.2, 40000).translate(x - side * 1, -1.45, 0), bank); scene.add(wall);
     const f = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 40000).rotateX(-Math.PI / 2), foam); f.position.set(x + side * 1.25, WATER_Y + .02, 0); scene.add(f);
   }
-  for (let k = 0; k < 500; k++) P.trees.push([range(HW0 - 900, HW0 - 20), range(-1500, 1500), range(.8, 1.4)]);
+  for (let k = 0; k < 500; k++) { const z = range(-1500, 1500); if (Math.abs(z) < 40 || Math.abs(z - 60) < 20) continue; P.trees.push([range(HW0 - 900, HW0 - 20), z, range(.8, 1.4)]); }   // (none on the runway)
   for (const [a, b] of [[W1, XA - 9], [XB + 9, W2]]) slab(walkG, a, b, ZA - 200, ZB + 200, .04);
   for (let z = ZA; z <= ZB; z += 140) { const pier = new THREE.Mesh(new THREE.BoxGeometry(80, 1.2, 16).translate(W1 - 40, -.55, z), mat({ color: 0x6b6258, roughness: .9 })); scene.add(pier); P.lamps.push([W1 - 78, z + 7, 0]); }
   {   // the bridge: a deck at road level, two stone towers, cables
@@ -364,6 +365,30 @@ export async function buildCity(scene, canvasTex, COARSE) {
   lakeM.material = waterMat;
   { const shore = new THREE.Mesh(new THREE.RingGeometry(1, 1.06, 64).rotateX(-Math.PI / 2), mat({ color: 0xa89a80, roughness: .95 })); shore.scale.set(lake.rx, 1, lake.rz); shore.position.set(lake.x, .12, lake.z); scene.add(shore); }
   const brooklyn = W2 + 700;
+  const stations = [];
+  {
+    const xW = (W1 + XA - 9) / 2, xE = (XB + 9 + W2) / 2;
+    const spots = [[xW, -560], [xW, -140], [xW, 280], [xW, 560], [xE, -420], [xE, 140], [xE, 490], [-2560, 60], [brooklyn + 60, -60]];
+    const pad = mat({ color: 0x6b6d72, roughness: .8 }), canopyM = mat({ color: 0xf2f2f2, roughness: .5 }), redM = mat({ color: 0xc1121f, roughness: .4 }), pumpM = mat({ color: 0x1b1c20, roughness: .5, metalness: .3 });
+    const under = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff6e0).multiplyScalar(1.6), toneMapped: false }); emissive.push(under);
+    const greenM = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dff8a).multiplyScalar(1.4), toneMapped: false, transparent: true, opacity: .5 });
+    const signT = canvasTex(256, 512, (g, w, h) => { g.fillStyle = "#c1121f"; g.fillRect(0, 0, w, h); g.fillStyle = "#fff"; g.textAlign = "center"; g.font = "900 120px sans-serif"; g.fillText("⛽", w / 2, 150); g.font = "900 52px Unbounded, Impact, sans-serif"; g.fillText("FUEL", w / 2, 250); g.fillText("REPAIR", w / 2, 320); g.font = "700 40px Inter, sans-serif"; g.fillText("VOID GAS", w / 2, 420); });
+    const parts = { pad: [], canopy: [], red: [], pump: [], under: [], green: [] };
+    const put = (k, geo, x, y, z) => parts[k].push(geo.toNonIndexed ? geo.translate(x, y, z) : geo);
+    for (const [x, z] of spots) {
+      stations.push({ x, z, r: 15 });
+      put("pad", new THREE.BoxGeometry(34, .1, 26), x, .06, z);
+      put("canopy", new THREE.BoxGeometry(22, .8, 14), x, 6, z); put("red", new THREE.BoxGeometry(22.2, .35, 14.2), x, 5.55, z); put("under", new THREE.PlaneGeometry(20, 12).rotateX(Math.PI / 2), x, 5.58, z);
+      for (const dx of [-9, 9]) for (const dz of [-5.5, 5.5]) put("canopy", new THREE.BoxGeometry(.5, 5.6, .5), x + dx, 2.8, z + dz);
+      for (const dx of [-4, 4]) { put("pump", new THREE.BoxGeometry(1, 1.8, .7), x + dx, .95, z); put("red", new THREE.BoxGeometry(1.05, .3, .75), x + dx, 1.7, z); }
+      put("green", new THREE.PlaneGeometry(8, 10).rotateX(-Math.PI / 2), x + 13, .12, z);       // the repair bay
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(4, 8), new THREE.MeshBasicMaterial({ map: signT, toneMapped: false, side: THREE.DoubleSide })); sign.position.set(x - 15, 6, z + 11); scene.add(sign);
+      put("pump", new THREE.BoxGeometry(.4, 4, .4), x - 15, 2, z + 11);
+      solid(x - 15.3, x - 14.7, z + 10.7, z + 11.3, 10);
+    }
+    const mk = (k, m) => { const list = parts[k].map(g => { const n = g.index ? g.toNonIndexed() : g; for (const a of Object.keys(n.attributes)) if (a !== "position" && a !== "normal") n.deleteAttribute(a); return n; }); scene.add(new THREE.Mesh(mergeGeometries(list), m)); };
+    mk("pad", pad); mk("canopy", canopyM); mk("red", redM); mk("pump", pumpM); mk("under", under); mk("green", greenM);
+  }
   for (let k = 0; k < 90; k++) { const x = range(brooklyn + 20, brooklyn + 800), z = range(-600, 600); if (Math.abs(z) < 20) continue; const w = range(8, 18), d = range(8, 18), h = range(6, 20); walkup(x, x + w, z, z + d, Math.max(1, Math.round((h - 4.5) / 3.2)), []); }
   for (let k = 0; k < 300; k++) P.trees.push([range(brooklyn, brooklyn + 900), range(-700, 700), range(.7, 1.2)]);
   for (let k = 0; k < (COARSE ? 400 : 900); k++) { const x = range(XA - 40, XB + 40), z = pick([range(ZB + 20, ZB + 600), range(ZA - 600, ZA - 20)]); P.trees.push([x, z, range(.8, 1.4)]); }
@@ -407,17 +432,20 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const signMat = new THREE.MeshBasicMaterial({ map: signAtlas, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) }); emissive.push(signMat);
   { const tiles = new Map(); for (const g of signGeo) { const p0 = g.attributes.position, k = tileOf(p0.getX(0), p0.getZ(0)); if (!tiles.has(k)) tiles.set(k, []); tiles.get(k).push(g); } for (const list of tiles.values()) scene.add(new THREE.Mesh(mergeGeometries(list), signMat)); }
 
-  const instT = (geo, material, list, place, colorOf) => {
-    const groups = new Map();
-    list.forEach((it, i) => { place(it, i); const e = m4.elements, k = tileOf(e[12], e[14]); let gr = groups.get(k); if (!gr) groups.set(k, gr = []); gr.push([m4.clone(), colorOf ? colorOf(it, i) : null]); });
-    for (const arr of groups.values()) { const mesh = new THREE.InstancedMesh(geo, material, arr.length); arr.forEach(([m, c], j) => { mesh.setMatrixAt(j, m); if (c) mesh.setColorAt(j, c); }); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); scene.add(mesh); }
+  // small props go in 200 m tiles and are only drawn near the camera (trees a little further)
+  const propTiles = [];
+  const instT = (geo, material, list, place, colorOf, far = 330) => {
+    const groups = new Map(), PT = 200;
+    list.forEach((it, i) => { place(it, i); const e = m4.elements, k = Math.floor(e[12] / PT) * 1000 + Math.floor(e[14] / PT); let gr = groups.get(k); if (!gr) groups.set(k, gr = []); gr.push([m4.clone(), colorOf ? colorOf(it, i) : null]); });
+    for (const [k, arr] of groups) { const mesh = new THREE.InstancedMesh(geo, material, arr.length); arr.forEach(([m, c], j) => { mesh.setMatrixAt(j, m); if (c) mesh.setColorAt(j, c); }); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); scene.add(mesh);
+      propTiles.push({ mesh, x: (Math.floor(k / 1000) + .5) * PT, z: (((k % 1000) + 1000) % 1000 + .5) * PT, far }); }
   };
   const inst = (geo, material, list, place) => { const mesh = new THREE.InstancedMesh(geo, material, Math.max(1, list.length)); list.forEach((it, i) => { place(it, i); mesh.setMatrixAt(i, m4); }); mesh.instanceMatrix.needsUpdate = true; if (list.length) scene.add(mesh); return mesh; };
   const at = (x, y, z, ry = 0, s = 1) => m4.compose(v.set(x, y, z), q0.setFromAxisAngle(Y, ry), sc.set(s, s, s));
   // trees: a trunk and two leafy blobs, each a little different green
-  instT(new THREE.CylinderGeometry(.18, .28, 3, 5).translate(0, 1.5, 0), mat({ color: 0x5a4330, roughness: .9 }), P.trees, ([x, z, s]) => at(x, 0, z, 0, s));
+  instT(new THREE.CylinderGeometry(.18, .28, 3, 5).translate(0, 1.5, 0), mat({ color: 0x5a4330, roughness: .9 }), P.trees, ([x, z, s]) => at(x, 0, z, 0, s), null, 520);
   const leafGeo = mergeGeometries([new THREE.IcosahedronGeometry(2.2, 0).translate(0, 4.4, 0), new THREE.IcosahedronGeometry(1.7, 0).translate(.8, 5.8, .3), new THREE.IcosahedronGeometry(1.5, 0).translate(-.9, 5.3, -.4)].map(g => g.toNonIndexed()));
-  instT(leafGeo, mat({ roughness: .85, flatShading: true }), P.trees, ([x, z, s], i) => at(x, 0, z, i, s), () => new THREE.Color().setHSL(.26 + rnd() * .08, .45 + rnd() * .2, .26 + rnd() * .12));
+  instT(leafGeo, mat({ roughness: .85, flatShading: true }), P.trees, ([x, z, s], i) => at(x, 0, z, i, s), () => new THREE.Color().setHSL(.26 + rnd() * .08, .45 + rnd() * .2, .26 + rnd() * .12), 520);
   // street lamps: a pole, an arm and a warm head
   const lampHead = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffcf8a).multiplyScalar(2.4), toneMapped: false }); emissive.push(lampHead); lampHead.userData.glow = 2.4; lampHead.userData.base = new THREE.Color(0xffcf8a);
   instT(mergeGeometries([new THREE.CylinderGeometry(.1, .14, 8, 6).translate(0, 4, 0), new THREE.BoxGeometry(.1, .1, 2).translate(0, 7.9, 1)].map(g => g.toNonIndexed())), darkM, P.lamps, ([x, z, ry]) => at(x, 0, z, ry));
@@ -427,6 +455,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   // NYC water towers: wooden barrel, cone roof, steel legs
   const towerGeo = mergeGeometries([new THREE.CylinderGeometry(2.4, 2.4, 4.5, 14).translate(0, 4.7, 0), new THREE.ConeGeometry(2.6, 1.6, 14).translate(0, 7.75, 0),
     ...[[1.5, 1.5], [-1.5, 1.5], [1.5, -1.5], [-1.5, -1.5]].map(([a, b]) => new THREE.CylinderGeometry(.12, .12, 2.5, 4).translate(a, 1.25, b))].map(g => g.toNonIndexed()));
+  instT(new THREE.BoxGeometry(1.4, .9, 1).translate(0, .45, 0), mat({ color: 0xb8bcc2, roughness: .6, metalness: .4 }), P.acs, ([x, y, z, r]) => at(x, y, z, r));
   instT(towerGeo, mat({ color: 0x6e5238, roughness: .9 }), P.towers, ([x, y, z, s]) => at(x, y, z, 0, s));
   P.towers.forEach(([x, y, z, s]) => solid(x - 2.4 * s, x + 2.4 * s, z - 2.4 * s, z + 2.4 * s, y + 8.5 * s));
   // subway entrances: green railings, two green globes, a dark stair
@@ -487,12 +516,12 @@ export async function buildCity(scene, canvasTex, COARSE) {
   };
   setLights(0);
 
-  const helipads = P.helipads;
+  const helipads = P.helipads; let cullN = 0;
   return {
     buildings, footprints, roads, parks: [[[PX0, PZ0], [PX1, PZ0], [PX1, PZ1], [PX0, PZ1]]], water: [[[HW0, -9000], [W1, -9000], [W1, 9000], [HW0, 9000]], [[W2, -9000], [EW1, -9000], [EW1, 9000], [W2, 9000]], Array.from({ length: 24 }, (_, k) => [lake.x + Math.cos(k / 24 * 6.283) * lake.rx, lake.z + Math.sin(k / 24 * 6.283) * lake.rz])],
     WATER_Y, rivers: { hudson: [HW0, W1], east: [W2, EW1] },
     beaches: [], walkways: [], bounds: { x0: XA - 220, x1: brooklyn + 300, z0: ZA - 160, z1: ZB + 160 }, credit: "a made-up city in code",
-    near, nearR, nearFast, helipads, lawn, lake, emissive, glassMats, billboards,
+    near, nearR, nearFast, helipads, lawn, lake, stations, emissive, glassMats, billboards,
     // ground under a point: rooftops count (so you can land and drive on them), water is -1
     roofAt(x, z) { let h = 0; for (const b of near(x, z)) if (Math.abs(x - b.x) < b.hw && Math.abs(z - b.z) < b.hd && b.h > h) h = b.h; return h; },
     isWater(x, z) {
@@ -500,8 +529,9 @@ export async function buildCity(scene, canvasTex, COARSE) {
       if (x > W2 && x < EW1) return Math.abs(z) > 15;                                               // the East River, except on the bridge
       return ((x - lake.x) / lake.rx) ** 2 + ((z - lake.z) / lake.rz) ** 2 < 1;
     },
-    update(t) {
+    update(t, cam) {
       setLights(t);
+      if (cam && (++cullN % 10) === 0) { const far = 1 + Math.max(0, cam.y - 20) / 60; for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 141; }
       waveTex.offset.set((t * .004) % 1, (t * .011) % 1);
       avMat.opacity = Math.sin(t * 3) > 0 ? 1 : .15;
       billboards.forEach((b, k) => { b.material.color.setScalar(1.15 + .25 * Math.sin(t * 2 + k)); });

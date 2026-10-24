@@ -19,6 +19,8 @@ export function createGame(W, car, sound, life, opts = {}) {
     Space: "up", KeyE: "up", KeyQ: "down", ControlLeft: "down", ShiftLeft: "nitro", ShiftRight: "nitro", KeyN: "nitro", KeyX: "drift" };
   let g = null, view = "chase", active = false, paused = false, photo = false;
   const rig = { yaw: null, dist: 7 };
+  const api0 = { sens: 1 };
+  const stick = { x: 0, y: 0 };
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), orbit = { yaw: 0, pitch: 0, drag: false, x: 0, y: 0, t: 0 };
   const LOOP_X = T.P[T.loopIn].x;
   const gp = { steer: 0, gas: 0, brake: 0, pitch: 0, on: false, prev: {} };
@@ -48,7 +50,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   // on a phone drag anywhere on the screen that isn't a button. The camera stays where you put it, and only drifts
   // back behind the car after a few seconds of fast driving without looking around.
   const gl = $("gl"), touches = new Map();
-  const look = (dx, dy, k = 1) => { orbit.yaw += dx * .0042 * k; orbit.pitch = clamp(orbit.pitch + dy * .0032 * k, -.35, 1.15); orbit.t = 3; };
+  const look = (dx, dy, k = 1) => { k *= api0.sens || 1; orbit.yaw += dx * .0042 * k; orbit.pitch = clamp(orbit.pitch + dy * .0032 * k, -.35, 1.15); orbit.t = 3; };
   gl.addEventListener("pointerdown", e => {
     if (!active) return;
     if (e.pointerType === "mouse") { if (!document.pointerLockElement && !photo) { try { gl.requestPointerLock(); } catch { } } else { orbit.drag = true; orbit.x = e.clientX; orbit.y = e.clientY; } return; }
@@ -113,7 +115,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   function spawn(at) {
     const s = at || SPAWN; rig.yaw = null;
     Object.assign(g, { mode: "drive", x: s.x, z: s.z, y: s.y || 0, yaw: s.yaw, vel: new THREE.Vector3(), pitch: 0, roll: 0, steer: 0, wings: 0, thr: 0, ang: 0, gForce: 1, d: 0, hover: false, landing: false, wreck: 0, boom: 0,
-      hp: 100, hurtT: 9, impacts: [], fresh: true, airT: 0, drift: 0, driftT: 0, nitro: g.nitro ?? 1, nitroOn: 0, stall: 0, sparks: 0 });
+      hp: 100, hurtT: 9, impacts: [], fresh: true, fuel: 1, veh: "car", airT: 0, drift: 0, driftT: 0, nitro: g.nitro ?? 1, nitroOn: 0, stall: 0, sparks: 0 });
   }
   function start() {
     g = { score: 0, started: false, last: { ...SPAWN }, msg: "", msgT: 0, done: new Set(), combo: 1, comboT: 0, smashed: 0, near: new Map(), rings: 0, nitro: 1 };
@@ -141,6 +143,8 @@ export function createGame(W, car, sound, life, opts = {}) {
     else if (g.mode === "air") { g.landing = !g.landing; if (!g.landing) g.hover = true; say(g.landing ? "Coming down gently" : "Flying"); }
   }
   function wreck(why) { g.wreck = 2.6; g.boom = 1; g.vel.set(0, 0, 0); say(why + ". Respawning…", 2.6); sound.crash(); }
+  // into the water: a splash, the car sinks, and you're put back on the last bit of road (no explosion, no wreck)
+  function splash() { const lake = Math.hypot(g.x - city.lake.x, g.z - city.lake.z) < 120; g.sink = 1.6; g.splashT = 1; g.mode = "drive"; say(lake ? "Splash! That's the park lake" : "Splash! You drove into the river", 2.2); sound.crash(); }
   function reset() { if (!g || !g.started || g.wreck > 0) return; spawn({ ...g.last }); say("Back on the road", 1.5); }
   function horn() { sound.horn && sound.horn(opts.hornType ? opts.hornType() : 0); life && life.honk(g.x, g.z); }
 
@@ -190,24 +194,78 @@ export function createGame(W, car, sound, life, opts = {}) {
     }
   }
 
+  // ---- fuel stations and repair: stop on a station (or a helipad, the runway apron, a pier end for boats) to fill up and fix
+  // the car; green wrench pickups round the city heal 40 at a drive-through ----
+  const pickups = [];
+  {
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dff8a).multiplyScalar(1.8), toneMapped: false });
+    const geo = new THREE.TorusGeometry(1.1, .12, 8, 28), cross = new THREE.BoxGeometry(.3, 1.2, .3), cross2 = new THREE.BoxGeometry(1.2, .3, .3);
+    let sd = 21; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    for (let k = 0; k < 26; k++) {
+      const x = -960 + Math.floor(rr() * 13) * 160 + (rr() < .5 ? 40 : -40), z = -700 + Math.floor(rr() * 21) * 70;
+      if (city.isWater(x, z) || hitBox(x, z, .5, 2)) continue;
+      const g0 = new THREE.Group(); g0.add(new THREE.Mesh(geo, mat), new THREE.Mesh(cross, mat), new THREE.Mesh(cross2, mat)); g0.position.set(x, 1.6, z); W.scene.add(g0);
+      pickups.push({ g: g0, x, z, t: 0 });
+    }
+  }
+  const refuelSpots = () => [...city.stations.map(s => ({ x: s.x, z: s.z, r: s.r })), ...ZONES.filter(z => z.y).map(z => ({ x: z.x, z: z.z, r: z.r || 10, y: z.y })), { x: -2590, z: 0, r: 30 }];
+  let spots = null;
+  function service(dt) {
+    spots = spots || refuelSpots();
+    const sp = Math.hypot(g.vel.x, g.vel.z), out = [];
+    let at = spots.find(s => Math.hypot(g.x - s.x, g.z - s.z) < s.r && Math.abs(g.y - (s.y || 0)) < 3);
+    if (!at && g.veh === "boat") { const zs = ((g.z + 700) % 140 + 140) % 140; if (g.x < -1040 && g.x > -1110 && (zs < 14 || zs > 126)) at = { pier: true }; }
+    if (at && sp < 4) {
+      if (g.fuel < .995) { g.fuel = Math.min(1, g.fuel + dt * .25); out.push(`⛽ Refueling ${Math.round(g.fuel * 100)}%`); }
+      if (g.hp < 100) { g.hp = Math.min(100, g.hp + dt * 30); out.push(`🔧 Repairing ${Math.round(g.hp)}%`); if (g.hp >= 100) opts.onRepair && opts.onRepair(); }
+      if (out.length) { g.msg = out.join("  ·  "); g.msgT = .3; }
+    }
+    for (const p of pickups) {
+      if (p.t > 0) { p.t -= dt; p.g.visible = p.t <= 0; continue; }
+      p.g.rotation.y += dt * 2; p.g.position.y = 1.6 + Math.sin(performance.now() / 300 + p.x) * .2;
+      if (Math.hypot(g.x - p.x, g.z - p.z) < 4 && g.y < 4) { p.t = 60; p.g.visible = false; g.hp = Math.min(100, g.hp + 40); addScore(50, "🔧 Repair +40", true); sound.win(); }
+    }
+  }
+  function setVehicle(type) {
+    if (!opts.vehicles || g.wreck > 0) return;
+    if (type === "car") { if (g.veh !== "car") { const l = g.last; Object.assign(g, { x: l.x, z: l.z, y: 0, yaw: l.yaw, mode: "drive", pitch: 0, roll: 0 }); g.vel.set(0, 0, 0); } }
+    else opts.vehicles.spawn(g, type);
+    g.veh = type; g.mode = type === "car" ? g.mode : g.y > 1 && type !== "boat" ? "air" : "drive"; rig.yaw = null;
+    say({ car: "Back in the car", plane: "Plane: W/S throttle, Space/Q pitch, A/D bank. Take off down the runway", heli: "Helicopter: Space up, Q down, W/S forward/back, A/D turn", boat: "Speedboat: W/S throttle, A/D steer. Stay on the water" }[type], 5);
+  }
   function step(dt) {
     if (g.msgT > 0) g.msgT -= dt;
     if (g.comboT > 0) g.comboT -= dt; else g.combo = 1;
     if (g.wreck > 0) { g.wreck -= dt; g.boom = Math.max(0, g.boom - dt * .8); if (g.wreck <= 0) { spawn(g.last); } return; }
+    if (g.sink > 0) { g.sink -= dt; g.y -= dt * 1.4; g.vel.multiplyScalar(Math.pow(.15, dt)); g.x += g.vel.x * dt; g.z += g.vel.z * dt; if (g.sink <= 0) { const keep = g.score; spawn(g.last); g.score = keep; say("Back on the road", 2); } return; }
     if (g.frozen > 0) { g.frozen -= dt; g.vel.set(0, 0, 0); return; }
     g.hurtT += dt; if (g.hurtT > 7 && g.hp < 100) g.hp = Math.min(100, g.hp + dt * 2);
     g.shake = Math.max(0, (g.shake || 0) - dt * 2); g.sparks = Math.max(0, g.sparks - dt * 2);
-    let turn = clamp((held("right") ? 1 : 0) - (held("left") ? 1 : 0) + gp.steer, -1, 1);
+    let turn = clamp((held("right") ? 1 : 0) - (held("left") ? 1 : 0) + gp.steer + stick.x, -1, 1);
     let gas = Math.max(held("gas") ? 1 : 0, gp.gas), brake = Math.max(held("brake") ? 1 : 0, gp.brake);
+    if (opts.autoGas && opts.autoGas() && !brake && g.mode === "drive") gas = 1;
     const touched = turn !== 0 || gas > 0 || brake > 0 || held("up") || held("down");
     const ap = opts.autopilot ? opts.autopilot(g, dt, touched && g.apT > .5) : null;
     g.apT = ap ? (g.apT || 0) + dt : 0;
     if (ap) { turn = ap.turn || 0; gas = ap.gas || 0; brake = ap.brake || 0; }
     g.ap = ap;
-    const wantNitro = held("nitro") && g.nitro > .02;
+    // fuel: about 10 minutes of driving, 5 of flying; empty and the engine (and thrusters) stop
+    const flying = g.mode === "air";
+    if (gas || flying || Math.hypot(g.vel.x, g.vel.z) > 1 || (g.thr > .05 && g.veh !== "car")) g.fuel = Math.max(0, g.fuel - dt / (flying ? 300 : 600));
+    if (g.fuel <= 0) { gas = 0; if (!g.fuelMsg) { g.fuelMsg = 1; say("Out of fuel! Coast to a ⛽ station (GPS has the nearest)", 5); } }
+    else if (g.fuel < .15 && g.fuelMsg !== 2 && g.fuel > 0) { g.fuelMsg = 2; say("Low fuel: find a ⛽ station", 4); }
+    if (g.fuel > .2) g.fuelMsg = 0;
+    service(dt);
+    const wantNitro = held("nitro") && g.nitro > .02 && g.fuel > 0;
     g.nitroOn = lerp(g.nitroOn, wantNitro ? 1 : 0, clamp(dt * 8));
     if (wantNitro) g.nitro = Math.max(0, g.nitro - dt / 5); else g.nitro = Math.min(1, g.nitro + dt / 14);
 
+    if (g.veh && g.veh !== "car" && opts.vehicles) {
+      const I = { turn, gas, brake, up: g.fuel > 0 && (g.ap ? g.ap.up : held("up")) ? 1 : 0, down: (g.ap ? g.ap.down : held("down")) ? 1 : 0, nitro: g.nitroOn > .3, stickY: -stick.y };
+      opts.vehicles.step(g, I, dt);
+      if (g.veh === "boat" || g.mode === "drive") traffic(dt);
+      return;
+    }
     if (g.mode === "drive") {
       // ---- the road: a bicycle model with tyre grip, so it slides when you ask it to ----
       const hand = !g.ap && (held("drift") || held("up"));
@@ -243,7 +301,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         const imp = -vn; impact(g.x - hit.nx * 1.3, .6, g.z - hit.nz * 1.3, imp * 1.5); if (imp > 9) { hurt((imp - 9) * 1.8, "Hit a building"); sound.crash(); g.sparks = 1; } else if (imp > 2) sound.pop();
       } else { g.x = nx; g.z = nz; }
       const gr = groundAt(g.x, g.z, g.y), prevY = g.y;
-      if (gr.water) { wreck("Drove into the river"); return; }
+      if (gr.water) { splash(); return; }
       if (gr.ramp) {
         g.y = gr.h; g.pitch = Math.atan(gr.ramp.slope) * Math.cos(g.yaw - gr.ramp.r.yaw);
         // off the lip fast and you fly
@@ -275,15 +333,19 @@ export function createGame(W, car, sound, life, opts = {}) {
 
     // ---- the air: thrusters for hovering, wings with lift and drag for flying ----
     g.airT += dt;
-    const up = g.ap ? (g.ap.up || 0) : held("up") ? 1 : 0, down = g.ap ? (g.ap.down || 0) : (held("down") ? 1 : 0), pitchCmd = clamp(up - down + (g.ap ? 0 : gp.pitch), -1, 1);
+    const up = g.fuel > 0 && (g.ap ? (g.ap.up || 0) : held("up") ? 1 : 0), down = g.ap ? (g.ap.down || 0) : (held("down") ? 1 : 0);
+    g.sPit = lerp(g.sPit || 0, clamp((up ? 1 : 0) - down + (g.ap ? 0 : gp.pitch - stick.y), -1, 1), clamp(dt * 4));
+    g.sTurn = lerp(g.sTurn || 0, turn, clamp(dt * 3.5)); turn = g.sTurn;
+    const pitchCmd = Math.abs(g.sPit) < .03 ? 0 : g.sPit;
     const V = g.vel.length(), vhat = V > .1 ? g.vel.clone().divideScalar(V) : new THREE.Vector3(Math.cos(g.yaw), 0, Math.sin(g.yaw));
+    if (g.fuel <= 0) { g.hover = false; g.landing = false; g.jump = true; }       // no fuel, no thrusters: it glides
     const thrusting = g.hover || g.landing || up || gas || g.nitroOn > .1 || !g.jump;
     g.wings = clamp(g.wings + (V > 28 && (thrusting || !g.jump) ? 1 : -1) * dt * 1.2);
     const ang = clamp((V - 16) / 26);                                   // thrusters swing from straight down to straight back
     g.ang = lerp(g.ang, ang, clamp(dt * 3));
     // attitude: bank to turn, pull to climb; it settles back to the flight path when you let go
     const vh = Math.hypot(g.vel.x, g.vel.z), gamma = Math.atan2(g.vel.y, Math.max(1, vh));
-    g.roll = lerp(g.roll, turn * (.25 + .8 * g.wings), clamp(dt * 3));          // bank into the turn
+    g.roll = lerp(g.roll, turn * (.25 + .8 * g.wings), clamp(dt * 2.2));        // bank into the turn (eased, so it rolls in smoothly)
     const yawRate = (1 - g.wings) * turn * 1.1 + g.wings * G * Math.tan(g.roll) / Math.max(20, V);
     g.yaw += yawRate * dt;
     // hands off, the flight assist trims the nose so the wings carry exactly the weight (and damps any climb or sink)
@@ -355,7 +417,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     traffic(dt);
     const gr = groundAt(g.x, g.z, g.y);
     if (g.y <= gr.h) {
-      if (gr.water) { wreck("Splashed into the water"); return; }
+      if (gr.water) { splash(); return; }
       g.y = gr.h;
       const down2 = -g.vel.y, vh2 = Math.hypot(g.vel.x, g.vel.z), angle = Math.atan2(down2, Math.max(.1, vh2));
       if (down2 > 12) impact(g.x, g.y, g.z, down2 * 1.2);
@@ -419,10 +481,12 @@ export function createGame(W, car, sound, life, opts = {}) {
 
   let mapT = 0, acc = 0;
   const api = {
+    get sens() { return api0.sens; }, set sens(v) { api0.sens = v; },
     get state() { return g; }, say: (m, t) => say(m, t), addScore: (n, w) => addScore(n, w), hurt: (n, w) => hurt(n, w), active: () => active && !paused,
     busted(msg) { say(msg, 4); g.hp = 100; g.vel.set(0, 0, 0); $("gScore").textContent = g.score; sound.crash(); },
     freeze(t) { g.frozen = t; }, teleport(x, z, yaw) { Object.assign(g, { x, z, y: 0, yaw, mode: "drive", pitch: 0, roll: 0, wings: 0 }); g.vel.set(0, 0, 0); camPos.set(x - Math.cos(yaw) * 8, 3, z - Math.sin(yaw) * 8); rig.yaw = yaw; orbit.yaw = orbit.pitch = 0; },
-    hitBox, isWater: (x, z) => city.isWater(x, z), impact: (x, z, p) => impact(x, .6, z, p), nearCars: (x, z, r) => life ? life.nearCars(x, z, r) : [], fly: () => { if (g.mode === "drive") toggleFly(); },
+    hitBox, isWater: (x, z) => city.isWater(x, z), impact: (x, z, p) => impact(x, .6, z, p),
+    groundAt: (x, z, y) => groundAt(x, z, y), wreck: why => wreck(why), setVehicle: t => setVehicle(t), setStick: (x, y) => { stick.x = x; stick.y = y; }, nearCars: (x, z, r) => life ? life.nearCars(x, z, r) : [], fly: () => { if (g.mode === "drive") toggleFly(); },
     policeClear: () => opts.policeClear && opts.policeClear(),
   };
   return {
@@ -430,7 +494,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     get state() { return g; }, get photo() { return photo; },
     enter() { active = true; start(); },
     exit() { active = false; keys.clear(); touch.clear(); sound.setGame("off"); if (photo) togglePhoto(); },
-    pause(v) { paused = v; keys.clear(); touch.clear(); if (!v && g) g.hp = 100; },
+    pause(v) { paused = v; keys.clear(); touch.clear(); },
     update(dt) {
       if (!g) start();
       pollPad();
@@ -470,7 +534,7 @@ export function createGame(W, car, sound, life, opts = {}) {
           let dy = base - rig.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
           rig.yaw += dy * clamp(dt * (air ? 3 : 5));
           const yawC = rig.yaw + orbit.yaw, pitC = clamp((air ? .2 : .24) + orbit.pitch - (air ? g.vel.y * .004 : 0), -.12, 1.25);
-          const want = (air ? 12 + speed * .01 : 6.6 + speed * .012) + (orbit.dist || 0);
+          const want = (air ? 12 + speed * .01 : 6.6 + speed * .012) + (orbit.dist || 0) + (g.veh === "plane" || g.veh === "heli" ? 6 : g.veh === "boat" ? 2 : 0);
           const pivot = fr.p.clone().add(new THREE.Vector3(0, air ? 1.4 : 1.3, 0)), dir = new THREE.Vector3(-Math.cos(yawC) * Math.cos(pitC), Math.sin(pitC), -Math.sin(yawC) * Math.cos(pitC));
           // walls: pull in at once, ease back out
           let room = want; for (let t = .8; t <= want; t += .5) { const q2 = pivot.clone().addScaledVector(dir, t); if (q2.y < .3 || hitBox(q2.x, q2.z, q2.y, .35)) { room = Math.max(1.6, t - .6); break; } }
@@ -502,10 +566,10 @@ export function createGame(W, car, sound, life, opts = {}) {
       if ((mapT += dt) > .05) { mapT = 0; drawMap(); }
       return {
         pos: fr.p.clone(), quat: q, fr, speed, g: g.gForce, alt: Math.max(0, g.y), vs: air ? g.vel.y : 0, player: { x: g.x, y: g.y, z: g.z, speed: speed / 3.6 },
-        thrust: { power: air ? g.thr : 0, angle: g.ang, deploy: air && !(g.jump && !g.hover && !g.landing && g.thr < .05) ? 1 : 0 }, wings: g.wings, air, cam,
+        thrust: { power: air && g.veh === "car" ? g.thr : 0, angle: g.ang, deploy: air && g.veh === "car" && !(g.jump && !g.hover && !g.landing && g.thr < .05) ? 1 : 0 }, wings: g.veh === "car" ? g.wings : 0, air, cam,
         inside: view === "seat", screenOn: view === "seat", mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : g.hover ? "HOVER" : "THRUST",
         rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: !air ? 1 : .15, zones, reveal: 1,
-        nitro: g.nitroOn, hp: g.hp, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
+        splash: g.splashT > 0 ? (g.splashT -= dt, 1) : 0, nitro: g.nitroOn, hp: g.hp, veh: g.veh || "car", fuel: g.fuel, thr: g.thr, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
       };
     },
   };

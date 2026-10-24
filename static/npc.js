@@ -22,42 +22,70 @@ const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32A
 const B = (w, h, d, x, y, z, c) => tint(new THREE.BoxGeometry(w, h, d).translate(x, y, z).toNonIndexed(), c);
 const BODY = [1, 1, 1], GLASS = [.03, .035, .045], TYRE = [.03, .03, .03], DARK = [.18, .18, .19], CHROME = [.55, .55, .58];
 function wheelsOf(L, W, r = .36) { const out = [], ax = L / 2 - .95; for (const x of [ax, -ax]) for (const z of [W / 2 - .2, -W / 2 + .2]) out.push(tint(new THREE.CylinderGeometry(r, r, .28, 12).rotateX(Math.PI / 2).translate(x, r, z).toNonIndexed(), TYRE)); return out; }
+// side profiles extruded across the car with rounded edges: a real hood, windscreen rake, roof and boot
+const V2 = (x, y) => new THREE.Vector2(x, y);
+const ext = (pts, width, c, bevel = .07) => tint(new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x, y]) => V2(x, y))), { depth: Math.max(.05, width - 2 * bevel), bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 }).translate(0, 0, -(width - 2 * bevel) / 2).toNonIndexed(), c);
+const CHR = [.62, .63, .66], RIM = [.5, .52, .56];
+function wheels4(L, W, r = .34, inset = .95) {
+  const out = [], ax = L / 2 - inset;
+  for (const x of [ax, -ax]) for (const s of [1, -1]) {
+    out.push(tint(new THREE.CylinderGeometry(r, r, .26, 14).rotateX(Math.PI / 2).translate(x, r, s * (W / 2 - .16)).toNonIndexed(), TYRE));
+    out.push(tint(new THREE.CylinderGeometry(r * .62, r * .62, .04, 10).rotateX(Math.PI / 2).translate(x, r, s * (W / 2 - .02)).toNonIndexed(), RIM));
+  }
+  return out;
+}
+const PROFILES = {
+  // [body outline], [glass outline], [roof outline] (x from the back, metres; y up)
+  sedan: (L) => [[[-L / 2, .3], [L / 2, .3], [L / 2, .62], [L / 2 - .32, .78], [L / 2 - 1.25, .88], [-L / 2 + .95, .92], [-L / 2 + .15, .86], [-L / 2, .7]],
+    [[L / 2 - 1.3, .87], [L / 2 - 2.05, 1.38], [-L / 2 + 1.55, 1.4], [-L / 2 + .9, .9]], [[L / 2 - 2.0, 1.36], [-L / 2 + 1.6, 1.38], [-L / 2 + 1.62, 1.45], [L / 2 - 2.02, 1.43]]],
+  suv: (L) => [[[-L / 2, .38], [L / 2, .38], [L / 2, .82], [L / 2 - .3, 1.0], [L / 2 - 1.15, 1.08], [-L / 2 + .1, 1.12], [-L / 2, .95]],
+    [[L / 2 - 1.2, 1.07], [L / 2 - 1.75, 1.78], [-L / 2 + .25, 1.8], [-L / 2 + .12, 1.1]], [[L / 2 - 1.72, 1.76], [-L / 2 + .2, 1.78], [-L / 2 + .2, 1.86], [L / 2 - 1.75, 1.84]]],
+  sports: (L) => [[[-L / 2, .26], [L / 2, .26], [L / 2, .45], [L / 2 - .5, .66], [L / 2 - 1.5, .76], [-L / 2 + .7, .84], [-L / 2, .74]],
+    [[L / 2 - 1.55, .75], [L / 2 - 2.2, 1.12], [-L / 2 + 1.5, 1.12], [-L / 2 + .75, .83]], [[L / 2 - 2.15, 1.1], [-L / 2 + 1.55, 1.1], [-L / 2 + 1.55, 1.16], [L / 2 - 2.15, 1.16]]],
+  van: (L) => [[[-L / 2, .35], [L / 2, .35], [L / 2, .95], [L / 2 - .5, 1.25], [-L / 2, 1.25]],
+    [[L / 2 - .5, 1.24], [L / 2 - 1.1, 1.95], [-L / 2 + .1, 2.0], [-L / 2 + .1, 1.24]], [[L / 2 - 1.05, 1.93], [-L / 2 + .05, 1.98], [-L / 2 + .05, 2.18], [L / 2 - 1.1, 2.14]]],
+  pickup: (L) => [[[-L / 2, .38], [L / 2, .38], [L / 2, .85], [L / 2 - .4, 1.02], [L / 2 - 1.2, 1.08], [-L / 2, 1.08]],
+    [[L / 2 - 1.25, 1.07], [L / 2 - 1.75, 1.75], [L / 2 - 3.0, 1.78], [L / 2 - 3.05, 1.07]], [[L / 2 - 1.72, 1.74], [L / 2 - 3.02, 1.76], [L / 2 - 3.02, 1.84], [L / 2 - 1.75, 1.82]]],
+};
 export function vehicle(k) {
   const { L, W } = k, p = [], lt = [];
-  const H = [1, .95, .95], R = [1, .15, .15], A = [1, .7, .2], Wt = [1, 1, 1];
-  const lights = (h, y, extra = 0) => { lt.push(B(.06, h, W * .28, L / 2 + .01, y, W * .3, H), B(.06, h, W * .28, L / 2 + .01, y, -W * .3, H), B(.06, h, W * .3, -L / 2 - .01, y + extra, W * .3, R), B(.06, h, W * .3, -L / 2 - .01, y + extra, -W * .3, R)); };
-  switch (k.id) {
-    case "bus":
-      p.push(B(L, 2.6, W, 0, 1.75, 0, BODY), B(L - .6, .9, W + .02, 0, 2.1, 0, GLASS), B(.05, 1.3, W * .8, L / 2 + .01, 2, 0, GLASS), B(L, .35, W + .04, 0, .55, 0, DARK), B(L * .9, .3, W * .6, 0, 3.15, 0, [.8, .8, .82]));
-      lights(.2, .9); lt.push(B(.05, .3, W * .6, L / 2 + .02, 2.85, 0, A)); p.push(...wheelsOf(L, W, .5)); break;
-    case "truck":
-      p.push(B(L * .7, 3.0, W, -L * .15, 2.0, 0, BODY), B(L * .28, 2.2, W, L * .36, 1.5, 0, [.9, .9, .92]), B(.05, .9, W * .85, L / 2 + .01, 2.0, 0, GLASS), B(L, .3, W * .9, 0, .55, 0, DARK));
-      lights(.18, .9); p.push(...wheelsOf(L, W, .48)); break;
-    case "van":
-      p.push(B(L, 1.9, W, 0, 1.3, 0, BODY), B(L * .25, .7, W + .02, L * .3, 1.75, 0, GLASS), B(L, .25, W + .04, 0, .45, 0, DARK));
-      lights(.16, .9); p.push(...wheelsOf(L, W)); break;
-    case "pickup":
-      p.push(B(L, .8, W, 0, .85, 0, BODY), B(L * .4, .75, W * .96, L * .05, 1.6, 0, BODY), B(L * .41, .5, W * .97, L * .05, 1.62, 0, GLASS), B(L * .38, .1, W * .9, -L * .3, 1.28, 0, DARK));
-      lights(.16, .95); p.push(...wheelsOf(L, W, .4)); break;
-    case "sports":
-      p.push(B(L, .55, W, 0, .55, 0, BODY), B(L * .45, .42, W * .86, -L * .05, 1.0, 0, BODY), B(L * .46, .3, W * .88, -L * .02, 1.02, 0, GLASS), B(.3, .05, W, -L / 2 + .2, 1.1, 0, DARK));
-      lights(.1, .65); p.push(...wheelsOf(L, W, .34)); break;
-    case "suv":
-      p.push(B(L, 1.0, W, 0, .9, 0, BODY), B(L * .7, .75, W * .95, -L * .07, 1.75, 0, BODY), B(L * .71, .52, W * .96, -L * .07, 1.78, 0, GLASS), B(L * .5, .06, W * .7, -L * .1, 2.16, 0, DARK));
-      lights(.15, 1.05); p.push(...wheelsOf(L, W, .4)); break;
-    default:   // sedan, taxi, police
-      p.push(B(L, .7, W, 0, .72, 0, BODY), B(L * .5, .62, W * .92, -L * .04, 1.36, 0, BODY), B(L * .51, .44, W * .93, -L * .04, 1.38, 0, GLASS), B(L, .14, W + .04, 0, .45, 0, CHROME.map(c => c * .5)));
-      if (k.id === "taxi") { p.push(B(.5, .26, .9, -L * .04, 1.8, 0, BODY)); lt.push(B(.52, .16, .92, -L * .04, 1.82, 0, [1, .92, .6])); p.push(B(L * .98, .08, .02, 0, .85, W / 2 + .005, [.02, .02, .02]), B(L * .98, .08, .02, 0, .85, -W / 2 - .005, [.02, .02, .02])); }
-      if (k.id === "police") { p.push(B(L * .98, .22, .02, 0, .82, W / 2 + .005, [.15, .3, .8]), B(L * .98, .22, .02, 0, .82, -W / 2 - .005, [.15, .3, .8])); lt.push(B(.3, .14, .5, -L * .04, 1.75, .32, [.2, .35, 1]), B(.3, .14, .5, -L * .04, 1.75, -.32, [1, .15, .15])); }
-      lights(.14, .82); p.push(...wheelsOf(L, W));
+  const H = [1, .95, .85], R = [1, .12, .12], A = [1, .7, .2];
+  const lamps = (y, h = .14) => { for (const s of [1, -1]) { lt.push(B(.08, h, W * .24, L / 2 - .02, y, s * W * .32, H)); lt.push(B(.08, h, W * .26, -L / 2 + .02, y + .05, s * W * .32, R)); } };
+  const mirrors = (x, y) => { for (const s of [1, -1]) p.push(B(.18, .12, .2, x, y, s * (W / 2 + .08), BODY)); };
+  const kind = k.id === "taxi" || k.id === "police" ? "sedan" : k.id;
+  if (kind === "bus" || kind === "truck") {
+    if (kind === "bus") {
+      p.push(ext([[-L / 2, .45], [L / 2, .45], [L / 2, 3.1], [-L / 2, 3.1]], W, BODY, .15), ext([[-L / 2 + .3, 1.55], [L / 2 - .3, 1.55], [L / 2 - .3, 2.6], [-L / 2 + .3, 2.6]], W + .04, GLASS, .02));
+      p.push(B(.05, 1.5, W * .8, L / 2 + .02, 2.05, 0, GLASS), B(L * .9, .25, W * .55, 0, 3.25, 0, [.82, .83, .85]), B(L, .3, W + .06, 0, .55, 0, DARK), ...wheels4(L, W, .5, 1.6));
+      lamps(.95); lt.push(B(.05, .28, W * .6, L / 2 + .03, 2.9, 0, A));
+    } else {
+      p.push(ext([[-L / 2, .6], [L * .2, .6], [L * .2, 3.4], [-L / 2, 3.4]], W, BODY, .08));
+      p.push(ext([[L * .21, .5], [L / 2, .5], [L / 2, 1.5], [L / 2 - .5, 2.4], [L * .21, 2.5]], W * .98, [.9, .9, .92], .1), ext([[L / 2 - .5, 1.6], [L / 2 - .1, 1.55], [L / 2 - .5, 2.3]], W + .02, GLASS, .02));
+      p.push(B(L, .3, W * .9, 0, .55, 0, DARK), ...wheels4(L, W, .48, 1.1)); lamps(.95);
+    }
+    return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
   }
+  const [body, glass, roof] = PROFILES[kind](L);
+  p.push(ext(body, W, BODY, .1), ext(glass, W * .9, GLASS, .06), ext(roof, W * .86, BODY, .05));
+  p.push(B(.2, .22, W * .96, L / 2 - .02, .42, 0, DARK), B(.2, .22, W * .96, -L / 2 + .02, .42, 0, DARK));       // bumpers
+  p.push(B(.03, .14, W * .5, L / 2 + .02, .58, 0, [.12, .12, .13]));                                               // grille
+  const wr = kind === "suv" || kind === "pickup" ? .4 : kind === "sports" ? .33 : .34;
+  p.push(...wheels4(L, W, wr, kind === "sports" ? .85 : .95));
+  mirrors(L / 2 - 1.35, kind === "suv" || kind === "pickup" ? 1.15 : kind === "van" ? 1.35 : .95);
+  if (k.id === "taxi") { p.push(B(.55, .26, .9, -.1, 1.6, 0, BODY)); lt.push(B(.57, .16, .92, -.1, 1.62, 0, [1, .92, .6])); for (const s of [1, -1]) p.push(B(L * .7, .1, .02, 0, .66, s * (W / 2 + .01), [.03, .03, .03])); }
+  if (k.id === "police") { for (const s of [1, -1]) p.push(B(L * .8, .24, .02, 0, .65, s * (W / 2 + .01), [.12, .25, .75])); lt.push(B(.3, .14, .5, -.15, 1.52, .32, [.2, .35, 1]), B(.3, .14, .5, -.15, 1.52, -.32, [1, .15, .15])); }
+  lamps(kind === "sports" ? .5 : kind === "suv" || kind === "pickup" ? .85 : kind === "van" ? .85 : .66);
   return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
 }
+// people: torso and arms (shirt colour), each leg on its own so they can swing, a head and hair
 function personGeo() {
-  const s = [1, 1, 1], pants = [.22, .22, .25], shoes = [.08, .08, .08];
+  const s = [1, 1, 1];
   return {
-    body: mergeGeometries([B(.46, .64, .28, 0, 1.18, 0, s), B(.36, .86, .22, 0, .43, 0, pants)]),
-    head: new THREE.IcosahedronGeometry(.14, 0).translate(0, 1.65, 0),
+    body: mergeGeometries([B(.44, .6, .26, 0, 1.2, 0, s), B(.4, .12, .24, 0, .9, 0, [.25, .25, .28]), B(.11, .56, .12, 0, 1.16, .29, s), B(.11, .56, .12, 0, 1.16, -.29, s),
+      B(.1, .1, .1, 0, .86, .29, [.85, .7, .6]), B(.1, .1, .1, 0, .86, -.29, [.85, .7, .6])]),
+    leg: mergeGeometries([B(.16, .82, .18, 0, -.41, 0, [1, 1, 1]), B(.24, .08, .18, .04, -.84, 0, [.08, .08, .08])]),
+    head: mergeGeometries([new THREE.IcosahedronGeometry(.135, 1).translate(0, 1.66, 0).toNonIndexed(), new THREE.CylinderGeometry(.055, .06, .1, 5).translate(0, 1.5, 0).toNonIndexed()]),
+    hair: new THREE.SphereGeometry(.142, 7, 3, 0, Math.PI * 2, 0, Math.PI * .5).translate(-.015, 1.68, 0),
   };
 }
 
@@ -112,7 +140,9 @@ export function createLife(scene, roads, walkways, COARSE) {
   const pg = personGeo();
   const peopleMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 }), headMat = new THREE.MeshStandardMaterial({ roughness: .7 });
   const bodies = new THREE.InstancedMesh(pg.body, peopleMat, NP), heads = new THREE.InstancedMesh(pg.head, headMat, NP);
-  bodies.frustumCulled = heads.frustumCulled = false; bodies.castShadow = true; bodies.layers.set(1); heads.layers.set(1); debris.layers.enable(1); scene.add(bodies, heads);
+  const legMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 }), legL = new THREE.InstancedMesh(pg.leg, legMat, NP), legR = new THREE.InstancedMesh(pg.leg, legMat, NP), hair = new THREE.InstancedMesh(pg.hair, new THREE.MeshStandardMaterial({ roughness: .9 }), NP);
+  for (const m of [bodies, heads, legL, legR, hair]) { m.frustumCulled = false; m.layers.set(1); scene.add(m); }
+  debris.layers.enable(1);
   const SHIRTS = [0xe8e8e8, 0x1f1f22, 0xb22234, 0x2e5aa8, 0x2f6b3a, 0xf7c414, 0x7a2a8a, 0xff7a2e, 0x8a8f96, 0x4a2e1e, 0xf2a0b0, 0x30c0c0], SKIN = [0xf1c8a8, 0xd9a07a, 0xa8714a, 0x6b4430, 0xffdcc0, 0x8a5a3a];
   const people = [];
   const blockOK = (i, j) => !(i >= GRID.park.i0 && i < GRID.park.i1 && j >= GRID.park.j0 && j < GRID.park.j1);
@@ -122,8 +152,9 @@ export function createLife(scene, roads, walkways, COARSE) {
     const per = 2 * (x1 - x0) + 2 * (z1 - z0), inset = rnd() * 1.6;
     people.push({ x0: x0 + inset, x1: x1 - inset, z0: z0 + inset, z1: z1 - inset, per: per - 8 * inset, d: rnd() * per, v: .9 + rnd() * .8, dir: rnd() < .5 ? 1 : -1, x: 0, z: 0, push: new THREE.Vector2(), scare: 0, ph: rnd() * 6, wait: 0 });
     people[n].shirt = new THREE.Color(SHIRTS[Math.floor(rnd() * SHIRTS.length)]); people[n].skin = new THREE.Color(SKIN[Math.floor(rnd() * SKIN.length)]);
+    people[n].pants = new THREE.Color([0x1e2a44, 0x222226, 0x5a4a3a, 0x2f4a6a, 0x6a6a70, 0x111111][Math.floor(rnd() * 6)]); people[n].hairC = new THREE.Color([0x1a120c, 0x3a2414, 0x0c0c0c, 0x8a6a3a, 0x6a3a1a, 0xb0a090][Math.floor(rnd() * 6)]);
   }
-  bodies.setColorAt(0, col); heads.setColorAt(0, col);
+  bodies.setColorAt(0, col); heads.setColorAt(0, col); legL.setColorAt(0, col); legR.setColorAt(0, col); hair.setColorAt(0, col);
   const around = (p, d, out) => {           // a point on the rectangle loop round the block
     const w = p.x1 - p.x0, h = p.z1 - p.z0; d = ((d % p.per) + p.per) % p.per;
     if (d < w) { out.x = p.x0 + d; out.z = p.z0; out.yaw = 0; }
@@ -134,7 +165,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   };
 
   // ---- per frame ----
-  const squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
+  const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
   const buckets = new Map(), tmp = {}, cell = new Map(), CELL = 30;
   let frameN = 0;
   function decide(c, k) {       // at the crossing k: straight on, or turn onto the cross road
@@ -184,7 +215,7 @@ export function createLife(scene, roads, walkways, COARSE) {
       const px = player ? player.x : camPos ? camPos.x : 0, pz = player ? player.z : camPos ? camPos.z : 0;
       buckets.clear(); cell.clear();
       const cx0 = camPos ? camPos.x : px, cz0 = camPos ? camPos.z : pz, alt = camPos ? Math.max(0, camPos.y) : 0;
-      const RC = Math.min(900, (COARSE ? 260 : 380) + alt * 2), RC2 = RC * RC, RP = Math.min(320, (COARSE ? 120 : 190) + alt * .5), RP2 = RP * RP;
+      const RC = Math.min(900, (COARSE ? 260 : 380) + alt * 2), RC2 = RC * RC, RP = Math.min(260, (COARSE ? 90 : 140) + alt * .4), RP2 = RP * RP;
       for (const m of meshes) m.k = 0;
       for (const c of cars) {
         if (c.wreck || c.turn) continue;
@@ -249,22 +280,36 @@ export function createLife(scene, roads, walkways, COARSE) {
         const far = (Math.abs(p.x - px) > 300 || Math.abs(p.z - pz) > 300) && (Math.abs(p.x - cx0) > RP || Math.abs(p.z - cz0) > RP);
         if (far && (frameN + n) % 8) continue;
         const h = far ? dt * 8 : dt;
-        if (p.wait > 0) p.wait -= h; else { p.d += p.v * (p.scare > 0 ? 3 : 1) * p.dir * h; if (rnd() < .0008) p.wait = 2 + rnd() * 5; }
+        if (p.down > 0) { } else if (p.wait > 0) p.wait -= h; else { p.d += p.v * (p.scare > 0 ? 3 : 1) * p.dir * h; if (rnd() < .0008) p.wait = 2 + rnd() * 5; }
         around(p, p.d, tmp);
         let x = tmp.x, z = tmp.z;
-        if (player && player.y < 4) {                    // a car coming: leap out of the way
-          const dx = x + p.push.x - player.x, dz = z + p.push.y - player.z, d = Math.hypot(dx, dz) || .01, r = 4 + Math.min(6, (player.speed || 0) * .08);
-          if (d < r) { const k = (r - d) * Math.min(1, h * 10); p.push.x += dx / d * k; p.push.y += dz / d * k; p.scare = 2; }
+        if (player && player.y < 4 && !(p.down > 0)) {   // a car coming: leap out of the way, or get knocked over if it is too quick
+          const dx = x + p.push.x - player.x, dz = z + p.push.y - player.z, d = Math.hypot(dx, dz) || .01, r = 3 + Math.min(3, (player.speed || 0) * .04);
+          if (d < 2.2 && (player.speed || 0) > 6) { p.down = 4.5; p.fall = { vx: dx / d * Math.min(9, player.speed * .35), vz: dz / d * Math.min(9, player.speed * .35), y: 0, vy: Math.min(5, player.speed * .15), spin: (rnd() - .5) * 8, rot: 0 }; p.scare = 4; }
+          else if (d < r) { const k = (r - d) * Math.min(1, h * 10); p.push.x += dx / d * k; p.push.y += dz / d * k; p.scare = 2; }
+        }
+        if (p.down > 0) {
+          const f = p.fall; p.down -= h;
+          if (f.y > 0 || f.vy > 0) { f.vy -= 9.81 * h; f.y = Math.max(0, f.y + f.vy * h); }
+          p.push.x += f.vx * h; p.push.y += f.vz * h; const fr = Math.pow(f.y > 0 ? .7 : .05, h); f.vx *= fr; f.vz *= fr; f.rot += f.spin * h * (f.y > 0 ? 1 : 0);
         }
         if (p.scare > 0) p.scare -= h;
         p.push.multiplyScalar(1 - Math.min(1, h * .25));
         x += p.push.x; z += p.push.y; p.x = x; p.z = z;
         const walk = time * 7 * p.v * (p.scare > 0 ? 2 : 1) + p.ph, bob = p.wait > 0 ? 0 : Math.abs(Math.sin(walk)) * .05;
         const ex = x - cx0, ez = z - cz0;
-        if (ex * ex + ez * ez < RP2) { q.setFromAxisAngle(Y, -(tmp.yaw + (p.dir < 0 ? Math.PI : 0))); m4.compose(pos.set(x, bob + .06, z), q, one); bodies.setMatrixAt(pk, m4); heads.setMatrixAt(pk, m4); bodies.setColorAt(pk, p.shirt); heads.setColorAt(pk, p.skin); pk++; }
+        if (ex * ex + ez * ez < RP2) {
+          const yaw = -(tmp.yaw + (p.dir < 0 ? Math.PI : 0));
+          let lie = 0, y = bob + .06;
+          if (p.down > 0) { const f = p.fall; lie = p.down > 1.2 ? Math.min(1, (4.5 - p.down) * 3) : p.down / 1.2; y = f.y + .06 + lie * .12; }      // over and down, then back on their feet
+          e.set(lie * Math.PI / 2 * .95, yaw + (p.fall ? p.fall.rot : 0), 0, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(x, y, z), q, one);
+          bodies.setMatrixAt(pk, m4); heads.setMatrixAt(pk, m4); hair.setMatrixAt(pk, m4);
+          const swing = p.wait > 0 || p.down > 0 ? 0 : Math.sin(walk) * .5;
+          for (const [leg, sgn, off] of [[legL, 1, .1], [legR, -1, -.1]]) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .86, off), legQ, one); leg.setMatrixAt(pk, m4.clone().multiply(legM)); }
+          bodies.setColorAt(pk, p.shirt); heads.setColorAt(pk, p.skin); legL.setColorAt(pk, p.pants); legR.setColorAt(pk, p.pants); hair.setColorAt(pk, p.hairC); pk++;
+        }
       }
-      bodies.count = heads.count = pk;
-      bodies.instanceMatrix.needsUpdate = heads.instanceMatrix.needsUpdate = bodies.instanceColor.needsUpdate = heads.instanceColor.needsUpdate = true;
+      for (const m of [bodies, heads, legL, legR, hair]) { m.count = pk; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     },
   };
 }

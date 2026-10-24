@@ -6,6 +6,8 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { Sky } from "three/addons/objects/Sky.js";
 import { buildCity } from "./city.js";
 
 export const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x)), lerp = (a, b, t) => a + (b - a) * t;
@@ -63,10 +65,27 @@ export async function createWorld(canvas, COARSE) {
   const rimL = new THREE.DirectionalLight(0xbfd4ff, .6); rimL.position.set(8, 4, -10); scene.add(rimL);
   const camLight = new THREE.DirectionalLight(0xffffff, .35); scene.add(camLight, camLight.target); // follows the camera so black paint always catches light
 
-  const composer = new EffectComposer(renderer);
+  // post: multisampled HDR render (smooth edges), bloom, tone mapping, then a cinematic grade (vignette, grain, contrast)
+  const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: COARSE ? 0 : 4 });
+  const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .42, .35, .9);
   composer.addPass(bloom); composer.addPass(new OutputPass());
+  const grade = new ShaderPass({
+    uniforms: { tDiffuse: { value: null }, time: { value: 0 }, vig: { value: .32 }, grain: { value: .035 }, sat: { value: 1.08 }, contrast: { value: 1.06 } },
+    vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float time, vig, grain, sat, contrast; varying vec2 vUv;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      void main(){ vec4 c = texture2D(tDiffuse, vUv); vec3 col = c.rgb;
+        float l = dot(col, vec3(.2126, .7152, .0722)); col = mix(vec3(l), col, sat); col = (col - .5) * contrast + .5;
+        vec2 d = vUv - .5; col *= 1. - vig * smoothstep(.25, .85, dot(d, d) * 2.2);
+        col += (h(vUv * 1000. + time) - .5) * grain;
+        gl_FragColor = vec4(clamp(col, 0., 1.), c.a); }`,
+  });
+  composer.addPass(grade);
+  // the sky for day and sunset: Rayleigh/Mie scattering with a real sun disc (night keeps the painted gradient and stars)
+  const sky = new Sky(); sky.scale.setScalar(900); sky.visible = false; sky.frustumCulled = false; scene.add(sky);
+  const skyU = sky.material.uniforms;
 
   const canvasTex = (w, h, draw, repeat) => {
     const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h);
@@ -97,7 +116,7 @@ export async function createWorld(canvas, COARSE) {
   const cubeCam = new THREE.CubeCamera(1, 3000, cubeRT);
   let cityEnv = null;
   function captureCity() {
-    cubeCam.position.set(160, 60, -300); cubeCam.update(renderer, scene);
+    cubeCam.position.set(160, 60, -300); sky.position.copy(cubeCam.position); cubeCam.update(renderer, scene);
     if (cityEnv) cityEnv.dispose(); cityEnv = pmrem.fromCubemap(cubeRT.texture).texture;
     for (const m of city.glassMats) { m.envMap = cityEnv; m.needsUpdate = true; }
     scene.environment = cityEnv;
@@ -106,6 +125,8 @@ export async function createWorld(canvas, COARSE) {
   const sunDir = new THREE.Vector3(-300, 420, -500).normalize();
   function setTime(k) {
     const S = SKIES[k]; timeOfDay = k; paintSky(k);
+    sky.visible = k !== "night";
+    if (sky.visible) { skyU.turbidity.value = k === "day" ? 3 : 8; skyU.rayleigh.value = k === "day" ? 1.2 : 2.8; skyU.mieCoefficient.value = k === "day" ? .004 : .008; skyU.mieDirectionalG.value = .85; skyU.sunPosition.value.set(...S.sunPos).normalize(); }
     scene.fog.color.setHex(S.fog); hemi.color.setHex(S.hemi[0]); hemi.groundColor.setHex(S.hemi[1]); hemi.intensity = S.hemi[2];
     sun.color.setHex(S.sun[0]); sun.intensity = S.sun[1]; sunDir.set(...S.sunPos).normalize();
     renderer.toneMappingExposure = S.exp; stars.visible = S.stars; key.intensity = k === "day" ? .4 : 1.1;
@@ -115,6 +136,18 @@ export async function createWorld(canvas, COARSE) {
     }
     bloom.strength = k === "day" ? .18 : k === "sunset" ? .32 : .42;
     captureCity();
+  }
+  // quality: Low / Medium / High / Ultra (the adaptive system steps it down by itself when frames run slow)
+  const QUALITY = { low: { pr: .8, shadow: 0, bloom: false, grade: false }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true }, high: { pr: 1.5, shadow: 2048, bloom: true, grade: true }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true } };
+  let quality = "high";
+  function setQuality(q) {
+    const Q = QUALITY[q] || QUALITY.high; quality = q;
+    const on = Q.shadow > 0;
+    if (renderer.shadowMap.enabled !== on) { renderer.shadowMap.enabled = on; scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); }); }
+    sun.castShadow = on;
+    if (on && sun.shadow.mapSize.x !== Q.shadow) { sun.shadow.mapSize.set(Q.shadow, Q.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+    bloom.enabled = Q.bloom; grade.enabled = Q.grade;
+    return Math.min(devicePixelRatio || 1, Q.pr);
   }
   function follow(p) { sun.position.copy(p).addScaledVector(sunDir, 600); sun.target.position.copy(p); sun.target.updateMatrixWorld(); }
 
@@ -206,7 +239,7 @@ export async function createWorld(canvas, COARSE) {
   for (let i = 0; i < 90; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0 })); s.visible = false; scene.add(s); puffs.push({ s, life: 0, v: new THREE.Vector3() }); }
 
   return {
-    renderer, scene, camera, composer, bloom, camLight, canvasTex, radial, buildings, city, setTime, follow, captureCity, get timeOfDay() { return timeOfDay; }, studioEnv,
+    renderer, scene, camera, composer, bloom, grade, sky, setQuality, get quality() { return quality; }, QUALITY, camLight, canvasTex, radial, buildings, city, setTime, follow, captureCity, get timeOfDay() { return timeOfDay; }, studioEnv,
     roads: city.roads, footprints: city.footprints, parks: city.parks, water: city.water, beaches: city.beaches, walkways: city.walkways, bounds: city.bounds, credit: city.credit,
     track: { P, F, S, U, D, N, loopIn, loopOut, rampIn, roadEnd, idxX, sample },
     fx: { shadow, glow, lines, LINES, lineSeed, puffs, puffI: 0 },
