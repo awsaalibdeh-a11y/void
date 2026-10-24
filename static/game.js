@@ -15,7 +15,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   const T = W.track, fr = frame(), back = frame(), basis = new THREE.Matrix4(), q = new THREE.Quaternion();
   const keys = new Set(), touch = new Set();
   const held = k => keys.has(k) || touch.has(k);
-  const KEYMAP = { ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", Space: "thrust" };
+  const KEYMAP = { ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", Space: "up", KeyE: "up", KeyQ: "down", ShiftLeft: "down", ShiftRight: "down", ControlLeft: "down" };
   let g = null, view = "chase", active = false, paused = false;
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   const LOOP_X = T.P[T.loopIn].x, RAMP_END = RAMP_X + 14;
@@ -56,7 +56,7 @@ export function createGame(W, car, sound, life, opts = {}) {
 
   function toggleFly() {
     if (!g || g.wreck > 0 || !g.started) return;
-    if (g.mode === "drive") { g.mode = "air"; g.hover = true; g.landing = false; g.vel.set(Math.cos(g.yaw) * g.v, 2, Math.sin(g.yaw) * g.v); say("Thrusters on. Space lifts, W boosts, Land brings you down."); }
+    if (g.mode === "drive") { g.mode = "air"; g.hover = true; g.landing = false; g.vel.set(Math.cos(g.yaw) * g.v, 2, Math.sin(g.yaw) * g.v); say("Thrusters on. Space or E: up · Q or Shift: down · W: boost · F: land"); }
     else if (g.mode === "air") { g.landing = !g.landing; if (!g.landing) g.hover = true; say(g.landing ? "Coming down gently" : "Flying"); }
   }
   function wreck(why) { g.wreck = 2.2; g.v = 0; g.vel.set(0, 0, 0); say(why + ". Respawning…", 2.2); sound.crash(); }
@@ -108,7 +108,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     }
 
     // air
-    const lift = held("thrust"), boost = held("gas"), brake = held("brake");
+    const lift = held("up"), dive = held("down") && !lift, boost = held("gas"), brake = held("brake");
     g.yaw += turn * .85 * dt;
     const vh = Math.hypot(g.vel.x, g.vel.z);
     g.wings = clamp(g.wings + (vh > 34 ? 1 : -1) * dt * 1.4);
@@ -118,24 +118,31 @@ export function createGame(W, car, sound, life, opts = {}) {
     const a = new THREE.Vector3(0, -G, 0), ceiling = clamp(1 - (g.y - 260) / 140);
     a.y += g.wings * G * Math.min(.96, (vh / 80) ** 2) * (.4 + .6 * ceiling);
     if (lift) a.y += 18 * ceiling;
-    if (g.hover && !lift && !g.landing) a.y += clamp(G - g.vel.y * 2.5, 0, 16);          // hover assist: holds height when you let go
+    if (dive) { a.y -= 9; g.landing = false; if (g.vel.y < -20) a.y += (-20 - g.vel.y) * 3; }   // thrusters push you down (to 20 m/s): height turns into speed
+    if (g.hover && !lift && !dive && !g.landing) a.y += clamp(G - g.vel.y * 2.5, 0, 16);   // hover assist: holds height when you let go
     if (g.landing) a.y += clamp(G + ((g.y < 14 ? -3 : -9) - g.vel.y) * 3, 0, 22);        // drop at 9 m/s, soft 3 m/s for the last few metres
     if (boost) a.addScaledVector(dir, 7);
     const k = .0008 + (brake ? .003 : 0) + (1 - g.wings) * .0004;
-    a.addScaledVector(g.vel, -(k * g.vel.length() + (brake || g.landing ? .35 : .01)));
+    a.addScaledVector(g.vel, -(k * (dive ? .5 : 1) * g.vel.length() + (brake || g.landing ? .35 : .01)));
     g.vel.addScaledVector(a, dt);
     g.x += g.vel.x * dt; g.y += g.vel.y * dt; g.z += g.vel.z * dt;
-    g.thr = lerp(g.thr, lift ? 1 : boost ? .85 : g.hover || g.landing ? .55 : .15, clamp(dt * 6)); g.ang = lerp(g.ang, lift || g.hover || g.landing ? .05 : 1, clamp(dt * 3));
+    g.thr = lerp(g.thr, lift ? 1 : dive ? .7 : boost ? .85 : g.hover || g.landing ? .55 : .15, clamp(dt * 6)); g.ang = lerp(g.ang, lift || g.hover || g.landing ? .05 : 1, clamp(dt * 3));
     g.roll = lerp(g.roll, -turn * .45, clamp(dt * 4)); g.pitch = lerp(g.pitch, clamp(Math.atan2(g.vel.y, Math.max(1, vh)), -.6, .6) * (g.hover ? .3 : 1), clamp(dt * 3));
     g.gForce = 1 + (lift ? .9 : 0) + Math.abs(turn) * .3;
     if (hitBuilding(g.x, g.z, g.y, .8)) return wreck(vh > 15 ? "Hit a building" : "Scraped a building");
     const ground = rampH(g.x, g.z);
     if (g.y <= ground) {
       g.y = ground;
-      if (g.vel.y < -7.5 || vh > 34) return wreck(`Landed too hard (${Math.abs(g.vel.y).toFixed(1)} m/s)`);
+      // only a steep, fast hit is a crash: a shallow touchdown keeps its energy and rolls on
+      const down = -g.vel.y, angle = Math.atan2(down, Math.max(.1, vh));
+      if (down > 24 || (down > 14 && angle > 1.1)) return wreck(`Hit the ground too hard (${down.toFixed(1)} m/s down)`);
       const zone = ZONES.find(z => Math.hypot(g.x - z.x, g.z - z.z) < PAD_R);
       if (zone && !g.done.has(zone.id)) { g.done.add(zone.id); if (zone.safe) addScore(1000 + Math.round(Math.max(0, 7 + g.vel.y) * 60), `Landed at LZ ${zone.id}`); else say(`LZ ${zone.id} is unsafe: ${zone.note}`); }
-      g.mode = "drive"; g.v = Math.cos(Math.atan2(g.vel.z, g.vel.x) - g.yaw) * vh; g.y = ground; g.wings = 0; g.hover = false; g.landing = false; g.pitch = 0;
+      // keep the kinetic energy: the drop's speed carries into the roll along the ground (a little lost to the suspension)
+      if (vh > 2) g.yaw = Math.atan2(g.vel.z, g.vel.x);
+      g.v = Math.min(92, Math.sqrt(vh * vh + .6 * down * down));
+      g.mode = "drive"; g.y = ground; g.wings = 0; g.hover = false; g.landing = false; g.pitch = 0;
+      if (g.v > 25) say(`Touchdown at ${Math.round(g.v * 3.6)} km/h. Rolling on`, 2);
     }
   }
 
