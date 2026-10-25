@@ -107,12 +107,13 @@
   <div class="hud-tr">
     <canvas class="g-map" id="gMap" width="180" height="180" aria-label="Minimap (tap for GPS)"></canvas>
     <div class="g-btns"><button class="pill solid" id="gFly">Fly</button><button class="pill" id="gMenuBtn" aria-haspopup="dialog">☰ Menu</button></div>
-    <div class="chips" id="gChips"></div>
+    <div class="chips" id="gChips"></div><div class="chips"><span id="gCoins">🪙 0/40</span></div>
     <div class="g-players" id="gPlayers"></div>
   </div>
   <div class="g-trophy" id="gTrophy" aria-live="polite"></div>
   <div class="hud-top">
     <div class="g-race" id="gRace" hidden></div>
+    <div class="g-job" id="gJob" hidden></div>
     <div class="g-gps" id="gGps"></div>
     <div class="g-hint" id="gHint"></div>
     <div class="g-target"><i id="gArrow">&#11014;</i><span id="gTgt"></span></div>
@@ -142,13 +143,14 @@
       <section><h4>Vehicle</h4><div class="tiles">
         <button class="tile" data-veh="car"><b>🚗</b>Car</button><button class="tile" data-veh="plane"><b>✈️</b>Plane</button><button class="tile" data-veh="heli"><b>🚁</b>Helicopter</button><button class="tile" data-veh="boat"><b>🚤</b>Boat</button><button class="tile" id="gGarage"><b>🔧</b>Garage</button></div></section>
       <section><h4>Go somewhere</h4><div class="tiles">
-        <button class="tile" id="gGpsBtn"><b>🧭</b>GPS</button><button class="tile" id="gAuto"><b>🤖</b>Autopilot</button><button class="tile" id="gFuelNav"><b>⛽</b>Nearest fuel</button><button class="tile" id="gNetBtn"><b>🌐</b>Online</button></div></section>
+        <button class="tile" id="gGpsBtn"><b>🧭</b>GPS</button><button class="tile" id="gAuto"><b>🤖</b>Autopilot</button><button class="tile" id="gFuelNav"><b>⛽</b>Nearest fuel</button><button class="tile" id="gTaxi"><b>🚕</b>Taxi job</button><button class="tile" id="gNetBtn"><b>🌐</b>Online</button></div></section>
       <section><h4>World</h4><div class="tiles">
         <button class="tile" id="gTime"><b>🌗</b>Time of day</button><button class="tile" id="gView"><b>🎥</b>Front seat</button><button class="tile" id="gPhoto"><b>📷</b>Photo mode</button><button class="tile" id="gHorn"><b>📯</b>Horn</button><button class="tile" id="gWeather"><b>☀️</b>Weather</button><button class="tile" id="gRadio"><b>🎵</b>Radio</button></div></section>
       <section><h4>Settings</h4>
         <label class="set">Graphics<span class="seg" data-set="q"><button data-v="low">Low</button><button data-v="medium">Medium</button><button data-v="high">High</button><button data-v="ultra">Ultra</button></span></label>
         <label class="set">Look speed<input type="range" id="gSens" min="0.4" max="2.5" step="0.1"></label>
         <label class="set">Auto gas<span class="seg" data-set="autogas"><button data-v="off">Off</button><button data-v="on">On</button></span></label>
+        <label class="set">Living city (day/night + weather change)<span class="seg" data-set="cycle"><button data-v="off">Off</button><button data-v="on">On</button></span></label>
         <label class="set">Touch steering<span class="seg" data-set="steer"><button data-v="stick">Joystick</button><button data-v="buttons">Buttons</button></span></label>
       </section>
       <section class="wide"><h4>Challenges</h4><div class="goals" id="gGoals"></div></section>
@@ -161,18 +163,17 @@
     <div class="pad-l"><button data-pad="left" aria-label="Left">&#9664;</button><button data-pad="right" aria-label="Right">&#9654;</button></div>
     <div class="pad-r"><button data-pad="nitro" class="nos">Nitro</button><button data-pad="drift" class="ground">Drift</button><button data-pad="brake">Brake</button><button data-pad="gas" class="big">Gas</button><button data-pad="down" class="air">Down</button><button data-pad="up" class="big air">Up</button></div>
   </div>
-  <div class="g-card" id="gReady">
-    <h2>Welcome to VOID City</h2>
-    <ol>
-      <li><b>Drive:</b> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrows. <kbd>Space</kbd> handbrake to drift, <kbd>Shift</kbd> nitro. Thousands of cars, cabs, buses and people.</li>
-      <li><b>Smash:</b> hit traffic faster than it is going and it breaks apart. Anything faster or heavier than you does the damage. Hit a wall hard and you get hurt too.</li>
-      <li><b>Fly:</b> <kbd>F</kbd>. Slow, the thrusters hover (<kbd>Space</kbd> up, <kbd>Q</kbd> down). Fast, the wings fly for real: <kbd>A</kbd>/<kbd>D</kbd> bank to turn, <kbd>Space</kbd>/<kbd>Q</kbd> pitch, too slow and it stalls.</li>
-      <li><b>Stunts &amp; missions:</b> the loop and ramps, gold rings in the sky, near misses, drifts, and green pads on the park lawn and skyscraper rooftops.</li>
-    </ol>
-    <ol start="5"><li><b>Police, races, online:</b> smash cars and the police come for you (lose them or get busted). Drive into a 🏁 marker and press <kbd>Enter</kbd> to race. Online plays with real people, with voice chat.</li>
-      <li><b>GPS &amp; autopilot:</b> <kbd>M</kbd> or tap the map to pick a place, <kbd>O</kbd> autopilot drives (or flies) you there. <kbd>L</kbd> lands on a glide slope.</li></ol>
-    <p class="small"><kbd>C</kbd> camera · move the mouse (or drag on a phone) to look around · <kbd>G</kbd> garage · <kbd>T</kbd> day/night · <kbd>H</kbd> horn · <kbd>P</kbd> photo mode · <kbd>R</kbd> reset · drag to look around · gamepads work too.</p>
-    <button class="pill solid" id="gGo">Start</button>
+  <div class="g-card g-welcome" id="gReady">
+    <h2>VOID City</h2>
+    <p class="sub">Drive, fly, smash, race. Everything else is in the ☰ Menu.</p>
+    <div class="tips">
+      <div><b>🚗</b><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive · <kbd>Space</kbd> drift · <kbd>Shift</kbd> nitro</span></div>
+      <div><b>✈️</b><span><kbd>F</kbd> fly · <kbd>Space</kbd>/<kbd>Q</kbd> up/down · <kbd>L</kbd> land</span></div>
+      <div><b>🚕</b><span><kbd>J</kbd> taxi jobs · <kbd>Enter</kbd> at a 🏁 to race</span></div>
+      <div><b>🪙</b><span>40 hidden coins, 14 challenges, police, online</span></div>
+    </div>
+    <p class="small touch-only">On a phone: joystick left, pedals right, drag anywhere to look.</p>
+    <button class="pill solid big-go" id="gGo">Start driving</button>
     <div class="small" id="gBest"></div>
   </div>
   <div class="g-card" id="gOver" hidden>

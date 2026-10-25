@@ -12,10 +12,12 @@ export const GOALS = [
   { id: "rings", icon: "💍", name: "Ring master", text: "Fly through 10 rings", stat: "rings", need: 10 },
   { id: "road", icon: "🛣️", name: "Road trip", text: "Travel 25 km", stat: "km", need: 25 },
   { id: "fuel", icon: "⛽", name: "Pit stop", text: "Fill up at a station", stat: "refuels", need: 1 },
+  { id: "coins", icon: "🪙", name: "Collector", text: "Find 20 hidden coins", stat: "coins", need: 20 },
+  { id: "taxi", icon: "🚕", name: "Cabbie", text: "Complete 5 taxi fares", stat: "fares", need: 5 },
   { id: "brooklyn", icon: "🌉", name: "Bridge and tunnel", text: "Cross the bridge to Brooklyn", stat: "brooklyn", need: 1 },
 ];
 export function createGoals(onDone) {
-  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0 }, store.get("void.stats") || {});
+  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0, coins: 0, fares: 0 }, store.get("void.stats") || {});
   const done = new Set(store.get("void.goals") || []);
   let saveT = 0, lastSmash = null, lastRings = null, lastFuel = null, pads = new Set();
   function check() { for (const g of GOALS) if (!done.has(g.id) && S[g.stat] >= g.need) { done.add(g.id); store.set("void.goals", [...done]); onDone(g); } }
@@ -23,7 +25,7 @@ export function createGoals(onDone) {
     stats: S, done, GOALS,
     // words from the score feed tell us about races, escapes and landings
     note(why) {
-      if (/1st/.test(why)) S.wins++; if (/got away/i.test(why)) S.escapes++; if (/Butter/.test(why)) S.butter++;
+      if (/1st/.test(why)) S.wins++; if (/Fare \$/.test(why)) S.fares++; if (/got away/i.test(why)) S.escapes++; if (/Butter/.test(why)) S.butter++;
       if (/^Landed at (?!PARK)/.test(why)) S.pads++; if (/^Drift/.test(why)) { const n = +(why.match(/\d+/) || [0])[0]; }
       check();
     },

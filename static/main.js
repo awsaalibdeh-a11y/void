@@ -8,7 +8,7 @@ const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent 
 setLoad(15);
 const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
-const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -49,7 +49,10 @@ let police, races, nav;
 const net = createNet();
 setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
 // settings: graphics quality, look speed, auto gas, touch steering (kept on this device)
-const SET = Object.assign({ q: COARSE ? "medium" : "high", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score" }, store.get("void.settings") || {});
+// a strong graphics card starts on High; everything else starts on Medium (it can be raised in the Menu)
+const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
+const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
+const SET = Object.assign({ q: STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off" }, store.get("void.settings") || {});
 const gameOpts = {
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
   onScore: (n, why) => { if (why === "Drift") goals.drift(n); goals.note(why); },
@@ -96,7 +99,7 @@ function applySettings(save = true) {
   for (const seg of menuEl.querySelectorAll(".seg[data-set]")) for (const b of seg.children) b.classList.toggle("on", SET[seg.dataset.set] === b.dataset.v);
   document.getElementById("gSens").value = SET.sens; game.api.sens = +SET.sens;
   document.body.classList.toggle("steer-buttons", SET.steer === "buttons");
-  const cap = W.setQuality(SET.q); perf.max = cap; perf.pr = Math.min(perf.pr, cap); if (renderer.getPixelRatio() > cap) { renderer.setPixelRatio(cap); composer.setPixelRatio(cap); lastW = 0; resize(); }
+  const cap = W.setQuality(SET.q); perf.max = cap; perf.pr = Math.min(perf.pr, cap); if (renderer.getPixelRatio() > cap) { renderer.setPixelRatio(cap); composer.setPixelRatio(cap); } lastW = 0; resize();
   if (save) store.set("void.settings", SET);
 }
 menuEl.querySelectorAll(".seg[data-set]").forEach(seg => seg.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); SET[seg.dataset.set] = b.dataset.v; if (seg.dataset.set === "q") { perf.pr = W.QUALITY[b.dataset.v].pr; perf.down = 0; } applySettings();
@@ -116,6 +119,8 @@ const heads = new THREE.SpotLight(0xfff1d6, 0, 70, .55, .6, 1.2); heads.position
 police = createPolice(scene, game.api, sound, life);
 races = createRaces(scene, game.api, sound, W.canvasTex, net);
 nav = createNav(scene, game.api, W, ZONES, races.starts);
+const extras = createExtras(W, game.api, nav, sound);
+document.getElementById("gTaxi").onclick = () => extras.toggle();
 
 // ---------- online: other real players' cars, name tags, emotes, proximity voice ----------
 const remotes = new Map();
@@ -166,9 +171,9 @@ const nozzles = (car.nozzles || [[.9, .3, 1], [.9, .3, -1], [-.95, .38, 1], [-.9
 
 // ---------- configurator ----------
 const OPTS = {
-  paint: { label: "Paint", items: [["Void Black", "#0a0a0c"], ["Stealth Grey", "#2b2d32"], ["Liquid Silver", "#9fa3aa"], ["Ghost White", "#e9e9ea"], ["Blood Red", "#6f0a12"], ["Ember Orange", "#c9480c"], ["Ion Blue", "#123a8c"], ["Venom Green", "#2d6a1e"]] },
+  paint: { label: "Paint", items: [["Void Black", "#0a0a0c"], ["Stealth Grey", "#2b2d32"], ["Liquid Silver", "#9fa3aa"], ["Ghost White", "#e9e9ea"], ["Blood Red", "#6f0a12"], ["Ember Orange", "#c9480c"], ["Ion Blue", "#123a8c"], ["Venom Green", "#2d6a1e"], ["Candy Purple", "#4a1270"], ["Sunset Gold", "#b8862a"], ["Pearl Pink", "#e8a6c0"], ["Arctic Teal", "#1f8a8a"], ["Lime Rush", "#8acb1a"], ["Cherry Pop", "#d2163c"], ["Midnight Navy", "#0d1838"], ["Chrome", "#d8dadd"]] },
   finish: { label: "Finish", seg: true, items: [["Gloss", "gloss"], ["Satin", "satin"], ["Matte", "matte"]] },
-  rim: { label: "Wheels", items: [["Black", "#121215"], ["Gunmetal", "#3a3d44"], ["Silver", "#b8bcc4"], ["Bronze", "#7a5a32"]] },
+  rim: { label: "Wheels", items: [["Black", "#121215"], ["Gunmetal", "#3a3d44"], ["Silver", "#b8bcc4"], ["Bronze", "#7a5a32"], ["Gold", "#c9a227"], ["Red", "#b0141f"], ["White", "#e8e8ea"], ["Ion", "#2ad8e8"]] },
   cal: { label: "Calipers", items: [["Red", "#c1121f"], ["Black", "#2a2a30"], ["Yellow", "#e0b000"], ["White", "#e8e8e8"], ["Ion", "#3df5ff"]] },
   trim: { label: "Accents", items: [["Red", "#c1121f"], ["Black", "#16161a"], ["White", "#e8e8e8"], ["Gold", "#b8912e"], ["Ion", "#3df5ff"]] },
   light: { label: "Lights", items: [["Ice", "#e8fbff"], ["Amber", "#ffb347"], ["Ion", "#6ad8ff"], ["Violet", "#b38cff"]] },
@@ -271,7 +276,7 @@ function resize() {
   if (!ww || !hh) return;
   if (ww === lastW && Math.abs(hh - lastH) < 140 && lastW) return;
   lastW = ww; lastH = hh; renderer.setSize(ww, hh, false); composer.setSize(ww, hh);
-  bloom.resolution.set(Math.max(1, ww * (COARSE ? .35 : .5)), Math.max(1, hh * (COARSE ? .35 : .5))); camera.aspect = ww / hh;
+  bloom.resolution.set(Math.max(1, ww * W.bloomRes), Math.max(1, hh * W.bloomRes)); camera.aspect = ww / hh;
 }
 addEventListener("resize", resize); addEventListener("orientationchange", () => setTimeout(resize, 200));
 if (window.visualViewport) visualViewport.addEventListener("resize", resize);
@@ -298,7 +303,7 @@ function showroom(dt, time) {
 
 // ---------- per frame ----------
 const clock = new THREE.Clock();
-let lastGauge = 0, lastChips = 0;
+let lastGauge = 0, lastChips = 0, cycleT = 0;
 // the speedometer: a dial with a glowing arc, the speed, the gear (or altitude when flying) and what you're in
 const gauge = document.getElementById("gGauge"), gx = gauge.getContext("2d");
 function drawGauge(S) {
@@ -389,7 +394,10 @@ function frameLoop(fixed) {
   W.grade.uniforms.blur.value = mode === "play" ? Math.max(0, Math.min(1, (S.speed - 160) / 220)) * .9 + (S.nitro || 0) * .5 : 0;
   atmos.update(dt, time, S, mode === "play" ? game.state : null);
   W.city.poolMat.opacity = W.timeOfDay === "night" ? 1 : W.timeOfDay === "sunset" ? .45 : 0; W.city.poolMat.visible = W.timeOfDay !== "day";
-  if (mode === "play") { goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
+  extras.sky(dt, time);
+  // the living city: when switched on, the day turns and the weather changes on its own
+  if (SET.cycle === "on" && mode === "play" && (cycleT += dt) > 150) { cycleT = 0; cycleTime(); if (Math.random() < .5) { const w = ["clear", "clear", "rain", "fog", "storm", "snow"][Math.floor(Math.random() * 6)]; atmos.setWeather(w); SET.weather = w; } }
+  if (mode === "play") { extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat);
   car.setReveal(S.reveal);

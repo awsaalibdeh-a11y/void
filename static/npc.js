@@ -99,7 +99,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   const cross = (axis, k) => axis === 0 ? ax(k) : sz(k);               // the coordinate of the k-th crossing road along this axis
   const crossW = (axis, k) => axis === 0 ? avW(k) : stW(k);
   const roadC = (axis, road) => axis === 0 ? sz(road) : ax(road);
-  const N = COARSE ? 600 : 1500, NP = COARSE ? 1200 : 3000;
+  const N = COARSE ? 500 : 1100, NP = COARSE ? 900 : 2000;
 
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });
@@ -165,7 +165,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   };
 
   // ---- per frame ----
-  const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
+  const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), legT = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
   const buckets = new Map(), tmp = {}, cell = new Map(), CELL = 30;
   let frameN = 0;
   function decide(c, k) {       // at the crossing k: straight on, or turn onto the cross road
@@ -305,7 +305,7 @@ export function createLife(scene, roads, walkways, COARSE) {
           e.set(lie * Math.PI / 2 * .95, yaw + (p.fall ? p.fall.rot : 0), 0, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(x, y, z), q, one);
           bodies.setMatrixAt(pk, m4); heads.setMatrixAt(pk, m4); hair.setMatrixAt(pk, m4);
           const swing = p.wait > 0 || p.down > 0 ? 0 : Math.sin(walk) * .5;
-          for (const [leg, sgn, off] of [[legL, 1, .1], [legR, -1, -.1]]) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .86, off), legQ, one); leg.setMatrixAt(pk, m4.clone().multiply(legM)); }
+          for (const [leg, sgn, off] of [[legL, 1, .1], [legR, -1, -.1]]) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .86, off), legQ, one); leg.setMatrixAt(pk, legT.copy(m4).multiply(legM)); }
           bodies.setColorAt(pk, p.shirt); heads.setColorAt(pk, p.skin); legL.setColorAt(pk, p.pants); legR.setColorAt(pk, p.pants); hair.setColorAt(pk, p.hairC); pk++;
         }
       }

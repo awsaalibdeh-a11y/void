@@ -148,15 +148,17 @@ export async function createWorld(canvas, COARSE) {
     captureCity();
   }
   // quality: Low / Medium / High / Ultra (the adaptive system steps it down by itself when frames run slow)
-  const QUALITY = { low: { pr: .8, shadow: 0, bloom: false, grade: false }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true }, high: { pr: 1.5, shadow: 2048, bloom: true, grade: true }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true } };
-  let quality = "high";
+  const QUALITY = { low: { pr: .75, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25 }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true, msaa: 0, bres: .3 }, high: { pr: 1.5, shadow: 2048, bloom: true, grade: true, msaa: 4, bres: .5 }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true, msaa: 4, bres: .5 } };
+  let quality = "high"; const W0 = { bres: .5 };
   function setQuality(q) {
     const Q = QUALITY[q] || QUALITY.high; quality = q;
     const on = Q.shadow > 0;
     if (renderer.shadowMap.enabled !== on) { renderer.shadowMap.enabled = on; scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); }); }
     sun.castShadow = on;
     if (on && sun.shadow.mapSize.x !== Q.shadow) { sun.shadow.mapSize.set(Q.shadow, Q.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
-    bloom.enabled = Q.bloom; grade.enabled = Q.grade;
+    bloom.enabled = Q.bloom; grade.enabled = Q.grade; W0.bres = Q.bres;
+    // multisampling only where the card can afford it (it is the biggest cost on laptop graphics)
+    for (const t of [composer.renderTarget1, composer.renderTarget2]) if (t.samples !== Q.msaa) { t.samples = Q.msaa; t.dispose(); }
     return Math.min(devicePixelRatio || 1, Q.pr);
   }
   function setWeatherLook(dim, over) { wxDim = dim; wxOver = over; setTime(timeOfDay); }
@@ -251,7 +253,7 @@ export async function createWorld(canvas, COARSE) {
   for (let i = 0; i < 90; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0 })); s.visible = false; scene.add(s); puffs.push({ s, life: 0, v: new THREE.Vector3() }); }
 
   return {
-    renderer, scene, camera, composer, bloom, grade, sky, sunDir, setWeatherLook, setFlash, weatherFog: 1, setQuality, get quality() { return quality; }, QUALITY, camLight, canvasTex, radial, buildings, city, setTime, follow, captureCity, get timeOfDay() { return timeOfDay; }, studioEnv,
+    renderer, scene, camera, composer, bloom, grade, sky, sunDir, setWeatherLook, setFlash, weatherFog: 1, setQuality, get quality() { return quality; }, QUALITY, get bloomRes() { return W0.bres; }, camLight, canvasTex, radial, buildings, city, setTime, follow, captureCity, get timeOfDay() { return timeOfDay; }, studioEnv,
     roads: city.roads, footprints: city.footprints, parks: city.parks, water: city.water, beaches: city.beaches, walkways: city.walkways, bounds: city.bounds, credit: city.credit,
     track: { P, F, S, U, D, N, loopIn, loopOut, rampIn, roadEnd, idxX, sample },
     fx: { shadow, glow, lines, LINES, lineSeed, puffs, puffI: 0 },
