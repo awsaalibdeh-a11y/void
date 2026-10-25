@@ -186,9 +186,9 @@ export async function buildCity(scene, canvasTex, COARSE) {
   }
   // the bridge over the East River carries the boulevard on; roads past the edges lead to it and to the piers
   roads.push({ p: [[XB, 0], [1700, 0]], w: 26 });
-  for (const [k, list] of Object.entries(markG)) if (list.length) { const t = markTex(k); t.wrapT = THREE.RepeatWrapping; scene.add(new THREE.Mesh(mergeGeometries(list), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, color: 0xdddddd, side: THREE.DoubleSide }))); }
+  for (const [k, list] of Object.entries(markG)) if (list.length) { const t = markTex(k); t.wrapT = THREE.RepeatWrapping; scene.add(new THREE.Mesh(mergeGeometries(list), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, color: 0xdddddd, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }))); }
   zebra.wrapT = THREE.RepeatWrapping;
-  scene.add(new THREE.Mesh(mergeGeometries(zebraG), new THREE.MeshBasicMaterial({ map: zebra, transparent: true, depthWrite: false, color: 0xcccccc, side: THREE.DoubleSide })));
+  scene.add(new THREE.Mesh(mergeGeometries(zebraG), new THREE.MeshBasicMaterial({ map: zebra, transparent: true, depthWrite: false, color: 0xcccccc, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
 
   // ---- the blocks ----
   const SIGN_N = SHOPS.length;

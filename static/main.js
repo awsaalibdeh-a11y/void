@@ -338,7 +338,8 @@ function frameLoop(fixed) {
     perf.t += raw; perf.n++;
     if (perf.t > 1.5) {
       const avg = perf.t / perf.n, was = perf.pr; fpsNow = Math.round(1 / avg); const fe = document.getElementById("gFps"); if (fe) fe.textContent = fpsNow + " fps";
-      if (avg > 1 / 45 && perf.pr > .6) perf.pr = Math.max(.6, perf.pr - (avg > 1 / 25 ? .25 : .12));
+      if (avg > 1 / 25 && mode === "play" && SET.q !== "low") perf.down = 3;          // very slow: skip straight to a lower level
+      if (avg > 1 / 45 && perf.pr > .6 && perf.down < 3) perf.pr = Math.max(.6, perf.pr - .12);
       else if (avg > 1 / 40 && mode === "play" && ++perf.down >= 3 && SET.q !== "low") {      // still slow at the lowest resolution: drop a quality level
         perf.down = 0; SET.q = { ultra: "high", high: "medium", medium: "low" }[SET.q]; perf.pr = W.QUALITY[SET.q].pr; applySettings(false); toast(`Graphics set to ${SET.q} to keep it smooth`);
       }
@@ -476,7 +477,7 @@ function frameLoop(fixed) {
   const c = S.cam, shake = REDUCED ? 0 : (Math.max(0, S.g - 2) * .004 + S.thrust.power * .01 + (S.shake || 0) * .25 + (S.nitro || 0) * .02) * (S.inside ? .25 : 1);
   camera.position.copy(c.pos).add(new THREE.Vector3(Math.sin(time * 53) * shake, Math.sin(time * 61 + 1) * shake, Math.sin(time * 47 + 2) * shake));
   camera.up.copy(c.up || new THREE.Vector3(0, 1, 0)); camera.lookAt(c.look);
-  camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .02 : .05; camera.updateProjectionMatrix();
+  camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .06 : .35; camera.updateProjectionMatrix();
   camLight.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0)); camLight.target.position.copy(S.pos);
   scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)) * W.weatherFog; scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt)) * W.weatherFog;
   const DET = { low: .55, medium: .8, high: 1, ultra: 1.2 }[W.quality] || 1; life.detail = DET; W.city.detail = DET;
