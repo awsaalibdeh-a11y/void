@@ -205,7 +205,9 @@ export function createLife(scene, roads, walkways, COARSE) {
   }
   const near = (x, z) => cell.get(Math.floor(x / CELL) * 7919 + Math.floor(z / CELL)) || [];
 
+  const api = { detail: 1 };
   return {
+    get detail() { return api.detail; }, set detail(v) { api.detail = v; },
     cars, meshes, smash, near,
     honk(x, z) { for (const p of people) if (Math.abs(p.x - x) < 25 && Math.abs(p.z - z) < 25) p.scare = 2; },
     // cars near a point (for the player's collision tests)
@@ -215,7 +217,7 @@ export function createLife(scene, roads, walkways, COARSE) {
       const px = player ? player.x : camPos ? camPos.x : 0, pz = player ? player.z : camPos ? camPos.z : 0;
       buckets.clear(); cell.clear();
       const cx0 = camPos ? camPos.x : px, cz0 = camPos ? camPos.z : pz, alt = camPos ? Math.max(0, camPos.y) : 0;
-      const RC = Math.min(900, (COARSE ? 260 : 380) + alt * 2), RC2 = RC * RC, RP = Math.min(260, (COARSE ? 90 : 140) + alt * .4), RP2 = RP * RP;
+      const D = api.detail || 1, RC = Math.min(900, ((COARSE ? 260 : 380) + alt * 2) * D), RC2 = RC * RC, RP = Math.min(260, ((COARSE ? 90 : 140) + alt * .4) * D), RP2 = RP * RP;
       for (const m of meshes) m.k = 0;
       for (const c of cars) {
         if (c.wreck || c.turn) continue;

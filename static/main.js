@@ -479,7 +479,8 @@ function frameLoop(fixed) {
   camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .02 : .05; camera.updateProjectionMatrix();
   camLight.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0)); camLight.target.position.copy(S.pos);
   scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)) * W.weatherFog; scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt)) * W.weatherFog;
-  camera.far = scene.fog.far * 1.1 + 150; camera.updateProjectionMatrix();          // nothing past the fog gets drawn
+  const DET = { low: .55, medium: .8, high: 1, ultra: 1.2 }[W.quality] || 1; life.detail = DET; W.city.detail = DET;
+  scene.fog.far *= Math.min(1, DET + .2); camera.far = scene.fog.far * 1.1 + 150; camera.updateProjectionMatrix();          // nothing past the fog gets drawn
   // refresh the car's reflections every few frames (the car hides from its own camera)
   // (no shadows, no crowds, a short view: it only has to look right in the paint)
 

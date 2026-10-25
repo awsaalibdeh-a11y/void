@@ -536,7 +536,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     },
     update(t, cam) {
       setLights(t);
-      if (cam && (++cullN % 10) === 0) { const far = 1 + Math.max(0, cam.y - 20) / 60; for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 141; }
+      if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 141; }
       waveTex.offset.set((t * .004) % 1, (t * .011) % 1);
       avMat.opacity = Math.sin(t * 3) > 0 ? 1 : .15;
       billboards.forEach((b, k) => { b.material.color.setScalar(1.15 + .25 * Math.sin(t * 2 + k)); });
