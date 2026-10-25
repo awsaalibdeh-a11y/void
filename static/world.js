@@ -26,7 +26,7 @@ export const PAD_R = 28;
 
 export async function createWorld(canvas, COARSE) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance", stencil: false });
-  renderer.shadowMap.enabled = !COARSE; renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.enabled = !COARSE; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;   // redrawn every few frames (main.js): it was half of every frame
   renderer.localClippingEnabled = true;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, COARSE ? 1.5 : 1.75));
@@ -148,7 +148,7 @@ export async function createWorld(canvas, COARSE) {
     captureCity();
   }
   // quality: Low / Medium / High / Ultra (the adaptive system steps it down by itself when frames run slow)
-  const QUALITY = { low: { pr: .75, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25 }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true, msaa: 0, bres: .3 }, high: { pr: 1.5, shadow: 2048, bloom: true, grade: true, msaa: 4, bres: .5 }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true, msaa: 4, bres: .5 } };
+  const QUALITY = { low: { pr: .75, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25 }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true, msaa: 0, bres: .3, shEvery: 4 }, high: { pr: 1.25, shadow: 2048, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 3 }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 2 } };
   let quality = "high"; const W0 = { bres: .5 };
   function setQuality(q) {
     const Q = QUALITY[q] || QUALITY.high; quality = q;

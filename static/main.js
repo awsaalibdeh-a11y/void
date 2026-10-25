@@ -345,7 +345,7 @@ function drawGauge(S) {
   if (S.nitro > .1) { gx.font = `800 ${W2 * .05}px Inter, sans-serif`; gx.fillStyle = "#3df5ff"; gx.fillText("NITRO", c, c - W2 * .16); }
 }
 let wasWrecked = false, wreckPose = null; const wrecks = [];
-let fpsNow = 0;
+let fpsNow = 0, shadowN = 0;
 const perf = { t: 0, n: 0, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio(), down: 0 };
 applySettings();
 let lastHud = 0, prevGear = 1, feedFlip = 0;
@@ -509,6 +509,7 @@ function frameLoop(fixed) {
   prevGear = S.gear;
   sound.car({ rpm: S.rpm, load: S.load, engine: mode === "build" || mode === "home" ? .4 : S.engine, thrust: S.thrust.power, speed: S.speed, inside: S.inside });
 
+  if (++shadowN % ((W.QUALITY[W.quality] || {}).shEvery || 3) === 0) renderer.shadowMap.needsUpdate = true;
   composer.render();
 }
 

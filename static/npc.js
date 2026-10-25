@@ -167,7 +167,8 @@ export function createLife(scene, roads, walkways, COARSE) {
   // ---- per frame ----
   const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), legT = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
   const buckets = new Map(), tmp = {}, cell = new Map(), CELL = 30;
-  let frameN = 0;
+  let frameN = 0, debLive = 1;
+  const LEGS = [[null, 1, .1], [null, -1, -.1]];
   function decide(c, k) {       // at the crossing k: straight on, or turn onto the cross road
     const axis = c.axis, ok = segOK(axis, c.road, c.dir > 0 ? k : k - 1), oAxis = 1 - axis, oRoad = k;
     const opts = [];
@@ -187,7 +188,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   function smash(c, vx, vz, power) {
     if (power < 14 && !c.wreck) {
       c.dent = Math.min(1, (c.dent || 0) + .45); c.stop = 5 + rnd() * 3; c.v = 0; c.col.multiplyScalar(.82); c.yaw += (rnd() - .5) * .5; c.x += vx * .05; c.z += vz * .05;
-      for (let k = 0; k < 4; k++) { const di = debI++ % DEB, d = deb[di]; d.life = 1.5; d.p.set(c.x, .8, c.z); d.v.set((rnd() - .5) * 6, 2 + rnd() * 3, (rnd() - .5) * 6); d.w.set(rnd() * 8, rnd() * 8, rnd() * 8); debris.setColorAt(di, col.setHex(c.color)); }
+      debLive = 1; for (let k = 0; k < 4; k++) { const di = debI++ % DEB, d = deb[di]; d.life = 1.5; d.p.set(c.x, .8, c.z); d.v.set((rnd() - .5) * 6, 2 + rnd() * 3, (rnd() - .5) * 6); d.w.set(rnd() * 8, rnd() * 8, rnd() * 8); debris.setColorAt(di, col.setHex(c.color)); }
       if (debris.instanceColor) debris.instanceColor.needsUpdate = true;
       return;
     }
@@ -197,13 +198,13 @@ export function createLife(scene, roads, walkways, COARSE) {
       : { t: 0, vx: vx * .45, vz: vz * .45, vy: 0, wx: 0, wy: (rnd() - .5) * 3, wz: 0 };
     c.y = 0; c.rx = 0; c.rz = 0; c.v = 0; c.turn = null;
     c.col.setHex(c.color).multiplyScalar(fly ? .28 : .45);
-    for (let k = 0; k < (fly ? 14 : 6); k++) {
+    debLive = 1; for (let k = 0; k < (fly ? 14 : 6); k++) {
       const di = debI++ % DEB, d = deb[di]; d.life = 3 + rnd() * 2; d.p.set(c.x, 1, c.z); d.v.set(vx * .6 + (rnd() - .5) * 14, 3 + rnd() * 9, vz * .6 + (rnd() - .5) * 14); d.w.set(rnd() * 12, rnd() * 12, rnd() * 12); d.c = k % 3 ? c.color : 0x222222;
       debris.setColorAt(di, col.setHex(d.c));
     }
     if (debris.instanceColor) debris.instanceColor.needsUpdate = true;
   }
-  const near = (x, z) => cell.get(Math.floor(x / CELL) * 7919 + Math.floor(z / CELL)) || [];
+  const NONE = [], near = (x, z) => cell.get(Math.floor(x / CELL) * 7919 + Math.floor(z / CELL)) || NONE;
 
   const api = { detail: 1 };
   return {
@@ -215,20 +216,21 @@ export function createLife(scene, roads, walkways, COARSE) {
     update(dt, time, player, camPos) {
       frameN++;
       const px = player ? player.x : camPos ? camPos.x : 0, pz = player ? player.z : camPos ? camPos.z : 0;
-      buckets.clear(); cell.clear();
+      const relead = frameN % 4 === 1; if (relead) for (const b of buckets.values()) b.length = 0; for (const b of cell.values()) b.length = 0;
       const cx0 = camPos ? camPos.x : px, cz0 = camPos ? camPos.z : pz, alt = camPos ? Math.max(0, camPos.y) : 0;
       const D = api.detail || 1, RC = Math.min(900, ((COARSE ? 260 : 380) + alt * 2) * D), RC2 = RC * RC, RP = Math.min(260, ((COARSE ? 90 : 140) + alt * .4) * D), RP2 = RP * RP;
       for (const m of meshes) m.k = 0;
-      for (const c of cars) {
+      if (relead) for (const c of cars) {
         if (c.wreck || c.turn) continue;
         const key = c.axis * 100000 + c.road * 1000 + (c.dir > 0 ? 500 : 0) + Math.round(c.lane * 10);
         let b = buckets.get(key); if (!b) buckets.set(key, b = []); b.push(c);
       }
-      for (const b of buckets.values()) { b.sort((a, d) => a.s * a.dir - d.s * d.dir); for (let k = 0; k < b.length; k++) b[k].lead = b[k + 1] || null; }
+      if (relead) for (const b of buckets.values()) if (b.length) { b.sort((a, d) => a.s * a.dir - d.s * d.dir); for (let k = 0; k < b.length; k++) b[k].lead = b[k + 1] || null; }
       for (const c of cars) {
         const far = (Math.abs(c.x - px) > 450 || Math.abs(c.z - pz) > 450) && (Math.abs(c.x - cx0) > RC || Math.abs(c.z - cz0) > RC);
-        if (far && (frameN + c.n) % 6) { continue; }
-        const h = far ? dt * 6 : dt;
+        const vfar = far && (Math.abs(c.x - px) > 1200 || Math.abs(c.z - pz) > 1200), every = vfar ? 15 : 6;   // far away nobody sees them: move them in big, rare steps
+        if (far && (frameN + c.n) % every) { continue; }
+        const h = far ? dt * every : dt;
         if (c.wreck) {                                   // a smashed car tumbles, bounces, then lies there smoking until it is towed
           const w = c.wreck; w.t += h;
           if (c.y > 0 || w.vy > 0) { w.vy -= 9.81 * h; c.y = Math.max(0, c.y + w.vy * h); c.rx += w.wx * h; c.rz += w.wz * h; c.yaw += w.wy * h; if (c.y === 0) { w.vy = -w.vy * .3; w.wx *= .5; w.wz *= .5; w.wy *= .5; if (Math.abs(w.vy) < 1) w.vy = 0; } }
@@ -260,21 +262,21 @@ export function createLife(scene, roads, walkways, COARSE) {
           c.v += Math.max(-9 * h, Math.min(3 * h, want - c.v));
           if (!c.turn) { c.s += c.v * c.dir * h; posOf(c); }
         }
-        const key = Math.floor(c.x / CELL) * 7919 + Math.floor(c.z / CELL); let b = cell.get(key); if (!b) cell.set(key, b = []); b.push(c);
-        const lean = c.turn ? .05 : 0;
-        e.set(c.rx, -c.yaw, c.rz + lean, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(c.x, c.y, c.z), q, squash.set(1, c.crush || 1 - (c.dent || 0) * .07, 1));
+        if (!far) { const key = Math.floor(c.x / CELL) * 7919 + Math.floor(c.z / CELL); let b = cell.get(key); if (!b) cell.set(key, b = []); b.push(c); }
         const ddx = c.x - cx0, ddz = c.z - cz0;
-        if (ddx * ddx + ddz * ddz < RC2) { const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
+        if (ddx * ddx + ddz * ddz < RC2) {
+          e.set(c.rx, -c.yaw, c.rz + (c.turn ? .05 : 0), "YXZ"); q.setFromEuler(e); m4.compose(pos.set(c.x, c.y, c.z), q, squash.set(1, c.crush || 1 - (c.dent || 0) * .07, 1));
+          const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
       }
       for (const m of meshes) { m.body.count = m.lights.count = m.k; m.body.instanceMatrix.needsUpdate = m.lights.instanceMatrix.needsUpdate = true; if (m.body.instanceColor) m.body.instanceColor.needsUpdate = true; }
-      // debris
-      for (let k = 0; k < DEB; k++) {
+      // debris (skipped once every piece has landed and been hidden)
+      if (debLive) { debLive = 0; for (let k = 0; k < DEB; k++) {
         const d = deb[k];
-        if (d.life > 0) { d.life -= dt; d.v.y -= 9.81 * dt; d.p.addScaledVector(d.v, dt); if (d.p.y < .1) { d.p.y = .1; d.v.multiplyScalar(.5); d.v.y = Math.abs(d.v.y) * .4; d.w.multiplyScalar(.6); } d.r.x += d.w.x * dt; d.r.y += d.w.y * dt; d.r.z += d.w.z * dt; q.setFromEuler(d.r); m4.compose(d.p, q, one); }
+        if (d.life > 0) { debLive++; d.life -= dt; d.v.y -= 9.81 * dt; d.p.addScaledVector(d.v, dt); if (d.p.y < .1) { d.p.y = .1; d.v.multiplyScalar(.5); d.v.y = Math.abs(d.v.y) * .4; d.w.multiplyScalar(.6); } d.r.x += d.w.x * dt; d.r.y += d.w.y * dt; d.r.z += d.w.z * dt; q.setFromEuler(d.r); m4.compose(d.p, q, one); }
         else m4.compose(pos.set(0, -50, 0), q, zero);
         debris.setMatrixAt(k, m4); glassBits.setMatrixAt(k, d.life > 0 ? m4.compose(pos.copy(d.p).add({ x: .3, y: .2, z: -.2 }), q, one) : m4);
       }
-      debris.instanceMatrix.needsUpdate = glassBits.instanceMatrix.needsUpdate = true;
+      debris.instanceMatrix.needsUpdate = glassBits.instanceMatrix.needsUpdate = true; if (debLive) debLive++; else debLive = 0; }
       // people
       let pk = 0;
       for (let n = 0; n < people.length; n++) {
@@ -307,7 +309,7 @@ export function createLife(scene, roads, walkways, COARSE) {
           e.set(lie * Math.PI / 2 * .95, yaw + (p.fall ? p.fall.rot : 0), 0, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(x, y, z), q, one);
           bodies.setMatrixAt(pk, m4); heads.setMatrixAt(pk, m4); hair.setMatrixAt(pk, m4);
           const swing = p.wait > 0 || p.down > 0 ? 0 : Math.sin(walk) * .5;
-          for (const [leg, sgn, off] of [[legL, 1, .1], [legR, -1, -.1]]) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .86, off), legQ, one); leg.setMatrixAt(pk, legT.copy(m4).multiply(legM)); }
+          LEGS[0][0] = legL; LEGS[1][0] = legR; for (const [leg, sgn, off] of LEGS) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .86, off), legQ, one); leg.setMatrixAt(pk, legT.copy(m4).multiply(legM)); }
           bodies.setColorAt(pk, p.shirt); heads.setColorAt(pk, p.skin); legL.setColorAt(pk, p.pants); legR.setColorAt(pk, p.pants); hair.setColorAt(pk, p.hairC); pk++;
         }
       }
