@@ -346,6 +346,19 @@ function drawGauge(S) {
 }
 let wasWrecked = false, wreckPose = null; const wrecks = [];
 let fpsNow = 0, shadowN = 0;
+// small things far away (signs, pickups, rings, lamps, kiosks) are left out of the picture: they were a fifth of all draw calls.
+// They move to layer 5, which no camera renders, so their own .visible (used by the game) is untouched.
+const smallFar = { list: [], t: -9, n: 0 }, sfV = new THREE.Vector3();
+function cullSmall(time, det) {
+  if (time - smallFar.t > 5 || time < smallFar.t) { smallFar.t = time; smallFar.list.length = 0; scene.traverse(o => { if (((o.isMesh && !o.isInstancedMesh) || o.isSprite) && (o.layers.mask === 1 || o.layers.mask === 32)) { const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere(); if (g.boundingSphere.radius * o.matrixWorld.getMaxScaleOnAxis() < 15) smallFar.list.push(o); } }); }
+  if (++smallFar.n % 10) return;
+  const R = (300 + Math.max(0, camera.position.y) * 2.5) * Math.max(.8, det), R2 = R * R;
+  for (const o of smallFar.list) {
+    sfV.copy(o.geometry.boundingSphere.center).applyMatrix4(o.matrixWorld);
+    const far = sfV.y < 80 && sfV.distanceToSquared(camera.position) > R2;
+    if (far) { if (o.layers.mask === 1) o.layers.set(5); } else if (o.layers.mask === 32) o.layers.set(0);
+  }
+}
 const perf = { t: 0, n: 0, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio(), down: 0 };
 applySettings();
 let lastHud = 0, prevGear = 1, feedFlip = 0;
@@ -499,6 +512,7 @@ function frameLoop(fixed) {
   camLight.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0)); camLight.target.position.copy(S.pos);
   scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)) * W.weatherFog; scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt)) * W.weatherFog;
   const DET = { low: .55, medium: .8, high: 1, ultra: 1.2 }[W.quality] || 1; life.detail = DET; W.city.detail = DET;
+  cullSmall(time, DET);
   scene.fog.far *= Math.min(1, DET + .2); camera.far = scene.fog.far * 1.1 + 150; camera.updateProjectionMatrix();          // nothing past the fog gets drawn
   // refresh the car's reflections every few frames (the car hides from its own camera)
   // (no shadows, no crowds, a short view: it only has to look right in the paint)
