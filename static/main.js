@@ -52,7 +52,8 @@ setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a h
 // a strong graphics card starts on High; everything else starts on Medium (it can be raised in the Menu)
 const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
 const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
-const SET = Object.assign({ q: STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off" }, store.get("void.settings") || {});
+const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;      // recent RTX cards start on Ultra
+const SET = Object.assign({ q: TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off" }, store.get("void.settings") || {});
 const gameOpts = {
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
   onScore: (n, why) => { if (why === "Drift") goals.drift(n); goals.note(why); },
@@ -97,13 +98,16 @@ menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.se
 document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
 function applySettings(save = true) {
   for (const seg of menuEl.querySelectorAll(".seg[data-set]")) for (const b of seg.children) b.classList.toggle("on", SET[seg.dataset.set] === b.dataset.v);
+  const weak = /Intel|UHD|Iris|Radeon\(TM\) Graphics|Vega|SwiftShader|llvmpipe|Basic Render/i.test(GPU);
+  document.getElementById("gGpu").innerHTML = `Running on: <b>${(GPU || "unknown").replace(/^ANGLE \([^,]+, /, "").replace(/ \(0x[0-9A-Fa-f]+\).*$/, "").replace(/ Direct3D.*$/, "").replace(/, D3D.*$/, "")}</b>${weak ? '<br><span class="warn">This is the built-in laptop graphics. For full speed, make your browser use the RTX: Windows Settings → System → Display → Graphics → your browser → High performance, then restart the browser.</span>' : ""}`;
   document.getElementById("gSens").value = SET.sens; game.api.sens = +SET.sens;
   document.body.classList.toggle("steer-buttons", SET.steer === "buttons");
   const cap = W.setQuality(SET.q); perf.max = cap; perf.pr = Math.min(perf.pr, cap); if (renderer.getPixelRatio() > cap) { renderer.setPixelRatio(cap); composer.setPixelRatio(cap); } lastW = 0; resize();
   if (save) store.set("void.settings", SET);
 }
 menuEl.querySelectorAll(".seg[data-set]").forEach(seg => seg.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); SET[seg.dataset.set] = b.dataset.v; if (seg.dataset.set === "q") { perf.pr = W.QUALITY[b.dataset.v].pr; perf.down = 0; } applySettings();
-atmos.setWeather(SET.weather); }));
+atmos.setWeather(SET.weather);
+if (/Intel|UHD|Iris/i.test(GPU) && !COARSE && !store.get("void.gpuWarned")) { store.set("void.gpuWarned", 1); setTimeout(() => toast("Running on built-in graphics: see Menu → Settings to switch to your RTX"), 4000); } }));
 document.getElementById("gSens").addEventListener("input", e => { SET.sens = +e.target.value; applySettings(); });
 // the touch joystick: drag the knob; left/right steers, up/down pitches when flying
 {

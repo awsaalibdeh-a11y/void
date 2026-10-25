@@ -392,3 +392,5 @@ body[data-mode="play"] .hub-chip { display: none !important; }
 /* the menu takes its own scrolling (it sits inside the click-through play layer) */
 .g-menu { pointer-events: auto !important; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 .g-panel { overscroll-behavior: contain; }
+
+.gpu { margin: 4px 0 8px; } .gpu .warn { color: #ffb347; }
