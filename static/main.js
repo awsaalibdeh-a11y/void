@@ -56,7 +56,7 @@ const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;
 const SET = Object.assign({ q: TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off" }, store.get("void.settings") || {});
 const gameOpts = {
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
-  onScore: (n, why) => { if (why === "Drift") goals.drift(n); goals.note(why); },
+  onScore: (n, why) => { if (why === "Drift") goals.drift(n); goals.note(why); earn(n); },
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
   mapExtra(mx, g, MM) {
@@ -76,7 +76,7 @@ const goals = createGoals(gl => { const t = document.getElementById("gTrophy"); 
 function renderGoals() {
   const S = goals.stats;
   document.getElementById("gGoals").innerHTML = GOALS.map(g => { const v = Math.min(1, (S[g.stat] || 0) / g.need), ok = goals.done.has(g.id); return `<div class="goal${ok ? " ok" : ""}"><b>${g.icon}</b><div><span>${g.name}</span><small>${g.text}</small><i style="--v:${v}"></i></div>${ok ? "🏆" : `<em>${Math.floor(v * 100)}%</em>`}</div>`; }).join("");
-  document.getElementById("gStatsRow").innerHTML = `<div><b>${(S.best || 0).toLocaleString()}</b><span>Best score</span></div><div><b>${Math.round(S.top)}</b><span>Top km/h</span></div><div><b>${S.km.toFixed(1)}</b><span>km travelled</span></div><div><b>${goals.done.size}/${GOALS.length}</b><span>Trophies</span></div>`;
+  document.getElementById("gStatsRow").innerHTML = `<div><b>${(S.best || 0).toLocaleString()}</b><span>Best score</span></div><div><b>${Math.round(S.top)}</b><span>Top km/h</span></div><div><b>${S.km.toFixed(1)}</b><span>km travelled</span></div><div><b>${goals.done.size}/${GOALS.length}</b><span>Trophies</span></div><div><b>$${cash.toLocaleString()}</b><span>Cash · spend in Garage</span></div>`;
 }
 const WX_ICON = { clear: "☀️ Clear", rain: "🌧 Rain", storm: "⛈ Storm", fog: "🌫 Fog", snow: "❄️ Snow" }, RADIO = { score: "🎵 VOID Score", voidfm: "📻 VOID FM", off: "🔇 Radio off" };
 function chips() { document.getElementById("gChips").innerHTML = `<span>${{ night: "🌙", sunset: "🌇", day: "☀️" }[W.timeOfDay]} ${W.timeOfDay}</span><span>${WX_ICON[atmos.weather]}</span>`; document.getElementById("gWeather").innerHTML = `<b>${WX_ICON[SET.weather].split(" ")[0]}</b>${WX_ICON[SET.weather].split(" ").slice(1).join(" ")}`; document.getElementById("gRadio").innerHTML = `<b>${RADIO[SET.radio].split(" ")[0]}</b>${RADIO[SET.radio].split(" ").slice(1).join(" ")}`; }
@@ -171,7 +171,7 @@ W.setTime(store.get("void.time") || "night");
 
 $("osmCredit").textContent = W.credit;
 // the garage: the Build panel over the game, the game paused underneath
-function openGarage(on) { document.body.classList.toggle("garage", on); game.pause(on); if (on && car.repair) { car.repair(); applyBuild(); if (game.state) game.state.hp = 100; } }
+function openGarage(on) { if (on) renderUpg(); document.body.classList.toggle("garage", on); game.pause(on); if (on && car.repair) { car.repair(); applyBuild(); if (game.state) game.state.hp = 100; } }
 $("gGarageClose").onclick = () => openGarage(false);
 const nozzles = (car.nozzles || [[.9, .3, 1], [.9, .3, -1], [-.95, .38, 1], [-.95, .38, -1]]).map(([x, y, s]) => new THREE.Vector3(x, y - .5, s));
 
@@ -208,16 +208,34 @@ function applyBuild() {
   for (const k in OPTS) { const n = document.querySelector(`[data-name="${k}"]`); if (n) n.textContent = OPTS[k].items[build[k]][0]; }
 }
 const ORDER = ["model", "paint", "finish", "livery", "livc", "spoiler", "rim", "cal", "trim", "tint", "light", "glow", "flame", "horn"];
-$("cfgBody").innerHTML = ORDER.map(k => [k, OPTS[k]]).map(([k, o]) => `<div class="grp"><div class="grp-h">${o.label}<b data-name="${k}"></b></div><div class="${o.seg ? "seg" : "sw"}">${o.items.map(([n, c], i) => o.seg
+$("cfgBody").innerHTML = `<div id="upgBody"></div>` + ORDER.map(k => [k, OPTS[k]]).map(([k, o]) => `<div class="grp"><div class="grp-h">${o.label}<b data-name="${k}"></b></div><div class="${o.seg ? "seg" : "sw"}">${o.items.map(([n, c], i) => o.seg
   ? `<button data-k="${k}" data-i="${i}">${n}</button>`
   : `<button data-k="${k}" data-i="${i}" title="${n}" aria-label="${o.label}: ${n}" style="background:${c || "repeating-linear-gradient(45deg,#222 0 4px,#111 4px 8px)"}"></button>`).join("")}</div></div>`).join("");
-$("cfgBody").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; build[b.dataset.k] = +b.dataset.i; applyBuild(); });
+$("cfgBody").addEventListener("click", e => { const b = e.target.closest("button[data-k]"); if (!b) return; build[b.dataset.k] = +b.dataset.i; applyBuild(); });
 $("reset").onclick = () => { build = { ...DEFAULT, model: build.model }; applyBuild(); toast("Back to black and red"); };
 $("share").onclick = async () => {
   const url = location.origin + location.pathname + "#b=" + Object.keys(DEFAULT).map(k => build[k]).join(".");
   try { await navigator.clipboard.writeText(url); toast("Link to your build copied"); } catch { prompt("Copy your build link", url); }
 };
 applyBuild();
+// ---------- performance upgrades: every point you score is also cash, spent here (kept on this device) ----------
+const UPG = { engine: ["⚙️", "Engine", "More power and top speed"], grip: ["🛞", "Tyres", "Grip in corners, longer drifts"], nitro: ["🔥", "Nitro", "A bigger nitro tank"], armor: ["🛡️", "Armour", "Takes less damage"] };
+const PRICE = [2500, 6000, 15000];
+const upg = Object.assign({ engine: 0, grip: 0, nitro: 0, armor: 0 }, store.get("void.upg") || {});
+let cash = store.get("void.cash") ?? 3000, cashSaveT = 0;
+gameOpts.upg = upg;
+function earn(n) { cash += Math.max(0, Math.round(n)); clearTimeout(cashSaveT); cashSaveT = setTimeout(() => store.set("void.cash", cash), 800); const el = document.getElementById("gCash"); if (el) el.textContent = "$" + cash.toLocaleString(); }
+function renderUpg() {
+  $("upgBody").innerHTML = `<div class="grp"><div class="grp-h">Performance<b>$${cash.toLocaleString()}</b></div><div class="upg">${Object.entries(UPG).map(([k, [ic, name, txt]]) => { const lv = upg[k], p = PRICE[lv]; return `<div class="up-row"><b>${ic}</b><div><span>${name}</span><small>${txt}</small><i>${[0, 1, 2].map(i => `<u class="${i < lv ? "on" : ""}"></u>`).join("")}</i></div>${p ? `<button data-u="${k}" ${cash < p ? "disabled" : ""}>$${p.toLocaleString()}</button>` : "<em>MAX</em>"}</div>`; }).join("")}</div><p class="up-note">Every point you score is also cash. Fully upgraded is about 20% faster and takes 40% less damage.</p></div>`;
+}
+$("upgBody").addEventListener("click", e => {
+  const b = e.target.closest("button[data-u]"); if (!b) return; const k = b.dataset.u, p = PRICE[upg[k]];
+  if (!p || cash < p) return; cash -= p; upg[k]++; store.set("void.cash", cash); store.set("void.upg", upg);
+  goals.stats.upg = Object.values(upg).reduce((a, v) => a + v, 0); goals.note(""); earn(0); renderUpg(); if (!sound.on) setSound(true); sound.rev(); toast(`${UPG[k][1]} upgraded to level ${upg[k]}`);
+});
+goals.stats.upg = Object.values(upg).reduce((a, v) => a + v, 0); renderUpg(); earn(0);
+// one bonus a day for coming back
+try { const day = new Date().toDateString(); if (store.get("void.day") !== day) { const first = store.get("void.day") == null; store.set("void.day", day); if (!first) { cash += 2000; store.set("void.cash", cash); setTimeout(() => toast("Daily bonus: $2,000 for upgrades in the Garage"), 2500); } } } catch { }
 let toastT;
 function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("on"), 2200); }
 

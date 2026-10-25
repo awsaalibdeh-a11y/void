@@ -1,4 +1,4 @@
-// Challenges: twelve goals tracked from what you do (kept on this device), each worth a trophy and 1000 points.
+// Challenges: fifteen goals tracked from what you do (kept on this device), each worth a trophy and 1000 points.
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
 export const GOALS = [
   { id: "speed", icon: "🏎️", name: "Speed demon", text: "Hit 300 km/h", stat: "top", need: 300 },
@@ -14,10 +14,11 @@ export const GOALS = [
   { id: "fuel", icon: "⛽", name: "Pit stop", text: "Fill up at a station", stat: "refuels", need: 1 },
   { id: "coins", icon: "🪙", name: "Collector", text: "Find 20 hidden coins", stat: "coins", need: 20 },
   { id: "taxi", icon: "🚕", name: "Cabbie", text: "Complete 5 taxi fares", stat: "fares", need: 5 },
+  { id: "tuner", icon: "🔧", name: "Tuner", text: "Buy 4 garage upgrades", stat: "upg", need: 4 },
   { id: "brooklyn", icon: "🌉", name: "Bridge and tunnel", text: "Cross the bridge to Brooklyn", stat: "brooklyn", need: 1 },
 ];
 export function createGoals(onDone) {
-  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0, coins: 0, fares: 0 }, store.get("void.stats") || {});
+  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0, coins: 0, fares: 0, upg: 0 }, store.get("void.stats") || {});
   const done = new Set(store.get("void.goals") || []);
   let saveT = 0, lastSmash = null, lastRings = null, lastFuel = null, pads = new Set();
   function check() { for (const g of GOALS) if (!done.has(g.id) && S[g.stat] >= g.need) { done.add(g.id); store.set("void.goals", [...done]); onDone(g); } }
