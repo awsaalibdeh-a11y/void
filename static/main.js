@@ -99,7 +99,9 @@ document.getElementById("gFuelNav").onclick = () => { const st = game.state; if 
 function applySettings(save = true) {
   for (const seg of menuEl.querySelectorAll(".seg[data-set]")) for (const b of seg.children) b.classList.toggle("on", SET[seg.dataset.set] === b.dataset.v);
   const weak = /Intel|UHD|Iris|Radeon\(TM\) Graphics|Vega|SwiftShader|llvmpipe|Basic Render/i.test(GPU);
-  document.getElementById("gGpu").innerHTML = `Running on: <b>${(GPU || "unknown").replace(/^ANGLE \([^,]+, /, "").replace(/ \(0x[0-9A-Fa-f]+\).*$/, "").replace(/ Direct3D.*$/, "").replace(/, D3D.*$/, "")}</b>${weak ? '<br><span class="warn">This is the built-in laptop graphics. For full speed, make your browser use the RTX: Windows Settings → System → Display → Graphics → your browser → High performance, then restart the browser.</span>' : ""}`;
+  const masked = !/ANGLE|NVIDIA|Intel|AMD|Radeon|Apple|Mali|Adreno/i.test(GPU);       // Brave and some others hide the chip name for privacy
+  const name = (GPU || "unknown").replace(/^ANGLE \([^,]+, /, "").replace(/ \(0x[0-9A-Fa-f]+\).*$/, "").replace(/ Direct3D.*$/, "").replace(/, D3D.*$/, "");
+  document.getElementById("gGpu").innerHTML = `${masked ? "Your browser hides which graphics chip it uses" : `Running on: <b>${name}</b>`} · <b id="gFps">${fpsNow ? fpsNow + " fps" : "measuring…"}</b>${weak ? '<br><span class="warn">This is the built-in laptop graphics. For full speed, make your browser use the RTX: Windows Settings → System → Display → Graphics → your browser → High performance, then restart the browser.</span>' : masked ? '<br><span class="small">Smooth is 60 fps or more. Under 40, check the browser is set to your RTX in Windows graphics settings.</span>' : ""}`;
   document.getElementById("gSens").value = SET.sens; game.api.sens = +SET.sens;
   document.body.classList.toggle("steer-buttons", SET.steer === "buttons");
   const cap = W.setQuality(SET.q); perf.max = cap; perf.pr = Math.min(perf.pr, cap); if (renderer.getPixelRatio() > cap) { renderer.setPixelRatio(cap); composer.setPixelRatio(cap); } lastW = 0; resize();
@@ -325,6 +327,7 @@ function drawGauge(S) {
   if (S.nitro > .1) { gx.font = `800 ${W2 * .05}px Inter, sans-serif`; gx.fillStyle = "#3df5ff"; gx.fillText("NITRO", c, c - W2 * .16); }
 }
 let wasWrecked = false, wreckPose = null; const wrecks = [];
+let fpsNow = 0;
 const perf = { t: 0, n: 0, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio(), down: 0 };
 applySettings();
 let lastHud = 0, prevGear = 1, feedFlip = 0;
@@ -334,7 +337,7 @@ function frameLoop(fixed) {
   if (!fixed && raw < .5) {
     perf.t += raw; perf.n++;
     if (perf.t > 1.5) {
-      const avg = perf.t / perf.n, was = perf.pr;
+      const avg = perf.t / perf.n, was = perf.pr; fpsNow = Math.round(1 / avg); const fe = document.getElementById("gFps"); if (fe) fe.textContent = fpsNow + " fps";
       if (avg > 1 / 45 && perf.pr > .6) perf.pr = Math.max(.6, perf.pr - (avg > 1 / 25 ? .25 : .12));
       else if (avg > 1 / 40 && mode === "play" && ++perf.down >= 3 && SET.q !== "low") {      // still slow at the lowest resolution: drop a quality level
         perf.down = 0; SET.q = { ultra: "high", high: "medium", medium: "low" }[SET.q]; perf.pr = W.QUALITY[SET.q].pr; applySettings(false); toast(`Graphics set to ${SET.q} to keep it smooth`);
