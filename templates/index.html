@@ -100,7 +100,7 @@
 <!-- Play -->
 <div id="playUI" class="mode">
   <div class="hud-tl">
-    <div class="g-score"><span>Score</span><b id="gScore">0</b><em id="gCombo"></em></div>
+    <div class="g-score"><span>Cash this run</span><b id="gScore">$0</b><em id="gCombo"></em></div>
     <div class="g-bars"><div class="bar hp" id="gHp"><i></i><span>Health</span></div><div class="bar nos" id="gNos"><i></i><span>Nitro</span></div><div class="bar fuel" id="gFuel"><i></i><span>Fuel</span></div></div>
     <div class="g-stars" id="gStars"></div>
   </div>
@@ -116,6 +116,7 @@
     <div class="g-job" id="gJob" hidden></div>
     <div class="g-job g-con" id="gCon" hidden></div>
     <div class="g-build" id="gBuild" hidden></div>
+    <div class="g-tut" id="gTut" hidden></div>
     <div class="g-gps" id="gGps"></div>
     <div class="g-hint" id="gHint"></div>
     <div class="g-target"><i id="gArrow">&#11014;</i><span id="gTgt"></span></div>
@@ -125,6 +126,7 @@
   <div class="g-count" id="gCount" hidden></div>
   <div class="g-card g-raceres" id="gRaceRes" hidden></div>
   <button class="pill solid g-racego" id="gRaceGo" hidden>Start race</button>
+  <button class="g-footbtn" id="gFootBtn" aria-label="Get out or get in">🚶</button>
   <div class="g-card g-panel" id="gGpsPanel" hidden></div>
   <div class="g-feed" id="gFeed"></div>
   <div class="g-lookhint">Click the game to look around with the mouse · Esc opens the menu</div>
@@ -143,7 +145,7 @@
     <div class="stats-row" id="gStatsRow"></div>
     <div class="menu-grid">
       <section><h4>Vehicle</h4><div class="tiles">
-        <button class="tile" data-veh="car"><b>🚗</b>Car</button><button class="tile" data-veh="plane"><b>✈️</b>Plane</button><button class="tile" data-veh="heli"><b>🚁</b>Helicopter</button><button class="tile" data-veh="boat"><b>🚤</b>Boat</button><button class="tile" id="gGarage"><b>🔧</b>Garage</button></div></section>
+        <button class="tile" data-veh="car"><b>🚗</b>Car</button><button class="tile" data-veh="plane"><b>✈️</b>Plane</button><button class="tile" data-veh="heli"><b>🚁</b>Helicopter</button><button class="tile" data-veh="boat"><b>🚤</b>Boat</button><button class="tile" id="gGarage"><b>🔧</b>Garage</button><button class="tile" id="gDealer"><b>🏪</b>VOID Motors</button></div></section>
       <section><h4>Go somewhere</h4><div class="tiles">
         <button class="tile" id="gGpsBtn"><b>🧭</b>GPS</button><button class="tile" id="gAuto"><b>🤖</b>Autopilot</button><button class="tile" id="gFuelNav"><b>⛽</b>Nearest fuel</button><button class="tile" id="gTaxi"><b>🚕</b>Taxi job</button><button class="tile" id="gNetBtn"><b>🌐</b>Online</button></div></section>
       <section><h4>World</h4><div class="tiles">
@@ -154,14 +156,19 @@
         <label class="set">Look speed<input type="range" id="gSens" min="0.4" max="2.5" step="0.1"></label>
         <label class="set">Auto gas<span class="seg" data-set="autogas"><button data-v="off">Off</button><button data-v="on">On</button></span></label>
         <label class="set">Living city (day/night + weather change)<span class="seg" data-set="cycle"><button data-v="off">Off</button><button data-v="on">On</button></span></label>
+        <label class="set">Handling<span class="seg" data-set="handling"><button data-v="arcade">Arcade</button><button data-v="realistic">Realistic</button></span></label>
+        <label class="set">Screen shake and speed blur<span class="seg" data-set="motion"><button data-v="on">On</button><button data-v="off">Off</button></span></label>
+        <label class="set">Text size<span class="seg" data-set="text"><button data-v="normal">Normal</button><button data-v="large">Large</button></span></label>
         <label class="set">Touch steering<span class="seg" data-set="steer"><button data-v="stick">Joystick</button><button data-v="buttons">Buttons</button></span></label>
+        <div class="set save-row">Secret code<span><input id="gCode" maxlength="16" placeholder="type a code" autocomplete="off"><button class="pill" id="gCodeGo">Enter</button></span></div>
         <div class="set save-row">Your progress<span><button class="pill" id="gSaveOut">Back up</button><button class="pill" id="gSaveIn">Restore</button></span></div>
         <p class="small">Progress lives in this browser. Back up copies a code you can paste on another device or browser.</p>
       </section>
+      <section class="wide"><h4>Today's challenges</h4><div class="goals" id="gDaily"></div></section>
       <section class="wide"><h4>Contracts</h4><div class="tiles con-tiles" id="gContracts"></div></section>
       <section class="wide"><h4>Routes and ghosts</h4><div class="routes" id="gRoutes"></div></section>
       <section class="wide"><h4>Challenges</h4><div class="goals" id="gGoals"></div></section>
-      <section class="wide"><h4>Controls</h4><p class="small"><b>Drive:</b> W A S D or arrows · Space handbrake/drift · Shift nitro · F fly · L land · C camera · R reset · H horn · T time · M GPS · O autopilot · Enter starts a race at a 🏁 marker · G drops a gate in the route builder. <b>Look:</b> click the game, then move the mouse. <b>Phone:</b> joystick on the left, pedals on the right, drag anywhere to look. <b>Fuel:</b> about 10 min driving, 5 min flying; stop at ⛽ to fill up and repair, or drive through a green 🔧.</p></section>
+      <section class="wide"><h4>Controls</h4><p class="small"><b>Drive:</b> W A S D or arrows · Space handbrake/drift · on a jump: A/D spin, X (Drift) backflip · Shift nitro · F fly · L land · C camera · R reset · H horn · T time · M GPS · O autopilot · Enter starts a race at a 🏁 marker · B drops a gate in the route builder. <b>On foot:</b> stop and press E to get out · WASD walk · Shift run · Space jump · E next to any car to drive it (taking traffic cars brings the police). VOID Motors in the park sells 50 cars. <b>Look:</b> click the game, then move the mouse. <b>Phone:</b> joystick on the left, pedals on the right, drag anywhere to look. <b>Fuel:</b> about 10 min driving, 5 min flying; stop at ⛽ to fill up and repair, or drive through a green 🔧.</p></section>
     </div>
     <div class="menu-foot"><button class="pill" id="gExit">Exit to home</button></div>
   </div>

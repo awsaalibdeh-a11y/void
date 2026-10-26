@@ -133,7 +133,7 @@ export function createRaces(scene, api, sound, canvasTex, net) {
   function builder(on) {
     if (on && R) return api.say("Finish the race first", 2);
     for (const m of buildMarks) scene.remove(m); buildMarks.length = 0;
-    B = on ? { pts: [] } : null; $("gBuild").hidden = !on; if (on) { dropGate(); api.say("Route builder: drive or fly your route, press G (or the button) to drop each gate", 4); }
+    B = on ? { pts: [] } : null; $("gBuild").hidden = !on; if (on) { dropGate(); api.say("Route builder: drive or fly your route, press B (or the button) to drop each gate", 4); }
     renderBuild();
   }
   function dropGate() {
@@ -149,8 +149,8 @@ export function createRaces(scene, api, sound, canvasTex, net) {
     const r = addRoute({ id: "c" + Date.now().toString(36), name: "My route " + (custom.length + 1), air: B.pts.some(q => q[1] > 0), pts: B.pts });
     builder(false); api.say(`Saved "${r.name}" and copied its link. The purple marker is its start`, 3.5); renderList(); share(r, true);
   }
-  function renderBuild() { if (!B) return; $("gBuild").innerHTML = `<b>🛠 Route builder</b><span>${B.pts.length === 1 ? "Start set" : `${B.pts.length - 1} gate${B.pts.length > 2 ? "s" : ""}`}</span><button class="pill" id="gBDrop">Drop gate (G)</button><button class="pill solid" id="gBSave">Save</button><button class="pill" id="gBCancel">Cancel</button>`; $("gBDrop").onclick = dropGate; $("gBSave").onclick = saveBuild; $("gBCancel").onclick = () => builder(false); }
-  addEventListener("keydown", e => { if (e.code === "KeyG" && B && api.active() && !e.repeat) dropGate(); });
+  function renderBuild() { if (!B) return; $("gBuild").innerHTML = `<b>🛠 Route builder</b><span>${B.pts.length === 1 ? "Start set" : `${B.pts.length - 1} gate${B.pts.length > 2 ? "s" : ""}`}</span><button class="pill" id="gBDrop">Drop gate (B)</button><button class="pill solid" id="gBSave">Save</button><button class="pill" id="gBCancel">Cancel</button>`; $("gBDrop").onclick = dropGate; $("gBSave").onclick = saveBuild; $("gBCancel").onclick = () => builder(false); }
+  addEventListener("keydown", e => { if (e.code === "KeyB" && B && api.active() && !e.repeat) dropGate(); });
   // share a route as a link: everything is in the address, nothing is uploaded
   const b64 = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   async function share(r, quiet) {

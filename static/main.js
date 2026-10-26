@@ -6,9 +6,9 @@ const V = new URL(import.meta.url).search;
 const $ = id => document.getElementById(id);
 const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); };
 setLoad(15);
-const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
+const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife, personGeo }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
-const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }, { createContracts }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras", "contracts"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }, { createContracts }, { createDealer }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras", "contracts", "dealer"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -53,10 +53,11 @@ setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a h
 const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
 const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
 const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;      // recent RTX cards start on Ultra
-const SET = Object.assign({ q: TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off" }, store.get("void.settings") || {});
+const SET = Object.assign({ q: TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal" }, store.get("void.settings") || {});
 const gameOpts = {
+  handling: () => SET.handling, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
-  onScore: (n, why) => { if (why === "Drift") goals.drift(n); goals.note(why); earn(n); },
+  onScore: (n, why, pts) => { if (why === "Drift") goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; goals.note(why); earn(pts ?? n); },
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
   mapExtra(mx, g, MM) {
@@ -87,7 +88,7 @@ const menuEl = document.getElementById("gMenu");
 function menu(open) {
   if (open == null) open = menuEl.hidden;
   menuEl.hidden = !open; document.body.classList.toggle("g-menu-open", open); if (open) { renderGoals(); chips(); }
-  if (open) { renderContracts(); races.renderList(); }
+  if (open) { renderContracts(); races.renderList(); renderDaily(); }
   if (open && document.pointerLockElement) document.exitPointerLock();
   if (!net.online()) game.pause(open);
 }
@@ -98,6 +99,7 @@ menuEl.addEventListener("click", e => { const t = e.target.closest(".tile"); if 
 menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.setVehicle(b.dataset.veh));
 document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
 function applySettings(save = true) {
+  document.body.classList.toggle("big-ui", SET.text === "large");
   for (const seg of menuEl.querySelectorAll(".seg[data-set]")) for (const b of seg.children) b.classList.toggle("on", SET[seg.dataset.set] === b.dataset.v);
   const weak = /Intel|UHD|Iris|Radeon\(TM\) Graphics|Vega|SwiftShader|llvmpipe|Basic Render/i.test(GPU);
   const masked = !/ANGLE|NVIDIA|Intel|AMD|Radeon|Apple|Mali|Adreno/i.test(GPU);       // Brave and some others hide the chip name for privacy
@@ -128,6 +130,75 @@ races = createRaces(scene, game.api, sound, W.canvasTex, net);
 nav = createNav(scene, game.api, W, ZONES, races.starts);
 const extras = createExtras(W, game.api, nav, sound);
 document.getElementById("gTaxi").onclick = () => extras.toggle();
+// people knocked over: a thud, a shake, and the police notice; they bounce off walls instead of flying through them
+life.onHit = sp => { sound.thud && sound.thud(Math.min(1, sp / 22)); if (game.state) game.state.shake = Math.min(1, (game.state.shake || 0) + .25); police && police.event("ped"); };
+life.collide = (x, z) => !!game.api.hitBox(x, z, .8, .3);
+// VOID Motors: 50 cars for sale
+const dealer = createDealer(W, game, life, nav, sound, store, toast, { cash: () => cash, spend: n => { if (cash < n) return false; cash -= n; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), unlockHero: () => unlockHero() });
+document.getElementById("gDealer").onclick = () => dealer.menu();
+// the secret code box: one word unlocks the best car, nothing else does anything
+function unlockHero() { store.set("void.hero", 1); game.api.useHero(); }
+document.getElementById("gCodeGo").onclick = () => {
+  const el = document.getElementById("gCode"), code = el.value.trim().toLowerCase(); el.value = "";
+  if (code === "aws") { if (store.get("void.hero")) toast("You already have the VOID car"); else { unlockHero(); sound.win(); toast("🔓 Secret unlocked: the VOID car is yours. 330 km/h, and it flies"); } menu(false); }
+  else toast(code ? "Nothing happens…" : "Type a code first");
+};
+document.getElementById("gCode").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") document.getElementById("gCodeGo").click(); });
+document.getElementById("gFootBtn").onclick = () => game.api.foot();
+// you on foot: the same build as the people in the street, legs that swing as you walk or run
+const walker = (() => {
+  const pg = personGeo(), g = new THREE.Group();
+  const shirt = new THREE.MeshStandardMaterial({ vertexColors: true, color: 0x22252d, roughness: .8 }), pants = new THREE.MeshStandardMaterial({ vertexColors: true, color: 0x2b3a55, roughness: .85 });
+  g.add(new THREE.Mesh(pg.body, shirt), new THREE.Mesh(pg.head, new THREE.MeshStandardMaterial({ color: 0xc68a5e, roughness: .7 })), new THREE.Mesh(pg.hair, new THREE.MeshStandardMaterial({ color: 0x18120e, roughness: .9 })));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(.46, .06, .28), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.4), toneMapped: false })); stripe.position.y = 1.32; g.add(stripe);
+  const legs = [1, -1].map(s => { const p = new THREE.Group(); p.position.set(0, .86, s * .1); p.add(new THREE.Mesh(pg.leg, pants)); g.add(p); return p; });
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; }); g.visible = false; scene.add(g);
+  return { g, legs };
+})();
+// cars that aren't your VOID car: the one you're driving and the one you left parked, drawn from the traffic shapes
+const rideMesh = () => { const g = new THREE.Group(); g.visible = false; scene.add(g); return { g, key: "" }; };
+const RIDE = rideMesh(), RPARK = rideMesh();
+function dressRide(R, ride) {
+  const key = ride.model.id + ":" + ride.color + ":" + (ride.rust || 0); if (R.key === key) return; R.key = key;
+  for (const c of [...R.g.children]) R.g.remove(c);
+  const geo = life.geoOf(ride.model.kind), rust = ride.rust || 0;
+  R.g.add(new THREE.Mesh(geo.body, new THREE.MeshStandardMaterial({ vertexColors: true, color: new THREE.Color(ride.color).multiplyScalar(1 - rust * .45), roughness: .3 + rust * .6, metalness: .55 * (1 - rust) })), new THREE.Mesh(geo.lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2.2, 2.2, 2.2) })));
+  R.g.children[0].castShadow = true; R.g.scale.set(ride.model.sl, ride.model.sh, ride.model.sw);
+}
+// settings that change how it plays and looks
+function motionOK() { return !REDUCED && SET.motion !== "off"; }
+// ---------- the first two minutes: a short guided start (skippable, once per device) ----------
+const TUT = [
+  [COARSE ? "Hold Gas to drive" : "Hold W to drive", s => s.speed > 40],
+  [COARSE ? "Steer, then hold Drift in a turn" : "Steer with A and D, hold Space in a turn to drift", (s, g) => g.drift > 25],
+  [COARSE ? "Tap Nitro for a boost" : "Hold Shift for nitro", (s, g) => g.nitroOn > .5],
+  [COARSE ? "Tap Fly to take off" : "Press F to fly", (s, g) => g.mode === "air"],
+  [COARSE ? "Tap Land to come down" : "Press L to land", (s, g, T) => g.mode === "drive" && T.flew],
+  [COARSE ? "Stop, then tap 🚶 to get out" : "Stop, then press E to get out and walk", (s, g) => g.veh === "foot"],
+  [COARSE ? "Walk to any car and tap 🚶 to drive it" : "Walk up to any car and press E to drive it", (s, g) => g.veh === "car"],
+  [COARSE ? "Open the Menu (☰): contracts, races, VOID Motors" : "Press Esc for the Menu: contracts, races, VOID Motors", () => !menuEl.hidden],
+];
+const tut = { on: !store.get("void.tut"), k: 0, flew: false };
+function tutUpdate() {
+  const el = document.getElementById("gTut"), g = game.state;
+  if (!tut.on || !g || !g.started) { el.hidden = true; return; }
+  if (g.mode === "air") tut.flew = true;
+  if (TUT[tut.k][1](lastS || {}, g, tut)) { tut.k++; sound.pop(); if (tut.k >= TUT.length) { tut.on = false; store.set("void.tut", 1); cash += 1000; earn(0); toast("Tutorial done: +$1,000. Have fun!"); el.hidden = true; return; } }
+  el.hidden = false; el.innerHTML = `<b>${tut.k + 1}/${TUT.length}</b> ${TUT[tut.k][0]} <button class="pill" id="gTutSkip">Skip</button>`;
+  document.getElementById("gTutSkip").onclick = () => { tut.on = false; store.set("void.tut", 1); el.hidden = true; };
+}
+let lastS = null;
+// ---------- daily challenges: three a day, the same for everyone on that date, $2,500 each ----------
+const DAILY = [["smashed", 15, "💥 Smash 15 cars"], ["km", 10, "🛣️ Travel 10 km"], ["air", 180, "✈️ Fly for 3 minutes"], ["fares", 3, "🚕 Complete 3 taxi fares"], ["coins", 2, "🪙 Find 2 hidden coins"], ["escapes", 1, "🚓 Escape the police"],
+  ["wins", 1, "🏁 Win a race"], ["rings", 5, "💍 Fly through 5 rings"], ["pads", 2, "🛬 Land on 2 helipads"], ["steals", 3, "🔑 Take 3 cars from the traffic"], ["meds", 1, "🏅 Earn a contract medal"], ["refuels", 1, "⛽ Fill up at a station"]];
+const daily = (() => {
+  const day = new Date().toISOString().slice(0, 10); let d = store.get("void.daily");
+  if (!d || d.day !== day) { let h = 0; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0; const picks = []; while (picks.length < 3) { h = (h * 1103515245 + 12345) >>> 0; const k = h % DAILY.length; if (!picks.includes(k)) picks.push(k); } d = { day, picks, base: {}, done: [] }; for (const k of picks) d.base[DAILY[k][0]] = goals.stats[DAILY[k][0]] || 0; store.set("void.daily", d); }
+  return d;
+})();
+function dailyProg(k) { const [stat, need] = DAILY[k]; return Math.min(1, ((goals.stats[stat] || 0) - (daily.base[stat] || 0)) / need); }
+function dailyCheck() { for (const k of daily.picks) if (!daily.done.includes(k) && dailyProg(k) >= 1) { daily.done.push(k); store.set("void.daily", daily); cash += 2500; earn(0); toast(`Daily challenge done: ${DAILY[k][2]} · +$2,500`); sound.win(); } }
+function renderDaily() { document.getElementById("gDaily").innerHTML = daily.picks.map(k => { const v = dailyProg(k), ok = daily.done.includes(k); return `<div class="goal${ok ? " ok" : ""}"><b>${DAILY[k][2].split(" ")[0]}</b><div><span>${DAILY[k][2].split(" ").slice(1).join(" ")}</span><small>$2,500</small><i style="--v:${v}"></i></div>${ok ? "✅" : `<em>${Math.floor(v * 100)}%</em>`}</div>`; }).join(""); }
 // contracts: hybrid drive + fly jobs and pursuits with medals
 const contracts = createContracts(W, game.api, nav, sound, police);
 function renderContracts() { document.getElementById("gContracts").innerHTML = contracts.CONTRACTS.map(c => `<button class="tile con" data-con="${c.id}"><b>${c.icon}</b>${c.name}<small>${c.text}</small><i>${["Not done", "🥉 Bronze", "🥈 Silver", "🥇 Gold"][contracts.best[c.id] || 0]}</i></button>`).join("") + (contracts.active ? `<button class="tile con" id="gConStop"><b>✕</b>Cancel contract</button>` : ""); }
@@ -366,7 +437,7 @@ function drawGauge(S) {
   if (S.nitro > .1) { gx.font = `800 ${W2 * .05}px Inter, sans-serif`; gx.fillStyle = "#3df5ff"; gx.fillText("NITRO", c, c - W2 * .16); }
 }
 let wasWrecked = false, wreckPose = null; const wrecks = [];
-let fpsNow = 0, shadowN = 0; const paused0 = () => !menuEl.hidden || document.body.classList.contains("garage");
+let fpsNow = 0, shadowN = 0, dailyT = 0; const paused0 = () => !menuEl.hidden || document.body.classList.contains("garage");
 // small things far away (signs, pickups, rings, lamps, kiosks) are left out of the picture: they were a fifth of all draw calls.
 // They move to layer 5, which no camera renders, so their own .visible (used by the game) is untouched.
 const smallFar = { list: [], t: -9, n: 0 }, sfV = new THREE.Vector3();
@@ -444,22 +515,27 @@ function frameLoop(fixed) {
 
   // the car, or the plane / helicopter / boat
   const veh = mode === "play" ? S.veh || "car" : "car";
-  carRoot.visible = veh === "car";
-  vehicles.show(veh === "car" ? null : veh, S.pos, S.quat, S, time, dt);
+  const gsx = mode === "play" ? game.state : null, heroDriven = mode !== "play" || (veh === "car" && !(gsx && gsx.ride));
+  carRoot.visible = heroDriven || !!(gsx && gsx.heroPark); lastS = S;
+  if (gsx && gsx.ride && veh === "car") { dressRide(RIDE, gsx.ride); RIDE.g.visible = true; RIDE.g.position.copy(S.pos); RIDE.g.quaternion.copy(S.quat); } else RIDE.g.visible = false;
+  if (gsx && gsx.ridePark) { const P = gsx.ridePark; dressRide(RPARK, P.ride); RPARK.g.visible = true; RPARK.g.position.set(P.x, 0, P.z); RPARK.g.rotation.set(0, -P.yaw, 0); } else RPARK.g.visible = false;
+  walker.g.visible = veh === "foot";
+  if (veh === "foot") { walker.g.position.copy(S.pos); walker.g.rotation.set(0, -gsx.yaw, 0); const sw = Math.sin(S.walk || 0) * Math.min(.7, S.speed / 14) * (S.alt > .3 ? .3 : 1); walker.legs[0].rotation.z = sw; walker.legs[1].rotation.z = -sw; }
+  vehicles.show(veh === "car" || veh === "foot" ? null : veh, S.pos, S.quat, S, time, dt);
   if (S.splash) for (let k = 0; k < 6; k++) { const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(S.pos).add(new THREE.Vector3((Math.random() - .5) * 3, .3, (Math.random() - .5) * 3)); pf.life = 1; pf.s.visible = true; pf.grow = .8; pf.s.scale.setScalar(.8); pf.s.material.color.set(0xeaf6ff); pf.v.set((Math.random() - .5) * 6, 4 + Math.random() * 4, (Math.random() - .5) * 6); }
   if (veh === "boat" && S.speed > 12 && Math.random() < .6) { const back = new THREE.Vector3(-3.6, .1, (Math.random() - .5) * 2).applyQuaternion(S.quat).add(S.pos); const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(back); pf.life = 1; pf.s.visible = true; pf.grow = .5; pf.s.scale.setScalar(.5); pf.s.material.color.set(0xf4fbff); pf.v.set((Math.random() - .5) * 2, .6, (Math.random() - .5) * 2); }
   const night = W.timeOfDay !== "day";
   heads.intensity = night && veh === "car" ? (W.timeOfDay === "night" ? 260 : 120) : 0;
   W.sky.position.copy(camera.position); W.grade.uniforms.time.value = time % 100;
-  W.grade.uniforms.blur.value = mode === "play" ? Math.max(0, Math.min(1, (S.speed - 160) / 220)) * .9 + (S.nitro || 0) * .5 : 0;
+  W.grade.uniforms.blur.value = mode === "play" && motionOK() ? Math.max(0, Math.min(1, (S.speed - 160) / 220)) * .9 + (S.nitro || 0) * .5 : 0;
   atmos.update(dt, time, S, mode === "play" ? game.state : null);
   W.city.poolMat.opacity = W.timeOfDay === "night" ? 1 : W.timeOfDay === "sunset" ? .45 : 0; W.city.poolMat.visible = W.timeOfDay !== "day";
   extras.sky(dt, time);
   // the living city: when switched on, the day turns and the weather changes on its own
   if (SET.cycle === "on" && mode === "play" && (cycleT += dt) > 150) { cycleT = 0; cycleTime(); if (Math.random() < .5) { const w = ["clear", "clear", "rain", "fog", "storm", "snow"][Math.floor(Math.random() * 6)]; atmos.setWeather(w); SET.weather = w; } }
-  if (mode === "play") { contracts.update(dt, time); extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
+  if (mode === "play") { contracts.update(dt, time); dealer.update(dt, time); tutUpdate(); if ((dailyT += dt) > 1) { dailyT = 0; dailyCheck(); } extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
-  car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat);
+  if (heroDriven) { car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat); } else if (gsx && gsx.heroPark) { car.group.position.set(gsx.heroPark.x, 0, gsx.heroPark.z); car.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -gsx.heroPark.yaw); }
   car.setReveal(S.reveal);
   car.setThrust(S.thrust.power, S.thrust.angle, S.thrust.deploy, time);
   car.setFlame(S.nitro || 0, time);
@@ -477,14 +553,14 @@ function frameLoop(fixed) {
   for (let k = wrecks.length - 1; k >= 0; k--) if (wrecks[k].t <= 0) { scene.remove(wrecks[k].g); wrecks.splice(k, 1); }
   car.setWings(S.wings, time);
   const roll = S.speed / 3.6 * dt / .37;
-  for (const wh of car.wheels) wh.rotation.z -= S.air ? roll * .15 : roll;
+  if (heroDriven) for (const wh of car.wheels) wh.rotation.z -= S.air ? roll * .15 : roll;
   car.group.updateMatrixWorld(true);
 
   // shadow, underglow, exhaust, speed lines
   const fr = S.fr, ground = clamp(1 - S.pos.y / 3) * (fr.u.y > .8 ? 1 : 0);
-  fx.shadow.position.set(S.pos.x, S.pos.y > .5 ? .07 : S.pos.y + .07, S.pos.z); fx.shadow.material.opacity = veh === "car" ? ground : 0; fx.shadow.rotation.z = Math.atan2(-fr.f.z, fr.f.x);
+  fx.shadow.position.set(S.pos.x, S.pos.y > .5 ? .07 : S.pos.y + .07, S.pos.z); fx.shadow.material.opacity = veh === "car" && heroDriven ? ground : 0; fx.shadow.rotation.z = Math.atan2(-fr.f.z, fr.f.x);
   const glowOn = !!OPTS.glow.items[build.glow][1];
-  fx.glow.position.copy(fx.shadow.position).y += .01; fx.glow.rotation.z = fx.shadow.rotation.z; fx.glow.material.opacity = glowOn ? ground * .85 : 0;
+  fx.glow.position.copy(fx.shadow.position).y += .01; fx.glow.rotation.z = fx.shadow.rotation.z; fx.glow.material.opacity = glowOn && heroDriven ? ground * .85 : 0;
   if (S.thrust.power > .3) for (const n of nozzles) if (Math.random() < .18) {
     const pf = fx.puffs[fx.puffI++ % fx.puffs.length], wp = n.clone().applyMatrix4(car.group.matrixWorld);
     pf.s.position.copy(wp); pf.life = 1; pf.s.visible = true; pf.s.scale.setScalar(.4); pf.grow = .4; pf.s.material.color.set(0xc8d2e1);
@@ -526,7 +602,7 @@ function frameLoop(fixed) {
   interior.wheel.rotation.x = 0;
 
   // camera
-  const c = S.cam, shake = REDUCED ? 0 : (Math.max(0, S.g - 2) * .004 + S.thrust.power * .01 + (S.shake || 0) * .25 + (S.nitro || 0) * .02) * (S.inside ? .25 : 1);
+  const c = S.cam, shake = !motionOK() ? 0 : (Math.max(0, S.g - 2) * .004 + S.thrust.power * .01 + (S.shake || 0) * .25 + (S.nitro || 0) * .02) * (S.inside ? .25 : 1);
   camera.position.copy(c.pos).add(new THREE.Vector3(Math.sin(time * 53) * shake, Math.sin(time * 61 + 1) * shake, Math.sin(time * 47 + 2) * shake));
   camera.up.copy(c.up || new THREE.Vector3(0, 1, 0)); camera.lookAt(c.look);
   camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .06 : .35; camera.updateProjectionMatrix();

@@ -29,6 +29,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     if (!active || paused) return;
     if (KEYMAP[e.code]) { keys.add(KEYMAP[e.code]); e.preventDefault(); }
     if (e.repeat) return;
+    if (e.code === "KeyE" && g && g.started) footToggle();
     if (e.code === "KeyF") toggleFly();
     if (e.code === "KeyC" || e.code === "KeyV") toggleView();
     if (e.code === "KeyG") opts.garage && opts.garage();
@@ -113,22 +114,23 @@ export function createGame(W, car, sound, life, opts = {}) {
   }
 
   function spawn(at) {
-    const s = at || SPAWN; rig.yaw = null;
+    const s = at || SPAWN; rig.yaw = null; if (g && g.ride) releaseRide(); if (g) { g.heroPark = null; }
     Object.assign(g, { mode: "drive", x: s.x, z: s.z, y: s.y || 0, yaw: s.yaw, vel: new THREE.Vector3(), pitch: 0, roll: 0, steer: 0, wings: 0, thr: 0, ang: 0, gForce: 1, d: 0, hover: false, landing: false, wreck: 0, boom: 0,
-      hp: 100, hurtT: 9, impacts: [], fresh: true, fuel: 1, veh: "car", airT: 0, drift: 0, driftT: 0, nitro: g.nitro ?? 1, nitroOn: 0, stall: 0, sparks: 0 });
+      hp: 100, hurtT: 9, impacts: [], fresh: true, fuel: 1, veh: "car", airT: 0, drift: 0, driftT: 0, nitro: g.nitro ?? 1, nitroOn: 0, stall: 0, sparks: 0, trS: 0, trF: 0 });
+    if (opts.heroOwned && !opts.heroOwned()) g.ride = opts.starter();
   }
   function start() {
     g = { score: 0, started: false, last: { ...SPAWN }, msg: "", msgT: 0, done: new Set(), combo: 1, comboT: 0, smashed: 0, near: new Map(), rings: 0, nitro: 1 };
-    spawn(); $("gReady").hidden = false; $("gScore").textContent = "0"; $("gBest").textContent = best() ? `Best score: ${best()}` : "";
+    spawn(); $("gReady").hidden = false; $("gScore").textContent = "$0"; $("gBest").textContent = best() ? `Best score: ${best()}` : "";
     sound.setGame("idle");
   }
   const best = () => store.get("void.best3") || 0;
   const say = (m, t = 3) => { g.msg = m; g.msgT = t; };
   function addScore(n, why, quiet) {
     if (g.comboT > 0) g.combo = Math.min(8, g.combo + 1); else g.combo = 1; g.comboT = 4;
-    const pts = Math.round(n * g.combo); g.score += pts; $("gScore").textContent = g.score; if (g.score > best()) store.set("void.best3", g.score);
-    say(`${why}  +${pts}${g.combo > 1 ? `  ×${g.combo}` : ""}`, 2.2); if (!quiet) sound.win();
-    opts.onScore && opts.onScore(n, why);
+    const pts = Math.round(n * g.combo); g.score += pts; $("gScore").textContent = "$" + g.score.toLocaleString(); if (g.score > best()) store.set("void.best3", g.score);
+    say(`${why}  +$${pts.toLocaleString()}${g.combo > 1 ? `  ×${g.combo}` : ""}`, 2.2); if (!quiet) sound.win();
+    opts.onScore && opts.onScore(n, why, pts);
   }
   // where the car was hit and how hard, for the dents (main.js turns these into real damage on the model)
   const impact = (x, y, z, p) => { if (p > 3 && g.impacts.length < 8) g.impacts.push({ x, y, z, p }); };
@@ -138,8 +140,62 @@ export function createGame(W, car, sound, life, opts = {}) {
     g.hp -= n; g.hurtT = 0; g.shake = Math.min(1, (g.shake || 0) + n / 40); document.body.classList.add("g-hurt"); setTimeout(() => document.body.classList.remove("g-hurt"), 160);
     if (g.hp <= 0) { g.hp = 0; wreck(why + ". The car is wrecked"); }
   }
+  // ---- on foot: get out of any car, walk or run, jump, and get into any car: yours, one you parked, or one from the traffic ----
+  function footToggle() {
+    if (!g || g.wreck > 0 || g.frozen > 0) return;
+    if (g.veh === "foot") return enterNearest();
+    if (g.veh !== "car" || g.mode !== "drive" || Math.hypot(g.vel.x, g.vel.z) > 3 || g.y > 1) return;
+    if (g.ride) { if (g.ride.c) { life.park(g.ride.c, g.x, g.z, g.yaw); g.parkedNpc = g.ride.c; } else g.ridePark = { ride: g.ride, x: g.x, z: g.z, yaw: g.yaw }; }
+    else g.heroPark = { x: g.x, z: g.z, yaw: g.yaw };
+    const sx = Math.sin(g.yaw), cx = Math.cos(g.yaw); let px = g.x + sx * 2.4, pz = g.z - cx * 2.4;
+    if (hitBox(px, pz, .9, .35)) { px = g.x - sx * 2.4; pz = g.z + cx * 2.4; }
+    Object.assign(g, { veh: "foot", ride: null, x: px, z: pz, mode: "drive", pitch: 0, roll: 0, wings: 0, hover: false, vy: 0 }); g.vel.set(0, 0, 0);
+    sound.pop(); say("On foot: WASD walk · Shift run · Space jump · E get into a car", 3);
+  }
+  function nearestCar() {
+    let best = null, bd = 4.8;
+    const tryP = (o, kind) => { if (!o) return; const d = Math.hypot(o.x - g.x, o.z - g.z); if (d < bd) { bd = d; best = { kind, o }; } };
+    tryP(g.heroPark, "hero"); tryP(g.ridePark, "owned");
+    if (life) for (const c of life.nearCars(g.x, g.z, 8)) if (!c.wreck && !c.taken && Math.abs((c.y || 0) - g.y) < 2.5) tryP(c, "npc");
+    return best;
+  }
+  function enterNearest() {
+    const n = nearestCar(); if (!n) return say("No car close enough: walk right up to one", 1.6);
+    const o = n.o; Object.assign(g, { veh: "car", mode: "drive", x: o.x, z: o.z, yaw: o.yaw, y: 0, pitch: 0, roll: 0 }); g.vel.set(0, 0, 0); rig.yaw = null;
+    if (n.kind === "hero") { g.ride = null; g.heroPark = null; say("Back in your VOID car", 2); }
+    else if (n.kind === "owned") { g.ride = o.ride; g.ridePark = null; say(`${o.ride.model.name}`, 2); }
+    else {
+      const stolen = !o.parked || o !== g.parkedNpc; life.take(o); if (g.parkedNpc === o) g.parkedNpc = null;
+      g.ride = { model: o.model, color: o.color, rust: o.rust, c: o };
+      if (o.fly && o.y > 2) { g.y = o.y; g.mode = "air"; g.hover = true; }
+      say(stolen ? `You took a ${o.model.name}${o.v > 2 ? " (the driver runs off)" : ""}` : o.model.name, 2.5);
+      if (stolen && opts.onSteal) opts.onSteal(o);
+    }
+    sound.rev && sound.rev();
+  }
+  function releaseRide() { if (g.ride && g.ride.c) { g.ride.c.taken = false; } g.ride = null; }
+  function walk(dt, turn, fwd) {
+    const cy = (rig.yaw ?? g.yaw) + orbit.yaw, fx = Math.cos(cy), fz = Math.sin(cy);
+    let mx = fx * fwd - fz * turn, mz = fz * fwd + fx * turn; const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
+    const run = held("nitro") ? 7 : 4, ground = g.y <= (g.gy || 0) + .01;
+    g.vel.x = lerp(g.vel.x, mx * run, clamp(dt * (ground ? 10 : 2))); g.vel.z = lerp(g.vel.z, mz * run, clamp(dt * (ground ? 10 : 2)));
+    if (ml > .1) { let dy = Math.atan2(mz, mx) - g.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI; g.yaw += dy * clamp(dt * 10); }
+    if (held("up") && ground) { g.vel.y = 5.2; sound.pop(); }
+    g.vel.y -= 14 * dt;
+    // walls: slide along them; water: you can't walk on it
+    let nx = g.x + g.vel.x * dt, nz = g.z + g.vel.z * dt;
+    if (hitBox(nx, nz, g.y + .9, .35)) { if (!hitBox(nx, g.z, g.y + .9, .35)) nz = g.z; else if (!hitBox(g.x, nz, g.y + .9, .35)) nx = g.x; else { nx = g.x; nz = g.z; } }
+    const gr = groundAt(nx, nz, g.y + .3);
+    if (gr.water) { nx = g.x; nz = g.z; g.vel.x = g.vel.z = 0; say("Too deep to walk in", 1); }
+    g.x = nx; g.z = nz; g.y += g.vel.y * dt; g.gy = gr.water ? 0 : Math.max(0, gr.h);
+    if (g.y <= g.gy) { g.y = g.gy; g.vel.y = 0; }
+    g.walk = (g.walk || 0) + Math.hypot(g.vel.x, g.vel.z) * dt * 2.1;
+    if (g.y === 0 && !city.isWater(g.x, g.z)) g.last = { x: g.x, z: g.z, yaw: g.yaw };
+  }
   function toggleFly() {
     if (!g || g.wreck > 0 || !g.started) return;
+    if (g.veh === "foot") return;
+    if (g.ride && !g.ride.model.kind.fly && g.mode === "drive") return say("This car can't fly. Hover cars and your VOID car can", 2);
     if (g.mode === "drive") { g.mode = "air"; g.hover = true; g.landing = false; g.vel.y = Math.max(g.vel.y, 4.5); g.y += .3; sound.whoosh(); say("Thrusters on. Space/E climb · Q/Ctrl dive · A/D bank · W thrust · Shift nitro · F land"); }
     else if (g.mode === "air" && g.jump) { g.jump = false; g.hover = true; g.landing = false; say("Thrusters on"); }
     else if (g.mode === "air") { g.landing = !g.landing; if (!g.landing) g.hover = true; say(g.landing ? "Coming down gently" : "Flying"); }
@@ -168,10 +224,11 @@ export function createGame(W, car, sound, life, opts = {}) {
   }
   const v2 = new THREE.Vector2();
   function traffic(dt) {
-    if (!life || g.y > 3.5) return;
+    if (!life || g.veh === "foot") return;
     const pv = g.vel, ps = Math.hypot(pv.x, pv.z);
     for (const c of life.nearCars(g.x, g.z, 10)) {
-      if (c.wreck) continue;
+      if (c.wreck || c.taken) continue;
+      if (g.y - (c.y || 0) > 3.4 || (c.y || 0) - g.y > 2) continue;           // above or below it
       const dx = g.x - c.x, dz = g.z - c.z, cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), along = dx * cy + dz * sy, side = -dx * sy + dz * cy;
       const hl = c.kind.L / 2 + 2.1, hw = c.kind.W / 2 + .95, tall = c.kind.id === "bus" || c.kind.id === "truck" ? 3.4 : 2.2;
       if (Math.abs(along) < hl && Math.abs(side) < hw && g.y < tall) {
@@ -230,6 +287,9 @@ export function createGame(W, car, sound, life, opts = {}) {
   }
   function setVehicle(type) {
     if (!opts.vehicles || g.wreck > 0) return;
+    if (g.veh === "foot") { Object.assign(g, { veh: "car", mode: "drive" }); g.heroPark = null; }
+    if (g.ride) releaseRide();
+    if (type === "car" && opts.heroOwned && !opts.heroOwned()) g.ride = opts.starter();
     if (type === "car") { if (g.veh !== "car") { const l = g.last; Object.assign(g, { x: l.x, z: l.z, y: 0, yaw: l.yaw, mode: "drive", pitch: 0, roll: 0 }); g.vel.set(0, 0, 0); } }
     else opts.vehicles.spawn(g, type);
     g.veh = type; g.mode = type === "car" ? g.mode : g.y > 1 && type !== "boat" ? "air" : "drive"; rig.yaw = null;
@@ -245,6 +305,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     g.shake = Math.max(0, (g.shake || 0) - dt * 2); g.sparks = Math.max(0, g.sparks - dt * 2);
     let turn = clamp((held("right") ? 1 : 0) - (held("left") ? 1 : 0) + gp.steer + stick.x, -1, 1);
     let gas = Math.max(held("gas") ? 1 : 0, gp.gas), brake = Math.max(held("brake") ? 1 : 0, gp.brake);
+    if (g.veh === "foot") { walk(dt, turn, clamp(gas - brake, -1, 1)); return; }
     if (opts.autoGas && opts.autoGas() && !brake && g.mode === "drive") gas = 1;
     const touched = turn !== 0 || gas > 0 || brake > 0 || held("up") || held("down");
     const ap = opts.autopilot ? opts.autopilot(g, dt, touched && g.apT > .5) : null;
@@ -273,20 +334,21 @@ export function createGame(W, car, sound, life, opts = {}) {
       const hand = !g.ap && (held("drift") || held("up"));
       const f0x = Math.cos(g.yaw), f0z = Math.sin(g.yaw);
       let u = g.vel.x * f0x + g.vel.z * f0z;
-      const maxSteer = .6 / (1 + Math.abs(u) / 17);
-      g.steer += (turn * maxSteer - g.steer) * clamp(dt * 9);
+      const HA = opts.handling && opts.handling() === "realistic", RM = g.ride ? g.ride.model : null;
+      const maxSteer = (HA ? .55 : .64) / (1 + Math.abs(u) / (HA ? 15 : 19));
+      g.steer += (turn * maxSteer - g.steer) * clamp(dt * (HA ? 6 : 10));
       let yawRate = u * Math.tan(g.steer) / 2.8;
       if (hand && Math.abs(u) > 8) yawRate *= 1.45;
       g.yaw += yawRate * dt;
       const fx = Math.cos(g.yaw), fz = Math.sin(g.yaw), sx = -fz, sz = fx;
       u = g.vel.x * fx + g.vel.z * fz; let w = g.vel.x * sx + g.vel.z * sz;
-      const U = opts.upg || {}, top = (92 + g.nitroOn * 22) * (1 + .07 * (U.engine || 0));
-      if (gas) u += (u < -.5 ? 20 : 11.5 * (1 + .1 * (U.engine || 0)) * (1 - clamp(u / top) ** 2) + g.nitroOn * 11) * gas * dt;
+      const U = opts.upg || {}, top = ((RM ? RM.top : 92) + g.nitroOn * 22) * (1 + .07 * (U.engine || 0)), acc = RM ? RM.acc : 1;
+      if (gas) u += (u < -.5 ? 20 : 11.5 * acc * (1 + .1 * (U.engine || 0)) * (1 - clamp(u / top) ** 2) + g.nitroOn * 11) * gas * dt;
       else if (g.nitroOn > .1) u += g.nitroOn * 11 * dt;
       if (brake) u -= (u > .5 ? 26 : 8) * brake * dt;
       u = Math.max(-16, u - Math.sign(u) * (.3 + .00034 * u * u) * dt);
       if (!gas && !brake && Math.abs(u) < .25) u = 0;
-      const grip = hand ? 1.4 + .15 * (U.grip || 0) : 9 * (1 + .12 * (U.grip || 0)) + Math.min(9, Math.abs(u) * .09);
+      const grip = (hand ? 1.4 + .15 * (U.grip || 0) : 9 * (1 + .12 * (U.grip || 0)) + Math.min(9, Math.abs(u) * .09)) * (RM ? RM.grip : 1) * (HA ? .8 : 1.2);
       w *= Math.exp(-grip * dt);
       g.vel.set(fx * u + sx * w, 0, fz * u + sz * w);
       // drift scoring
@@ -341,6 +403,7 @@ export function createGame(W, car, sound, life, opts = {}) {
 
     // ---- the air: thrusters for hovering, wings with lift and drag for flying ----
     g.airT += dt;
+    if (g.jump && !g.hover && !g.landing && g.veh === "car") { g.trS += turn * 7 * dt; if (held("drift")) g.trF += 6.5 * dt; }
     const up = g.fuel > 0 && (g.ap ? (g.ap.up || 0) : held("up") ? 1 : 0), down = g.ap ? (g.ap.down || 0) : (held("down") ? 1 : 0);
     g.sPit = lerp(g.sPit || 0, clamp((up ? 1 : 0) - down + (g.ap ? 0 : gp.pitch - stick.y), -1, 1), clamp(dt * 4));
     g.sTurn = lerp(g.sTurn || 0, turn, clamp(dt * 3.5)); turn = g.sTurn;
@@ -424,9 +487,17 @@ export function createGame(W, car, sound, life, opts = {}) {
     }
     traffic(dt);
     const gr = groundAt(g.x, g.z, g.y);
+    // flying low and fast pays too
+    if (!g.jump && g.y - gr.h > 1 && g.y - gr.h < 12 && g.vel.length() > 42) { g.lowT = Math.max(0, g.lowT || 0) + dt; if (g.lowT > 2.5) { g.lowT = -5; addScore(250, "Low pass"); } } else if ((g.lowT || 0) > 0) g.lowT = 0; else if (g.lowT < 0) g.lowT += dt;
     if (g.y <= gr.h) {
       if (gr.water) { splash(); return; }
       g.y = gr.h;
+      if (g.trS || g.trF) {
+        const off = a => { const m = Math.abs(a) % (2 * Math.PI); return Math.min(m, 2 * Math.PI - m); }, spins = Math.round(Math.abs(g.trS) / (2 * Math.PI)), flips = Math.round(Math.abs(g.trF) / (2 * Math.PI));
+        if (off(g.trS) > .6 || off(g.trF) > .6) { if (Math.abs(g.trS) > 1 || Math.abs(g.trF) > 1) { hurt(18, "Bailed the landing"); say("Bailed! Land the trick straight to get paid", 2); g.shake = 1; sound.crash(); } }
+        else if (spins || flips) addScore(spins * 400 + flips * 700 + (spins && flips ? 600 : 0), [flips ? `${flips > 1 ? flips + "× " : ""}Backflip` : "", spins ? `${360 * spins} spin` : ""].filter(Boolean).join(" + "));
+        g.trS = g.trF = 0;
+      }
       const down2 = -g.vel.y, vh2 = Math.hypot(g.vel.x, g.vel.z), angle = Math.atan2(down2, Math.max(.1, vh2));
       if (down2 > 12) impact(g.x, g.y, g.z, down2 * 1.2);
       if (down2 > 26 || (down2 > 15 && angle > 1.1)) { hurt(down2 * 3, `Hit the ground hard (${down2.toFixed(1)} m/s down)`); if (g.wreck > 0) return; }
@@ -488,15 +559,25 @@ export function createGame(W, car, sound, life, opts = {}) {
     mx.strokeStyle = "rgba(255,255,255,.35)"; mx.lineWidth = 2; mx.beginPath(); mx.arc(c, c, c - 2, 0, 7); mx.stroke();
   }
 
-  let mapT = 0, acc = 0;
+  let mapT = 0, acc = 0; const trickQ = new THREE.Quaternion(), trickE = new THREE.Euler();
   const api = {
     get sens() { return api0.sens; }, set sens(v) { api0.sens = v; },
     get state() { return g; }, say: (m, t) => say(m, t), addScore: (n, w) => addScore(n, w), hurt: (n, w) => hurt(n, w), active: () => active && !paused,
-    busted(msg) { say(msg, 4); g.hp = 100; g.vel.set(0, 0, 0); $("gScore").textContent = g.score; sound.crash(); },
+    busted(msg) { say(msg, 4); g.hp = 100; g.vel.set(0, 0, 0); $("gScore").textContent = "$" + g.score.toLocaleString(); sound.crash(); },
+    // the VOID car: locked until bought (or the secret code); then you're put straight into it
+    useHero() { if (!g || !g.started) return; if (g.veh === "foot") Object.assign(g, { veh: "car", mode: "drive" }); if (g.ride) { if (g.ride.c) life.park(g.ride.c, g.x, g.z, g.yaw); g.ride = null; } g.heroPark = null; g.vel.set(0, 0, 0); rig.yaw = null; say("Your VOID car: 330 km/h and it flies (F)", 3); },
     freeze(t) { g.frozen = t; }, teleport(x, z, yaw) { Object.assign(g, { x, z, y: 0, yaw, mode: "drive", pitch: 0, roll: 0, wings: 0 }); g.vel.set(0, 0, 0); camPos.set(x - Math.cos(yaw) * 8, 3, z - Math.sin(yaw) * 8); rig.yaw = yaw; orbit.yaw = orbit.pitch = 0; },
     hitBox, isWater: (x, z) => city.isWater(x, z), impact: (x, z, p) => impact(x, .6, z, p),
     groundAt: (x, z, y) => groundAt(x, z, y), wreck: why => wreck(why), setVehicle: t => setVehicle(t), setStick: (x, y) => { stick.x = x; stick.y = y; }, nearCars: (x, z, r) => life ? life.nearCars(x, z, r) : [], fly: () => { if (g.mode === "drive") toggleFly(); },
     policeClear: () => opts.policeClear && opts.policeClear(),
+    foot: () => footToggle(),
+    // a car from the dealership, delivered next to you (your current car is left parked where it is)
+    deliver(model, color) {
+      if (!g || !g.started || g.wreck > 0) return;
+      if (g.veh === "car" && !g.ride) g.heroPark = { x: g.x, z: g.z, yaw: g.yaw }; else if (g.ride) { if (g.ride.c) life.park(g.ride.c, g.x, g.z, g.yaw); else g.ridePark = { ride: g.ride, x: g.x, z: g.z, yaw: g.yaw }; }
+      const sx = Math.sin(g.yaw), cx = Math.cos(g.yaw); let x = g.x + sx * 5, z = g.z - cx * 5; if (hitBox(x, z, .5, 1.6)) { x = g.x - sx * 5; z = g.z + cx * 5; }
+      Object.assign(g, { veh: "car", mode: "drive", x, z, y: 0, pitch: 0, roll: 0, ride: { model, color, rust: 0, owned: true } }); g.vel.set(0, 0, 0); rig.yaw = null; say(`Enjoy your ${model.name}`, 2.5);
+    },
   };
   return {
     api, RINGS,
@@ -515,6 +596,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         const s0 = new THREE.Vector3().crossVectors(f, UP).normalize(), u0 = new THREE.Vector3().crossVectors(s0, f);
         fr.f.copy(f); fr.s.copy(s0.applyAxisAngle(f, g.roll)); fr.u.copy(u0.applyAxisAngle(f, g.roll));
         basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis);
+        if (g.trS || g.trF) q.multiply(trickQ.setFromEuler(trickE.set(0, -g.trS, g.trF)));
       }
       fr.p.set(g.x, g.y, g.z);
       car.group.position.copy(fr.p); car.group.quaternion.copy(q); car.group.updateMatrixWorld(true);
@@ -522,7 +604,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (orbit.t > 0) orbit.t -= dt;
       const sp0 = g.mode === "rail" ? g.v : g.vel.length();
       // like GTA: once you stop moving the mouse (or finger) for a moment and the car is moving, the view eases back behind it
-      if (orbit.t <= 1.5 && !photo && sp0 > 3 && !orbit.drag) { const k = clamp(dt * 1.6); orbit.yaw = lerp(orbit.yaw, 0, k); orbit.pitch = lerp(orbit.pitch, 0, k); }
+      if (orbit.t <= 1.5 && !photo && sp0 > 3 && !orbit.drag && g.veh !== "foot") { const k = clamp(dt * 1.6); orbit.yaw = lerp(orbit.yaw, 0, k); orbit.pitch = lerp(orbit.pitch, 0, k); }
       const nitroFov = g.nitroOn * 9;
       if (photo) {
         const d = orbit.dist || 9, a = g.yaw + Math.PI + orbit.yaw, e = .25 + orbit.pitch;
@@ -536,7 +618,7 @@ export function createGame(W, car, sound, life, opts = {}) {
           // an orbit rig round the car: only the angles are smoothed, so the camera never lags behind at speed, never
           // cuts through the car when you look round, and never swings in front when you reverse
           const fx = Math.cos(g.yaw), fz = Math.sin(g.yaw), fwd = g.vel.x * fx + g.vel.z * fz, hsp = Math.hypot(g.vel.x, g.vel.z);
-          let base = g.yaw;
+          let base = g.veh === "foot" ? (rig.yaw ?? g.yaw) : g.yaw;
           if (air && hsp > 10) base = Math.atan2(g.vel.z, g.vel.x);
           else if (!air && fwd > 8) { let dv = Math.atan2(g.vel.z, g.vel.x) - g.yaw; while (dv > Math.PI) dv -= 2 * Math.PI; while (dv < -Math.PI) dv += 2 * Math.PI; base = g.yaw + clamp(dv, -.6, .6) * .5; }
           if (rig.yaw == null) rig.yaw = base;
@@ -544,8 +626,8 @@ export function createGame(W, car, sound, life, opts = {}) {
           rig.air = lerp(rig.air ?? (air ? 1 : 0), air ? 1 : 0, clamp(dt * 1.8)); const A = rig.air;
           rig.yaw += dy * clamp(dt * lerp(5, 3, A));
           const yawC = rig.yaw + orbit.yaw, pitC = clamp(lerp(.24, .2, A) + orbit.pitch - (air ? g.vel.y * .004 * A : 0), -.12, 1.25);
-          const want = lerp(6.6 + speed * .012, 12 + speed * .01, A) + (orbit.dist || 0) + (g.veh === "plane" || g.veh === "heli" ? 6 : g.veh === "boat" ? 2 : 0);
-          const pivot = fr.p.clone().add(new THREE.Vector3(0, 1.3 + .1 * A, 0)), dir = new THREE.Vector3(-Math.cos(yawC) * Math.cos(pitC), Math.sin(pitC), -Math.sin(yawC) * Math.cos(pitC));
+          const want = g.veh === "foot" ? 3.4 + (orbit.dist || 0) * .6 : lerp(6.6 + speed * .012, 12 + speed * .01, A) + (orbit.dist || 0) + (g.veh === "plane" || g.veh === "heli" ? 6 : g.veh === "boat" ? 2 : 0);
+          const pivot = fr.p.clone().add(new THREE.Vector3(0, g.veh === "foot" ? 1.55 : 1.3 + .1 * A, 0)), dir = new THREE.Vector3(-Math.cos(yawC) * Math.cos(pitC), Math.sin(pitC), -Math.sin(yawC) * Math.cos(pitC));
           // walls: pull in at once, ease back out
           let room = want; for (let t = .8; t <= want; t += .5) { const q2 = pivot.clone().addScaledVector(dir, t); if (q2.y < .3 || hitBox(q2.x, q2.z, q2.y, .35)) { room = Math.max(1.6, t - .6); break; } }
           rig.dist = room < rig.dist ? room : lerp(rig.dist, room, clamp(dt * 2.5));
@@ -564,7 +646,8 @@ export function createGame(W, car, sound, life, opts = {}) {
       const zones = zonesFrom(fr.p, fr.f);
       $("gSpd").textContent = Math.round(speed); $("gAlt").textContent = Math.round(Math.max(0, g.y)); $("gVs").textContent = (air ? g.vel.y : 0).toFixed(1);
       const landAid = air && g.above < 40 && g.vel.y < -1 ? `${g.above < 12 && g.vel.y < -5 ? "PULL UP · " : ""}${Math.round(g.above)} m · sink ${(-g.vel.y).toFixed(1)} m/s${-g.vel.y < 3 ? " ✓" : ""}` : "";
-      $("gHint").textContent = g.msgT > 0 ? g.msg : g.stall > .5 ? "STALL: push the nose down or add thrust" : landAid || (g.drift > 20 ? `Drift ${Math.round(g.drift)}` : "");
+      if (g.veh === "foot" && (g.nearT = (g.nearT || 0) - dt) <= 0) { g.nearT = .25; const n = nearestCar(); g.nearName = n ? (n.kind === "hero" ? "your VOID car" : n.kind === "owned" ? n.o.ride.model.name : n.o.model.name) : ""; }
+      $("gHint").textContent = g.msgT > 0 ? g.msg : g.veh === "foot" && g.nearName ? `E: get into ${g.nearName}` : g.stall > .5 ? "STALL: push the nose down or add thrust" : landAid || (g.drift > 20 ? `Drift ${Math.round(g.drift)}` : "");
       $("gFly").textContent = g.mode === "air" ? (g.landing ? "Hover" : "Land") : "Fly";
       if ($("gHp")) { $("gHp").style.setProperty("--v", g.hp / 100); $("gHp").classList.toggle("low", g.hp < 35); }
       if ($("gNos")) $("gNos").style.setProperty("--v", g.nitro);
@@ -575,10 +658,10 @@ export function createGame(W, car, sound, life, opts = {}) {
       else { arrow.style.opacity = 0; $("gTgt").textContent = ""; }
       if ((mapT += dt) > .05) { mapT = 0; drawMap(); }
       return {
-        pos: fr.p.clone(), quat: q, fr, speed, g: g.gForce, alt: Math.max(0, g.y), vs: air ? g.vel.y : 0, player: { x: g.x, y: g.y, z: g.z, speed: speed / 3.6 },
+        pos: fr.p.clone(), quat: q, fr, speed, g: g.gForce, alt: Math.max(0, g.y), vs: air ? g.vel.y : 0, player: { x: g.x, y: g.y, z: g.z, speed: speed / 3.6, vx: g.vel.x, vz: g.vel.z, foot: g.veh === "foot" },
         thrust: { power: air && g.veh === "car" ? g.thr : 0, angle: g.ang, deploy: air && g.veh === "car" && !(g.jump && !g.hover && !g.landing && g.thr < .05) ? 1 : 0 }, wings: g.veh === "car" ? g.wings : 0, air, cam,
         inside: view === "seat", screenOn: view === "seat", mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : g.hover ? "HOVER" : "THRUST",
-        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: !air ? 1 : .15, zones, reveal: 1,
+        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" ? 0 : !air ? 1 : .15, walk: g.walk || 0, ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, zones, reveal: 1,
         splash: g.splashT > 0 ? (g.splashT -= dt, 1) : 0, nitro: g.nitroOn, hp: g.hp, veh: g.veh || "car", fuel: g.fuel, thr: g.thr, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
       };
     },

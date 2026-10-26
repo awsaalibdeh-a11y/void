@@ -422,3 +422,30 @@ body[data-mode="play"] .hub-chip { display: none !important; }
 .g-build[hidden] { display: none; } .g-build .pill { padding: 6px 12px; font-size: 12px; }
 .save-row { display: flex; justify-content: space-between; align-items: center; } .save-row span { display: flex; gap: 6px; }
 @media (max-width: 820px) { .routes { grid-template-columns: minmax(0, 1fr); } }
+
+/* on foot, the dealership, the tutorial, bigger text */
+.g-footbtn { position: absolute; right: 16px; bottom: calc(230px + var(--bot, 0px)); width: 52px; height: 52px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3); background: rgba(0,0,0,.55); color: #fff; font-size: 24px; display: none; pointer-events: auto; }
+@media (pointer: coarse) { .g-footbtn { display: block; } }
+.g-tut { display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 14px; border-radius: 14px; background: rgba(10,40,20,.85); border: 1px solid rgba(110,255,160,.55); color: #c9ffd9; font: 600 14px var(--body); pointer-events: auto; }
+.g-tut[hidden] { display: none; } .g-tut b { color: #6dff9e; } .g-tut .pill { padding: 5px 10px; font-size: 11px; }
+.g-dealgo { bottom: calc(150px + var(--bot, 0px)); }
+.g-deal { position: absolute; inset: calc(56px + var(--top, 0px)) 16px 16px; z-index: 30; display: flex; flex-direction: column; border-radius: 22px; background: rgba(12,12,15,.94); border: 1px solid rgba(255,210,61,.35); color: #fff; pointer-events: auto; overflow: hidden; backdrop-filter: blur(10px); }
+.g-deal[hidden] { display: none; }
+.deal-head { display: flex; align-items: center; gap: 14px; padding: 16px 20px 8px; } .deal-head h2 { margin: 0; font-size: 22px; flex: 1; } .deal-cash { color: #9dffb0; font: 800 16px var(--body); }
+.deal-filters { display: flex; gap: 6px; padding: 4px 20px 10px; overflow-x: auto; scrollbar-width: thin; }
+.deal-filters button { flex: none; padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.15); background: transparent; color: var(--mute, #aaa); font: 600 12px var(--body); cursor: pointer; }
+.deal-filters button.on { background: #ffd23d; color: #111; border-color: #ffd23d; }
+.deal-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); gap: 14px; padding: 0 20px 18px; min-height: 0; }
+.deal-list { overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; align-content: start; scrollbar-width: thin; }
+.deal-car { display: grid; grid-template-columns: 18px 1fr; gap: 2px 10px; text-align: left; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); color: #fff; cursor: pointer; }
+.deal-car span { grid-row: span 3; width: 18px; height: 18px; border-radius: 50%; align-self: center; border: 1px solid rgba(255,255,255,.3); }
+.deal-car b { font: 700 13px var(--body); } .deal-car small { color: var(--mute, #aaa); font-size: 11px; } .deal-car em { font: 800 12px var(--body); font-style: normal; color: #ffd23d; }
+.deal-car.on { border-color: #ffd23d; background: rgba(255,210,61,.1); } .deal-car.own em { color: #9dffb0; }
+.deal-info { overflow-y: auto; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); display: grid; gap: 12px; align-content: start; }
+.deal-info h3 { margin: 0; font-size: 20px; } .deal-info .small { margin: 0; }
+.deal-stats { display: grid; gap: 8px; } .deal-stats label { display: grid; grid-template-columns: 1fr auto; gap: 4px; font: 600 12px var(--body); color: var(--mute, #aaa); }
+.deal-stats span { color: #fff; } .deal-stats i { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #ffd23d calc(var(--v) * 100%), rgba(255,255,255,.12) 0); }
+.deal-cols { display: flex; gap: 8px; flex-wrap: wrap; } .deal-cols button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); cursor: pointer; } .deal-cols button.on { border-color: #fff; box-shadow: 0 0 0 2px #ffd23d; }
+.deal-go { justify-self: start; } .deal-go:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 820px) { .deal-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; } .deal-info { max-height: 42vh; } .g-deal { inset: 8px; } }
+body.big-ui .g-hint, body.big-ui .g-job, body.big-ui .g-tut, body.big-ui .g-gps { font-size: 17px; } body.big-ui .g-menu { font-size: 16px; } body.big-ui .tile { font-size: 14px; } body.big-ui .goal small, body.big-ui .small { font-size: 14px; }

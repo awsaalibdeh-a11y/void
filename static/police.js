@@ -95,6 +95,8 @@ export function createPolice(scene, api, sound, life) {
     event(kind, extra) {                                   // things the game tells us about
       if (kind === "smash") addHeat(extra === "police" ? 3 : 1, extra === "police" ? "You smashed a police car!" : "Wanted for smashing cars");
       if (kind === "cop") addHeat(3, "Police officer down");
+      if (kind === "steal") addHeat(1.2, "Car theft reported");
+      if (kind === "ped") addHeat(.6, "Hit and run");
     },
     update(dt, time) {
       const p = api.state; if (!p || !p.started) return;
