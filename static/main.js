@@ -8,7 +8,7 @@ const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent 
 setLoad(15);
 const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
-const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }, { createContracts }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras", "contracts"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -87,13 +87,14 @@ const menuEl = document.getElementById("gMenu");
 function menu(open) {
   if (open == null) open = menuEl.hidden;
   menuEl.hidden = !open; document.body.classList.toggle("g-menu-open", open); if (open) { renderGoals(); chips(); }
+  if (open) { renderContracts(); races.renderList(); }
   if (open && document.pointerLockElement) document.exitPointerLock();
   if (!net.online()) game.pause(open);
 }
 document.getElementById("gMenuBtn").onclick = () => menu(true);
 document.getElementById("gMenuClose").onclick = () => menu(false);
 document.getElementById("gExit").onclick = () => { menu(false); go("home"); };
-menuEl.addEventListener("click", e => { const t = e.target.closest(".tile"); if (t && !t.closest(".set")) setTimeout(() => menu(false), 60); if (e.target === menuEl) menu(false); });
+menuEl.addEventListener("click", e => { const t = e.target.closest(".tile"); if ((t && !t.closest(".set")) || e.target.closest("[data-rgo]")) setTimeout(() => menu(false), 60); if (e.target === menuEl) menu(false); });
 menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.setVehicle(b.dataset.veh));
 document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
 function applySettings(save = true) {
@@ -127,6 +128,25 @@ races = createRaces(scene, game.api, sound, W.canvasTex, net);
 nav = createNav(scene, game.api, W, ZONES, races.starts);
 const extras = createExtras(W, game.api, nav, sound);
 document.getElementById("gTaxi").onclick = () => extras.toggle();
+// contracts: hybrid drive + fly jobs and pursuits with medals
+const contracts = createContracts(W, game.api, nav, sound, police);
+function renderContracts() { document.getElementById("gContracts").innerHTML = contracts.CONTRACTS.map(c => `<button class="tile con" data-con="${c.id}"><b>${c.icon}</b>${c.name}<small>${c.text}</small><i>${["Not done", "🥉 Bronze", "🥈 Silver", "🥇 Gold"][contracts.best[c.id] || 0]}</i></button>`).join("") + (contracts.active ? `<button class="tile con" id="gConStop"><b>✕</b>Cancel contract</button>` : ""); }
+document.getElementById("gContracts").addEventListener("click", e => { const b = e.target.closest("[data-con]"); if (b) { if (extras.job.on) extras.toggle(false); contracts.start(b.dataset.con); } else if (e.target.closest("#gConStop")) contracts.cancel(); });
+// backups: every void.* key in one code, so progress survives a new browser or device
+document.getElementById("gSaveOut").onclick = async () => {
+  const o = {}; try { for (let k = 0; k < localStorage.length; k++) { const key = localStorage.key(k); if (key.startsWith("void.") && !key.startsWith("void.ghost.")) o[key] = localStorage.getItem(key); } } catch { }
+  const code = "VOID1:" + btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+  try { await navigator.clipboard.writeText(code); toast("Backup code copied. Keep it somewhere safe"); } catch { prompt("Copy your backup code", code); }
+};
+document.getElementById("gSaveIn").onclick = () => {
+  const code = (prompt("Paste your VOID backup code") || "").trim(); if (!code) return;
+  try {
+    if (!code.startsWith("VOID1:")) throw 0; const o = JSON.parse(decodeURIComponent(escape(atob(code.slice(6)))));
+    const keys = Object.keys(o).filter(k => /^void\.[\w.-]{1,40}$/.test(k) && typeof o[k] === "string" && o[k].length < 200000);
+    if (!keys.length) throw 0; for (const k of keys) { JSON.parse(o[k]); localStorage.setItem(k, o[k]); }
+    toast(`Restored ${keys.length} saved items. Reloading…`); setTimeout(() => location.reload(), 900);
+  } catch { toast("That code didn't work. Copy the whole code, starting with VOID1:"); }
+};
 
 // ---------- online: other real players' cars, name tags, emotes, proximity voice ----------
 const remotes = new Map();
@@ -149,7 +169,7 @@ function remoteFor(p) {
 net.on("change", () => { for (const id of [...remotes.keys()]) if (!net.players().some(p => p.id === id)) { scene.remove(remotes.get(id).root); remotes.delete(id); } renderPlayers(); });
 net.on("status", t => { document.getElementById("gNetStatus").textContent = t; document.getElementById("gNetBtn").classList.toggle("on", net.online()); });
 net.on("mic", on => { const b = document.getElementById("gMic"); b.classList.toggle("on", on); b.textContent = on ? "🎙 Mic on" : "🎙 Voice chat"; });
-net.on("emote", (m, from) => { const r = remotes.get(from), e = EMOTES[m.e | 0]; if (r) { r.emo.material.map = tagTex(e, "#ffd23d"); r.emo.visible = true; r.emoT = 4; } feed(`${net.nameOf(from)}: ${e}`); });
+net.on("emote", (m, from) => { const r = remotes.get(from), e = EMOTES[m.e | 0]; if (!e) return; if (r) { r.emo.material.map = tagTex(e, "#ffd23d"); r.emo.visible = true; r.emoT = 4; } feed(`${net.nameOf(from)}: ${e}`); });
 function feed(t) { const f = document.getElementById("gFeed"); const d = document.createElement("div"); d.textContent = t; f.prepend(d); setTimeout(() => d.remove(), 7000); while (f.children.length > 5) f.lastChild.remove(); }
 function renderPlayers() { document.getElementById("gPlayers").innerHTML = net.online() ? [`<b>${net.name} (you)</b>`, ...net.players().map(p => `<span>${p.vc ? "🎙 " : ""}${p.name}</span>`)].join("") : ""; }
 {
@@ -224,6 +244,7 @@ const PRICE = [2500, 6000, 15000];
 const upg = Object.assign({ engine: 0, grip: 0, nitro: 0, armor: 0 }, store.get("void.upg") || {});
 let cash = store.get("void.cash") ?? 3000, cashSaveT = 0;
 gameOpts.upg = upg;
+addEventListener("pagehide", () => store.set("void.cash", cash));          // phones kill tabs without warning: save on the way out
 function earn(n) { cash += Math.max(0, Math.round(n)); clearTimeout(cashSaveT); cashSaveT = setTimeout(() => store.set("void.cash", cash), 800); const el = document.getElementById("gCash"); if (el) el.textContent = "$" + cash.toLocaleString(); }
 function renderUpg() {
   $("upgBody").innerHTML = `<div class="grp"><div class="grp-h">Performance<b>$${cash.toLocaleString()}</b></div><div class="upg">${Object.entries(UPG).map(([k, [ic, name, txt]]) => { const lv = upg[k], p = PRICE[lv]; return `<div class="up-row"><b>${ic}</b><div><span>${name}</span><small>${txt}</small><i>${[0, 1, 2].map(i => `<u class="${i < lv ? "on" : ""}"></u>`).join("")}</i></div>${p ? `<button data-u="${k}" ${cash < p ? "disabled" : ""}>$${p.toLocaleString()}</button>` : "<em>MAX</em>"}</div>`; }).join("")}</div><p class="up-note">Every point you score is also cash. Fully upgraded is about 20% faster and takes 40% less damage.</p></div>`;
@@ -261,7 +282,7 @@ function go(next) {
     $("fade").classList.remove("on");
   }, 320);
 }
-document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) { e.preventDefault(); go(b.dataset.go); } });
+document.addEventListener("click", e => { const b = e.target.closest("[data-rgo]"); if (b) { e.preventDefault(); go(b.dataset.go); } });
 $("exit").onclick = () => go("home");
 addEventListener("keydown", e => {
   if (e.code === "Escape" && mode === "play" && !document.body.classList.contains("garage")) { menu(); return; }
@@ -345,7 +366,7 @@ function drawGauge(S) {
   if (S.nitro > .1) { gx.font = `800 ${W2 * .05}px Inter, sans-serif`; gx.fillStyle = "#3df5ff"; gx.fillText("NITRO", c, c - W2 * .16); }
 }
 let wasWrecked = false, wreckPose = null; const wrecks = [];
-let fpsNow = 0, shadowN = 0;
+let fpsNow = 0, shadowN = 0; const paused0 = () => !menuEl.hidden || document.body.classList.contains("garage");
 // small things far away (signs, pickups, rings, lamps, kiosks) are left out of the picture: they were a fifth of all draw calls.
 // They move to layer 5, which no camera renders, so their own .visible (used by the game) is untouched.
 const smallFar = { list: [], t: -9, n: 0 }, sfV = new THREE.Vector3();
@@ -436,7 +457,7 @@ function frameLoop(fixed) {
   extras.sky(dt, time);
   // the living city: when switched on, the day turns and the weather changes on its own
   if (SET.cycle === "on" && mode === "play" && (cycleT += dt) > 150) { cycleT = 0; cycleTime(); if (Math.random() < .5) { const w = ["clear", "clear", "rain", "fog", "storm", "snow"][Math.floor(Math.random() * 6)]; atmos.setWeather(w); SET.weather = w; } }
-  if (mode === "play") { extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
+  if (mode === "play") { contracts.update(dt, time); extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat);
   car.setReveal(S.reveal);
@@ -521,7 +542,7 @@ function frameLoop(fixed) {
   // the car's own sound
   if (S.gear > prevGear && !S.air && S.speed > 20) sound.pop();
   prevGear = S.gear;
-  sound.car({ rpm: S.rpm, load: S.load, engine: mode === "build" || mode === "home" ? .4 : S.engine, thrust: S.thrust.power, speed: S.speed, inside: S.inside });
+  sound.car({ rpm: S.rpm, load: S.load, engine: mode === "build" || mode === "home" ? .4 : S.engine, thrust: S.thrust.power, speed: S.speed, inside: S.inside, slip: mode === "play" && game.state && game.state.mode === "drive" && game.state.veh === "car" && !paused0() ? game.state.slip || 0 : 0 });
 
   if (++shadowN % ((W.QUALITY[W.quality] || {}).shEvery || 3) === 0) renderer.shadowMap.needsUpdate = true;
   composer.render();
@@ -539,4 +560,4 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { cancelAnimationFrame(raf); if (mode === "watch" && w.playing) pause(); if (sound.ctx) sound.ctx.suspend(); }
   else { clock.getDelta(); loop(); if (sound.on && sound.ctx) sound.ctx.resume(); }
 });
-window.VOID = { step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frameLoop(dt); }, W, car, life, carCube, carEnv, get police() { return police; }, get races() { return races; }, get nav() { return nav; }, net, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console
+window.VOID = { contracts, step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frameLoop(dt); }, W, car, life, carCube, carEnv, get police() { return police; }, get races() { return races; }, get nav() { return nav; }, net, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console

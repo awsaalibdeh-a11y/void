@@ -94,6 +94,9 @@ export class Sound {
     this.rumble = C.createOscillator(); this.rumble.frequency.value = 42; this.rumbleG = C.createGain(); this.rumbleG.gain.value = 0; this.rumble.connect(this.rumbleG).connect(this.sfx); this.rumble.start();
     this.windF = C.createBiquadFilter(); this.windF.type = "bandpass"; this.windF.frequency.value = 900; this.windF.Q.value = .6; this.windG = C.createGain(); this.windG.gain.value = 0;
     this.loopNoise().connect(this.windF).connect(this.windG).connect(this.sfx);
+    // tyres: a narrow band of noise that rises when the car slides
+    this.sqF = C.createBiquadFilter(); this.sqF.type = "bandpass"; this.sqF.frequency.value = 1500; this.sqF.Q.value = 9; this.sqG = C.createGain(); this.sqG.gain.value = 0;
+    this.loopNoise().connect(this.sqF).connect(this.sqG).connect(this.sfx);
 
     this.next = C.currentTime + .05;
     setInterval(() => this.schedule(), 25);
@@ -196,6 +199,8 @@ export class Sound {
     this.env(g, t, .004, 1.1, 1.6); o.connect(g).connect(this.musicIn); o.start(t); o.stop(t + 1.7);
     this.noiseHit(t, "lowpass", 6000, .5, .55, 1.5, this.musicIn);
   }
+  // a body thud scaled by how hard you hit (walls, landings)
+  thud(p = .5) { if (!this.on) return; const t = this.ctx.currentTime, k = Math.min(1, p); this.noiseHit(t, "lowpass", 400 + k * 1600, .7, .35 + k * .65, .15 + k * .4, this.sfx); if (k > .5) this.noiseHit(t + .01, "bandpass", 2600, 1.2, (k - .5) * .7, .25, this.sfx); }
   whoosh() { if (this.on) this.noiseHit(this.ctx.currentTime, "bandpass", 700, .8, .5, .9, this.sfx); }
   pop() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "bandpass", 300, 1, .9, .07, this.sfx); this.noiseHit(t + .06, "bandpass", 260, 1, .6, .06, this.sfx); } }
   crash() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "lowpass", 2500, .4, 1, 1.2, this.sfx); this.noiseHit(t, "bandpass", 180, 1, 1, .6, this.sfx); } }
@@ -233,6 +238,7 @@ export class Sound {
     this.thrG.gain.setTargetAtTime(s.thrust * .45, t, .08); this.thrF.frequency.setTargetAtTime(500 + s.thrust * 1500, t, .1);
     this.rumbleG.gain.setTargetAtTime(s.thrust * .3, t, .1);
     this.windG.gain.setTargetAtTime(Math.min(1, s.speed / 320) * .16, t, .2);
+    if (this.sqG) { const sl = Math.min(1, s.slip || 0); this.sqG.gain.setTargetAtTime(sl * .5, t, .05); this.sqF.frequency.setTargetAtTime(1300 + sl * 700, t, .1); }
     this.sfxLP.frequency.setTargetAtTime(s.inside ? 1100 : 16000, t, .3);
   }
 }

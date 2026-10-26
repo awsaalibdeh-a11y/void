@@ -114,6 +114,8 @@
   <div class="hud-top">
     <div class="g-race" id="gRace" hidden></div>
     <div class="g-job" id="gJob" hidden></div>
+    <div class="g-job g-con" id="gCon" hidden></div>
+    <div class="g-build" id="gBuild" hidden></div>
     <div class="g-gps" id="gGps"></div>
     <div class="g-hint" id="gHint"></div>
     <div class="g-target"><i id="gArrow">&#11014;</i><span id="gTgt"></span></div>
@@ -153,9 +155,13 @@
         <label class="set">Auto gas<span class="seg" data-set="autogas"><button data-v="off">Off</button><button data-v="on">On</button></span></label>
         <label class="set">Living city (day/night + weather change)<span class="seg" data-set="cycle"><button data-v="off">Off</button><button data-v="on">On</button></span></label>
         <label class="set">Touch steering<span class="seg" data-set="steer"><button data-v="stick">Joystick</button><button data-v="buttons">Buttons</button></span></label>
+        <div class="set save-row">Your progress<span><button class="pill" id="gSaveOut">Back up</button><button class="pill" id="gSaveIn">Restore</button></span></div>
+        <p class="small">Progress lives in this browser. Back up copies a code you can paste on another device or browser.</p>
       </section>
+      <section class="wide"><h4>Contracts</h4><div class="tiles con-tiles" id="gContracts"></div></section>
+      <section class="wide"><h4>Routes and ghosts</h4><div class="routes" id="gRoutes"></div></section>
       <section class="wide"><h4>Challenges</h4><div class="goals" id="gGoals"></div></section>
-      <section class="wide"><h4>Controls</h4><p class="small"><b>Drive:</b> W A S D or arrows · Space handbrake/drift · Shift nitro · F fly · L land · C camera · R reset · H horn · T time · M GPS · O autopilot · Enter starts a race at a 🏁 marker. <b>Look:</b> click the game, then move the mouse. <b>Phone:</b> joystick on the left, pedals on the right, drag anywhere to look. <b>Fuel:</b> about 10 min driving, 5 min flying; stop at ⛽ to fill up and repair, or drive through a green 🔧.</p></section>
+      <section class="wide"><h4>Controls</h4><p class="small"><b>Drive:</b> W A S D or arrows · Space handbrake/drift · Shift nitro · F fly · L land · C camera · R reset · H horn · T time · M GPS · O autopilot · Enter starts a race at a 🏁 marker · G drops a gate in the route builder. <b>Look:</b> click the game, then move the mouse. <b>Phone:</b> joystick on the left, pedals on the right, drag anywhere to look. <b>Fuel:</b> about 10 min driving, 5 min flying; stop at ⛽ to fill up and repair, or drive through a green 🔧.</p></section>
     </div>
     <div class="menu-foot"><button class="pill" id="gExit">Exit to home</button></div>
   </div>

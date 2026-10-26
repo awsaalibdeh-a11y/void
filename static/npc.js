@@ -99,7 +99,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   const cross = (axis, k) => axis === 0 ? ax(k) : sz(k);               // the coordinate of the k-th crossing road along this axis
   const crossW = (axis, k) => axis === 0 ? avW(k) : stW(k);
   const roadC = (axis, road) => axis === 0 ? sz(road) : ax(road);
-  const N = COARSE ? 500 : 1100, NP = COARSE ? 900 : 2000;
+  const LOWMEM = (navigator.deviceMemory || 8) <= 4, N = COARSE ? (LOWMEM ? 320 : 500) : 1100, NP = COARSE ? (LOWMEM ? 500 : 900) : 2000;
 
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });

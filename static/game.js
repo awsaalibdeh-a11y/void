@@ -140,7 +140,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   }
   function toggleFly() {
     if (!g || g.wreck > 0 || !g.started) return;
-    if (g.mode === "drive") { g.mode = "air"; g.hover = true; g.landing = false; g.vel.y = Math.max(g.vel.y, 3); g.y += .3; say("Thrusters on. Space/E climb · Q/Ctrl dive · A/D bank · W thrust · Shift nitro · F land"); }
+    if (g.mode === "drive") { g.mode = "air"; g.hover = true; g.landing = false; g.vel.y = Math.max(g.vel.y, 4.5); g.y += .3; sound.whoosh(); say("Thrusters on. Space/E climb · Q/Ctrl dive · A/D bank · W thrust · Shift nitro · F land"); }
     else if (g.mode === "air" && g.jump) { g.jump = false; g.hover = true; g.landing = false; say("Thrusters on"); }
     else if (g.mode === "air") { g.landing = !g.landing; if (!g.landing) g.hover = true; say(g.landing ? "Coming down gently" : "Flying"); }
   }
@@ -291,6 +291,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       g.vel.set(fx * u + sx * w, 0, fz * u + sz * w);
       // drift scoring
       const slip = Math.atan2(Math.abs(w), Math.max(1, Math.abs(u)));
+      g.slip = Math.abs(u) > 6 ? clamp((slip - .12) * 3) + (brake && Math.abs(u) > 20 ? .35 : 0) : 0; if (g.thudT > 0) g.thudT -= dt;
       if (slip > .22 && Math.abs(u) > 12) { g.drift += slip * Math.abs(u) * dt * 6; g.driftT = .7; }
       else if (g.driftT > 0) { g.driftT -= dt; if (g.driftT <= 0 && g.drift > 30) { addScore(Math.round(g.drift), "Drift"); g.drift = 0; } else if (g.driftT <= 0) g.drift = 0; }
       // move, with ramps, rooftops, buildings, water and traffic
@@ -298,9 +299,14 @@ export function createGame(W, car, sound, life, opts = {}) {
       const hit = hitBox(nx, nz, g.y + .5, 1.15);
       if (hit) {
         const vn = g.vel.x * hit.nx + g.vel.z * hit.nz;
-        if (vn < 0) { g.vel.x -= 1.3 * vn * hit.nx; g.vel.z -= 1.3 * vn * hit.nz; g.vel.multiplyScalar(.75); }
+        // a glancing hit scrapes along the wall and keeps most of its speed; a head-on one stops you with a small bounce
+        const sp = Math.hypot(g.vel.x, g.vel.z) || 1, head = vn < 0 ? -vn / sp : 0;
+        if (vn < 0) { g.vel.x -= 1.25 * vn * hit.nx; g.vel.z -= 1.25 * vn * hit.nz; g.vel.multiplyScalar(1 - .5 * head); if (head < .5 && sp > 8) g.sparks = Math.max(g.sparks || 0, .8);
+          // and the car swings round to run along the wall instead of nosing into it again next frame
+          if (head < .75 && sp > 3) { let dv = Math.atan2(g.vel.z, g.vel.x) - g.yaw; while (dv > Math.PI) dv -= 2 * Math.PI; while (dv < -Math.PI) dv += 2 * Math.PI; if (Math.abs(dv) < 1.6) g.yaw += dv * .6; } }
         g.x = nx + hit.nx * hit.d; g.z = nz + hit.nz * hit.d;
-        const imp = -vn; impact(g.x - hit.nx * 1.3, .6, g.z - hit.nz * 1.3, imp * 1.5); if (imp > 9) { hurt((imp - 9) * 1.8, "Hit a building"); sound.crash(); g.sparks = 1; } else if (imp > 2) sound.pop();
+        const imp = -vn; impact(g.x - hit.nx * 1.3, .6, g.z - hit.nz * 1.3, imp * 1.5); if (imp > 3) g.shake = Math.min(1, (g.shake || 0) + imp / 30);
+        if (imp > 9) { hurt((imp - 9) * 1.8, "Hit a building"); sound.crash(); g.sparks = 1; } else if (imp > 2 && !(g.thudT > 0)) { sound.thud && sound.thud(imp / 9); g.thudT = .25; }
       } else { g.x = nx; g.z = nz; }
       const gr = groundAt(g.x, g.z, g.y), prevY = g.y;
       if (gr.water) { splash(); return; }
@@ -433,7 +439,8 @@ export function createGame(W, car, sound, life, opts = {}) {
       const keep = Math.min(112, Math.sqrt(vh2 * vh2 + .6 * down2 * down2));
       if (vh2 > 2) g.yaw = Math.atan2(g.vel.z, g.vel.x);
       g.vel.set(Math.cos(g.yaw) * keep, 0, Math.sin(g.yaw) * keep);
-      g.mode = "drive"; g.wings = 0; g.hover = false; g.landing = false; g.pitch = 0; g.roll = 0; g.jump = false;
+      g.mode = "drive"; g.wings = 0; g.hover = false; g.landing = false; g.pitch = -clamp(down2 * .006, 0, .07); g.roll = 0; g.jump = false;
+      if (down2 > 2) { sound.thud && sound.thud(down2 / 14); g.shake = Math.min(1, (g.shake || 0) + down2 / 40); }
       if (keep > 25) say(`Touchdown at ${Math.round(keep * 3.6)} km/h. Rolling on`, 2);
     }
   }
@@ -534,16 +541,17 @@ export function createGame(W, car, sound, life, opts = {}) {
           else if (!air && fwd > 8) { let dv = Math.atan2(g.vel.z, g.vel.x) - g.yaw; while (dv > Math.PI) dv -= 2 * Math.PI; while (dv < -Math.PI) dv += 2 * Math.PI; base = g.yaw + clamp(dv, -.6, .6) * .5; }
           if (rig.yaw == null) rig.yaw = base;
           let dy = base - rig.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
-          rig.yaw += dy * clamp(dt * (air ? 3 : 5));
-          const yawC = rig.yaw + orbit.yaw, pitC = clamp((air ? .2 : .24) + orbit.pitch - (air ? g.vel.y * .004 : 0), -.12, 1.25);
-          const want = (air ? 12 + speed * .01 : 6.6 + speed * .012) + (orbit.dist || 0) + (g.veh === "plane" || g.veh === "heli" ? 6 : g.veh === "boat" ? 2 : 0);
-          const pivot = fr.p.clone().add(new THREE.Vector3(0, air ? 1.4 : 1.3, 0)), dir = new THREE.Vector3(-Math.cos(yawC) * Math.cos(pitC), Math.sin(pitC), -Math.sin(yawC) * Math.cos(pitC));
+          rig.air = lerp(rig.air ?? (air ? 1 : 0), air ? 1 : 0, clamp(dt * 1.8)); const A = rig.air;
+          rig.yaw += dy * clamp(dt * lerp(5, 3, A));
+          const yawC = rig.yaw + orbit.yaw, pitC = clamp(lerp(.24, .2, A) + orbit.pitch - (air ? g.vel.y * .004 * A : 0), -.12, 1.25);
+          const want = lerp(6.6 + speed * .012, 12 + speed * .01, A) + (orbit.dist || 0) + (g.veh === "plane" || g.veh === "heli" ? 6 : g.veh === "boat" ? 2 : 0);
+          const pivot = fr.p.clone().add(new THREE.Vector3(0, 1.3 + .1 * A, 0)), dir = new THREE.Vector3(-Math.cos(yawC) * Math.cos(pitC), Math.sin(pitC), -Math.sin(yawC) * Math.cos(pitC));
           // walls: pull in at once, ease back out
           let room = want; for (let t = .8; t <= want; t += .5) { const q2 = pivot.clone().addScaledVector(dir, t); if (q2.y < .3 || hitBox(q2.x, q2.z, q2.y, .35)) { room = Math.max(1.6, t - .6); break; } }
           rig.dist = room < rig.dist ? room : lerp(rig.dist, room, clamp(dt * 2.5));
           camPos.copy(pivot).addScaledVector(dir, rig.dist);
-          camLook.copy(pivot).add(new THREE.Vector3(fx, 0, fz).multiplyScalar(air ? 3 : 1.5));
-          if (air) up.lerp(fr.u, .15).normalize();
+          camLook.copy(pivot).add(new THREE.Vector3(fx, 0, fz).multiplyScalar(1.5 + 1.5 * A));
+          if (A > .01) up.lerp(fr.u, .15 * A).normalize();
           if (camPos.y < .4) camPos.y = .4;
         }
         cam = { pos: camPos.clone(), look: camLook.clone(), up, fov: lerp(56, 68, clamp(speed / 330)) + nitroFov };

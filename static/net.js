@@ -7,6 +7,11 @@ const PREFIX = "voidcity-awsaa-v1-";
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "stun:global.stun.twilio.com:3478" }] };
 const BAD = /(fuck|shit|bitch|nigg|cunt|dick|pussy|sex|porn|kill|nazi|hitler|rape|fag)/i;
 export const cleanName = s => { s = String(s || "").replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 14); return !s || BAD.test(s) ? "Driver" : s; };
+// what strangers may send: only these events, only sane numbers, and not too often
+const EVENTS = new Set(["race", "emote"]);
+const num = (v, lim) => Number.isFinite(v) && Math.abs(v) <= lim;
+const okState = st => st && Array.isArray(st.p) && st.p.length === 6 && num(st.p[0], 8000) && num(st.p[1], 4000) && num(st.p[2], 8000) && st.p.slice(3).every(v => num(v, 50));
+const flood = c => { const now = performance.now(); if (now - (c._t || 0) > 1000) { c._t = now; c._n = 0; } return ++c._n > 60; };
 export const EMOTES = ["👋 Hi!", "🏁 Race?", "😂", "🔥 Nice!", "GG", "🚓 Cops!", "Follow me", "Wait up"];
 
 export function createNet() {
@@ -60,19 +65,20 @@ export function createNet() {
   function upsert(id, st) {
     let p = players.get(id), fresh = !p; if (!p) { p = { id, name: "Driver", s: [] }; players.set(id, p); }
     if (st.n && cleanName(st.n) !== p.name) { p.name = cleanName(st.n); fresh = true; }
-    Object.assign(p, { model: st.m, paint: st.c, race: st.r, rp: st.rp, rf: st.rf, vc: st.vc, wanted: st.w });
-    p.s.push({ t: performance.now(), x: st.p[0], y: st.p[1], z: st.p[2], yaw: st.p[3], pitch: st.p[4], roll: st.p[5], v: st.v, air: st.a });
+    Object.assign(p, { model: Number.isInteger(st.m) && st.m >= 0 && st.m < 20 ? st.m : 0, paint: /^#[0-9a-f]{6}$/i.test(st.c) ? st.c : "#888888", race: typeof st.r === "string" ? st.r.slice(0, 20) : 0, rp: num(st.rp, 1e7) ? st.rp : 0, rf: num(st.rf, 1e7) ? st.rf : 0, vc: !!st.vc, wanted: num(st.w, 5) ? st.w | 0 : 0 });
+    p.s.push({ t: performance.now(), x: st.p[0], y: st.p[1], z: st.p[2], yaw: st.p[3], pitch: st.p[4], roll: st.p[5], v: num(st.v, 2000) ? st.v : 0, air: !!st.a });
     if (p.s.length > 12) p.s.shift();
     if (fresh) emit("change");
   }
   function onData(c, d) {
-    if (!d || typeof d !== "object") return;
+    if (!d || typeof d !== "object" || flood(c)) return;
+    if (d.t === "ev" && !EVENTS.has(d.k)) return;
     if (host) {
       if (d.t === "hello") { const p = players.get(c.peer) || { id: c.peer, s: [] }; p.name = cleanName(d.name); players.set(c.peer, p); emit("change"); return; }
-      if (d.t === "s") { upsert(c.peer, d); return; }
+      if (d.t === "s") { if (okState(d)) upsert(c.peer, d); return; }
       if (d.t === "ev") { broadcast({ ...d, from: c.peer }, c.peer); emit(d.k, d, c.peer); return; }
     } else {
-      if (d.t === "w") { for (const st of d.all) if (st.id !== me) upsert(st.id, st); return; }
+      if (d.t === "w") { if (Array.isArray(d.all)) for (const st of d.all.slice(0, 16)) if (st && typeof st.id === "string" && st.id !== me && okState(st)) upsert(st.id, st); return; }
       if (d.t === "gone") { players.delete(d.id); dropAudio(d.id); emit("change"); return; }
       if (d.t === "full") { status("Room full, trying the next one"); room = room.replace(/(\d+)$/, n => +n + 1); rejoin(); return; }
       if (d.t === "ev") { emit(d.k, d, d.from); return; }
@@ -95,6 +101,8 @@ export function createNet() {
     emit("mic", on); return on;
   }
 
+  // players who went quiet (closed the tab, lost signal) are dropped after 15 s instead of standing still forever
+  setInterval(() => { const now = performance.now(); let gone = false; for (const p of [...players.values()]) { const last = p.s.length ? p.s[p.s.length - 1].t : p.seen || (p.seen = now); if (now - last > 15000) { players.delete(p.id); dropAudio(p.id); gone = true; } } if (gone) emit("change"); }, 3000);
   return {
     join, leave, setMic, EMOTES,
     on(k, f) { (handlers[k] = handlers[k] || []).push(f); },

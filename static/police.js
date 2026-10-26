@@ -91,6 +91,7 @@ export function createPolice(scene, api, sound, life) {
   }
   return {
     get stars() { return stars; }, get bust() { return bust; }, cops, clear,
+    wanted(n, why) { if (stars < n) { heat = Math.max(heat, HEAT[n]); addHeat(0, why); } },
     event(kind, extra) {                                   // things the game tells us about
       if (kind === "smash") addHeat(extra === "police" ? 3 : 1, extra === "police" ? "You smashed a police car!" : "Wanted for smashing cars");
       if (kind === "cop") addHeat(3, "Police officer down");
