@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { GRID } from "./city.js";
 
 const BASE = { compact: 6000, hatch: 8000, sedan: 10000, van: 9000, wagon: 11000, pickup: 14000, suv: 16000, classic: 22000, coupe: 25000, limo: 40000, muscle: 45000, sports: 60000, hover: 80000, supercar: 110000 };
-const CLASS = { void: "VOID car (flies, 330 km/h)", taxi: "Taxi", police: "Police interceptor", bus: "Bus", truck: "Box truck", compact: "City car", hatch: "Hatchback", sedan: "Sedan", van: "Van", wagon: "Estate", pickup: "Pickup", suv: "SUV", classic: "Classic", coupe: "Coupe", limo: "Limousine", muscle: "Muscle", sports: "Sports", hover: "Hover car (flies)", supercar: "Hypercar" };
+const CLASS = { void: "VOID car (flies, 330 km/h)", monster: "Monster truck", buggy: "Dune buggy", crawler: "Rock crawler", sixer: "6x6 truck", taxi: "Taxi", police: "Police interceptor", bus: "Bus", truck: "Box truck", compact: "City car", hatch: "Hatchback", sedan: "Sedan", van: "Van", wagon: "Estate", pickup: "Pickup", suv: "SUV", classic: "Classic", coupe: "Coupe", limo: "Limousine", muscle: "Muscle", sports: "Sports", hover: "Hover car (flies)", supercar: "Hypercar" };
 
 export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   const api = game.api, $ = id => document.getElementById(id);
@@ -24,7 +24,8 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   // and specials built for the showroom: same bodies, their own stance, power, grip and paint
   const kindOf = id => (life.models.find(m => m.kind.id === id) || life.models[0]).kind;
   const SPECIALS = [
-    ["offroad", [["suv", "Trailcat"], ["pickup", "Mudslinger"], ["suv", "Basecamp XR"], ["pickup", "Raptor Dirt"], ["van", "Overland"], ["suv", "Boulder 4x4"]], { sh: 1.18, sw: 1.06, grip: 1.15, acc: 1.05, top: 46 }, [0x6b5a44, 0x2f4a3a, 0xc8962a, 0x8a1a14, 0x3a3d44], 26000],
+    ["trucks", [["monster", "Bigfoot"], ["monster", "Grave Digger"], ["monster", "Crusher"], ["buggy", "Dune Runner"], ["buggy", "Baja Bug"], ["buggy", "Sandstorm"], ["crawler", "Rock Goat"], ["crawler", "Trail King"], ["sixer", "Six Pack"], ["sixer", "Expedition 6x6"]], {}, [], 48000],
+    ["offroad", [["suv", "Trailcat"], ["pickup", "Mudslinger"], ["suv", "Basecamp XR"], ["pickup", "Raptor Dirt"], ["van", "Overland"], ["suv", "Boulder 4x4"]], { sh: 1.18, sw: 1.06, grip: 1.15, acc: 1.05, top: 46 }, [0x6b5a44, 0x2f4a3a, 0xc8962a, 0x8a1a14, 0x3a3d44], 26000, 1.05],
     ["rally", [["hatch", "Gravel R"], ["compact", "Stage One"], ["hatch", "Group B"], ["wagon", "Rallye Avant"], ["coupe", "Special Stage"], ["hatch", "Snow Tyre"]], { sh: 1.05, grip: 1.35, acc: 1.25, top: 58 }, [0x2e5aa8, 0xf2f2f0, 0xf7c414, 0xd21f2b, 0x111111], 34000],
     ["drift", [["coupe", "Sideways"], ["sports", "Tandem"], ["coupe", "Smoke Show"], ["muscle", "Burnout"], ["sports", "Clutch Kick"], ["coupe", "Handbrake"]], { sh: .93, grip: .72, acc: 1.4, top: 64 }, [0xff4fd8, 0x3df5ff, 0x8acb1a, 0xff6a00, 0xf2f2f0, 0x111111], 38000],
     ["electric", [["sedan", "Volt S"], ["hatch", "Spark EV"], ["suv", "Current X"], ["supercar", "Ampere"], ["compact", "Zappy"], ["coupe", "Ion GT"], ["sedan", "Silent Line"]], { acc: 1.75, grip: 1.1, top: 62 }, [0xf2f2f0, 0x1f8a8a, 0x9fa3aa, 0x123a8c, 0x111111], 42000],
@@ -37,13 +38,13 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   ];
   const BRAND = ["Aurex", "Kova", "Bellmont", "Zentri", "Harlow", "Vanta", "Ostrel", "Mirage", "Dunmore", "Caldera", "Nexo", "Ryden", "Solace", "Torvik"];
   let sd = 77; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
-  for (const [cat, list, mod, cols, base] of SPECIALS) list.forEach(([kid, word], i) => {
+  for (const [cat, list, mod, cols, base, offroad] of SPECIALS) list.forEach(([kid, word], i) => {
     const kind = kindOf(kid), ref = life.models.find(m => m.kind === kind && !m.rust) || life.models.find(m => m.kind === kind);
     const m = { id: `${cat}-${i}`, name: `${BRAND[(i * 3 + cat.length) % BRAND.length]} ${word}`, kind, sl: (mod.sl || 1) * (.97 + rr() * .06), sh: (mod.sh || 1) * (.98 + rr() * .04), sw: (mod.sw || 1),
-      cols: cols.length ? cols : ref.cols, rust: 0, top: (mod.top || ref.top) * (.95 + rr() * .1), acc: (mod.acc || ref.acc) * (.95 + rr() * .1), grip: (mod.grip || ref.grip) * (.97 + rr() * .06) };
+      cols: cols.length ? cols : ref.cols, rust: 0, top: (mod.top || ref.top) * (.95 + rr() * .1), acc: (mod.acc || ref.acc) * (.95 + rr() * .1), grip: (mod.grip || ref.grip) * (.97 + rr() * .06), offroad: offroad || ref.offroad };
     STOCK.push({ m, cat, price: Math.round(base * (.8 + rr() * .5) * (m.top / 60) / 500) * 500 });
   });
-  const CATS = { flying: "✈️ Flying", hyper: "🚀 Hypercars", track: "🏁 Track", sports: "🏎️ Sports", muscle: "💪 Muscle", drift: "🌀 Drift", rally: "🌲 Rally", electric: "⚡ Electric",
+  const CATS = { trucks: "🛻 Off-road trucks", flying: "✈️ Flying", hyper: "🚀 Hypercars", track: "🏁 Track", sports: "🏎️ Sports", muscle: "💪 Muscle", drift: "🌀 Drift", rally: "🌲 Rally", electric: "⚡ Electric",
     luxury: "💎 Luxury", classic: "🕰️ Classic", lowrider: "🌴 Lowriders", offroad: "⛰️ Off-road", suv: "🚙 SUVs & pickups", city: "🏙️ Everyday", tiny: "🐞 Microcars", work: "🚕 Work & service" };
   // and the one everybody wants: your VOID car, the fastest thing in the city and the only car with wings
   const HERO = { id: "void", name: "VOID Hydra", kind: { id: "void", fly: true }, cols: [0x0a0a0c], top: 92, acc: 1.7, grip: 1.25, sl: 1, sh: 1, sw: 1 };

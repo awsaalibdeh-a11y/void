@@ -15,6 +15,7 @@ export const ROUTES = [
   { id: "bridge", name: "Bridge Run", pts: [G(7, 10), G(12, 10), [1400, 0, 0], [1690, 0, 0]] },
   { id: "downtown", name: "Downtown Dash", pts: [G(8, 13), G(12, 13), G(12, 19), G(9, 19), G(9, 15), G(11, 15)] },
   { id: "drag", name: "Runway Drag", pts: [[-2600, 0, 0], [-2350, 0, 0], [-2100, 0, 0], [-1960, 0, 0]] },
+  { id: "hill", name: "Hill Climb", terrain: true, noBots: true, pts: [[2640, 0, 0], [2780, 0, 30], [2920, 0, -50], [3060, 0, 40], [3200, 0, -90], [3330, 0, -30], [3450, 0, -180], [3560, 0, -110], [3660, 0, -280], [3780, 0, -220], [3880, 0, -360], [3900, 0, -380]] },
   { id: "sky", name: "Sky Rings", air: true, pts: [[420, 0, -40], [420, 90, -160], [520, 120, -300], [430, 150, -450], [250, 170, -520], [60, 150, -460], [-60, 120, -330], [-120, 90, -180], [-260, 70, 60], [-400, 60, 250]] },
 ];
 const RIVALS = [["VIPER", 0xd21f2b], ["BLAZE", 0xff6a00], ["NOVA", 0x1f6fe0]];
@@ -47,7 +48,7 @@ export function createRaces(scene, api, sound, canvasTex, net) {
     clearGates();
     r.pts.forEach((p, k) => {
       const q = r.pts[Math.max(0, k - 1)], o = r.pts[Math.min(r.pts.length - 1, k + 1)], dir = k ? Math.atan2(p[2] - q[2], p[0] - q[0]) : Math.atan2(o[2] - p[2], o[0] - p[0]);
-      const g = new THREE.Group(); g.position.set(p[0], p[1], p[2]); g.rotation.y = -dir;
+      const g = new THREE.Group(); g.position.set(p[0], r.terrain && api.terrainH ? api.terrainH(p[0], p[2]) : p[1], p[2]); g.rotation.y = -dir;
       const fin = k === r.pts.length - 1;
       if (r.air) { const ring = new THREE.Mesh(new THREE.TorusGeometry(10, .7, 10, 40), gateMat.clone()); ring.rotation.y = Math.PI / 2; g.add(ring); g.userData.parts = [ring]; }
       else {
@@ -87,7 +88,7 @@ export function createRaces(scene, api, sound, canvasTex, net) {
     R = { route, t: -(opts.wait ?? 3.2), cp: 1, done: 0, online: !!opts.online, results: [], lastBeep: 4, rng, acc: 0, bt: 0, rec: [], recT: 0, splits: [], ghost: ghostOf(route.id) };
     ghost.visible = !!R.ghost;
     rivals.forEach((r, k) => {
-      r.g.visible = !route.air && !route.custom && (!R.online || opts.bots !== false);
+      r.g.visible = !route.air && !route.custom && !route.noBots && (!R.online || opts.bots !== false);
       const sd = [-1, 1, 2][k] * 4.2, rw = k === 2 ? 8 : 0;
       Object.assign(r, { x: st.x + fx * (20 - rw) - fz * sd, z: st.z + fz * (20 - rw) + fx * sd, yaw: st.yaw, v: 0, cp: 1, done: 0, skill: .9 + rng() * .16, accel: 13, stuck: 0 });
     });
@@ -209,7 +210,7 @@ export function createRaces(scene, api, sound, canvasTex, net) {
         else { let dy = gp[b + 3] - gp[a + 3]; if (dy > Math.PI) dy -= 2 * Math.PI; if (dy < -Math.PI) dy += 2 * Math.PI; ghost.position.set(gp[a] + (gp[b] - gp[a]) * k, gp[a + 1] + (gp[b + 1] - gp[a + 1]) * k, gp[a + 2] + (gp[b + 2] - gp[a + 2]) * k); ghost.rotation.y = -(gp[a + 3] + dy * k); }
       }
       // rivals: stepped on a fixed 1/60 s clock from the green light (the same on every player's screen when online)
-      if (!route.air && !route.custom && R.t > 0) {
+      if (!route.air && !route.custom && !route.noBots && R.t > 0) {
         R.acc += dt;
         while (R.acc >= 1 / 60 && R.bt < R.t) {
           R.acc -= 1 / 60; R.bt += 1 / 60;

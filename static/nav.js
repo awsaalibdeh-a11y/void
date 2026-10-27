@@ -32,7 +32,7 @@ export function createNav(scene, api, W, ZONES, starts) {
   }
   // places
   const PLACES = [
-    { name: "Times Square", x: ax(7), z: sz(6) }, { name: "Central Park lawn", x: W.city.lawn.x, z: W.city.lawn.z, off: true }, { name: "Brooklyn (over the bridge)", x: 1690, z: 0 },
+    { name: "Times Square", x: ax(7), z: sz(6) }, { name: "Central Park lawn", x: W.city.lawn.x, z: W.city.lawn.z, off: true }, { name: "Brooklyn (over the bridge)", x: 1690, z: 0 }, { name: "⛰️ Mountains (trail start)", x: 2640, z: 0, off: true }, { name: "🏔️ The summit", x: 3900, z: -380, off: true },
     { name: "Hudson piers", x: -1010, z: sz(5) }, { name: "Downtown", x: ax(11), z: sz(17) }, { name: "The loop and ramp", x: -100, z: 0 },
     ...ZONES.filter(z => z.safe && z.y).map(z => ({ name: `Helipad ${z.id} (${Math.round(z.y)} m up)`, x: z.x, z: z.z, y: z.y, air: true })),
     ...starts.map(s => ({ name: `Race: ${s.r.name}`, x: s.x, z: s.z, air: !!s.r.air && false })),

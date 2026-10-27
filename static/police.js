@@ -136,7 +136,7 @@ export function createPolice(scene, api, sound, life) {
             const nx = (p.x - c.x) / (d || 1), nz = (p.z - c.z) / (d || 1); p.x += nx * (3.6 - d); p.z += nz * (3.6 - d);
           }
         }
-        c.g.position.set(c.x, 0, c.z); c.g.rotation.set(c.rz, -c.yaw, 0, "YXZ");
+        c.g.position.set(c.x, api.terrainH ? api.terrainH(c.x, c.z) : 0, c.z); c.g.rotation.set(c.rz, -c.yaw, 0, "YXZ");
       }
       // the helicopter from three stars
       if (stars >= 3) {

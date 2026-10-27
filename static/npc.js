@@ -26,6 +26,11 @@ export const KINDS = [
   { id: "classic", L: 5.0, W: 1.9, share: 4, cols: [0x7fb5a8, 0xe8d3a8, 0x8a2a2a, 0x3a4a6a, 0xd9c27a] },
   { id: "limo", L: 6.8, W: 1.95, share: 2, cols: [0x0a0a0c, 0xf2f2f0] },
   { id: "hover", L: 4.6, W: 2.0, share: 5, fly: true, cols: [0xe9e9ea, 0x3df5ff, 0x9b5cff, 0x111114, 0xff4fd8] },
+  // off-road machines: sold at VOID Motors, built for the mountains (never in traffic)
+  { id: "monster", L: 5.4, W: 2.9, share: 0, cols: [0x1f6fe0, 0xd21f2b, 0x8acb1a, 0x111111, 0xff6a00] },
+  { id: "buggy", L: 3.9, W: 2.1, share: 0, cols: [0xff6a00, 0xf7c414, 0x3df5ff, 0xd21f2b, 0x2f6b3a] },
+  { id: "crawler", L: 4.3, W: 2.05, share: 0, cols: [0x6b5a44, 0x2f4a3a, 0xc8962a, 0xf2f2f0, 0x8a1a14] },
+  { id: "sixer", L: 7.2, W: 2.55, share: 0, cols: [0x4a5a3a, 0x6b5a44, 0x2b2d32, 0xc8ccd2] },
 ];
 // the catalogue: 200 named models. Each is a body type with its own proportions, paint range, condition and handling.
 const BRANDS = ["Aurex", "Kova", "Bellmont", "Zentri", "Harlow", "Vanta", "Ostrel", "Mirage", "Dunmore", "Caldera", "Nexo", "Ryden", "Solace", "Torvik"];
@@ -45,19 +50,20 @@ const WORDS = {
   limo: ["Presidential", "Stretch", "Royale", "Phantom L", "Gala", "Majesty", "Diplomat", "Embassy", "Premier", "Grandeur", "Sovereign", "Ballroom", "Chairman", "Crown"],
   hover: ["Skylane", "Aerodyne", "Hoverline", "Levitas", "Zephyrus", "Glide", "Nimbus", "Halcyon", "Strato", "Drift-X", "Airwave", "Cirrus", "Orbit", "Lumina"],
 };
-const PERF = { sedan: [52, 1, 1], suv: [48, .9, .9], van: [42, .8, .85], pickup: [47, .9, .9], sports: [80, 1.35, 1.15], compact: [44, .85, 1.05], hatch: [50, .95, 1.05], wagon: [50, .95, 1], coupe: [62, 1.1, 1.05], muscle: [74, 1.4, .85], supercar: [92, 1.6, 1.2], classic: [46, .85, .8], limo: [48, .8, .8], hover: [70, 1.2, 1.1], taxi: [52, 1, 1], police: [70, 1.25, 1.05], bus: [30, .55, .7], truck: [34, .6, .7] };
+const OFFROAD = { monster: 1.4, buggy: 1.3, crawler: 1.45, sixer: 1.3, suv: .85, pickup: .9, van: .65 };
+const PERF = { monster: [50, 1.35, 1.0], buggy: [56, 1.4, 1.05], crawler: [38, 1.0, 1.2], sixer: [42, .9, 1.0], sedan: [52, 1, 1], suv: [48, .9, .9], van: [42, .8, .85], pickup: [47, .9, .9], sports: [80, 1.35, 1.15], compact: [44, .85, 1.05], hatch: [50, .95, 1.05], wagon: [50, .95, 1], coupe: [62, 1.1, 1.05], muscle: [74, 1.4, .85], supercar: [92, 1.6, 1.2], classic: [46, .85, .8], limo: [48, .8, .8], hover: [70, 1.2, 1.1], taxi: [52, 1, 1], police: [70, 1.25, 1.05], bus: [30, .55, .7], truck: [34, .6, .7] };
 export const CAR_MODELS = (() => {
   let sd = 4242; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   const out = [];
   for (const k of KINDS) {
     const words = WORDS[k.id], perf = PERF[k.id];
-    if (!words) { out.push({ id: k.id, name: { taxi: "VOID Cab", police: "Interceptor", bus: "City Bus", truck: "Box Truck" }[k.id], kind: k, sl: 1, sh: 1, sw: 1, cols: k.cols, rust: 0, top: perf[0], acc: perf[1], grip: perf[2] }); continue; }
+    if (!words) { out.push({ id: k.id, name: { taxi: "VOID Cab", police: "Interceptor", bus: "City Bus", truck: "Box Truck", monster: "Monster Truck", buggy: "Dune Buggy", crawler: "Rock Crawler", sixer: "6x6 Hauler" }[k.id], kind: k, sl: 1, sh: 1, sw: 1, cols: k.cols, rust: 0, top: perf[0], acc: perf[1], grip: perf[2], offroad: OFFROAD[k.id] }); continue; }
     words.forEach((w, i) => {
       const beater = k.id !== "hover" && k.id !== "supercar" && (i % 5 === 3 || k.id === "classic" && i % 3 === 0);
       const brand = BRANDS[(i * 5 + k.id.length) % BRANDS.length];
       out.push({ id: `${k.id}-${i}`, name: `${brand} ${w}${beater ? " (rusty)" : ""}`, kind: k, sl: .9 + rr() * .2, sh: .93 + rr() * .14, sw: .95 + rr() * .1,
         cols: beater ? [0x6b5a44, 0x7a3a2a, 0x5a6a5a, 0x8a7a5a] : k.cols.slice(0, 2 + Math.floor(rr() * (k.cols.length - 1))), rust: beater ? .55 + rr() * .45 : rr() < .15 ? rr() * .3 : 0,
-        top: perf[0] * (beater ? .85 : .92 + rr() * .16), acc: perf[1] * (beater ? .85 : .95 + rr() * .1), grip: perf[2] * (beater ? .85 : 1) });
+        top: perf[0] * (beater ? .85 : .92 + rr() * .16), acc: perf[1] * (beater ? .85 : .95 + rr() * .1), grip: perf[2] * (beater ? .85 : 1), offroad: OFFROAD[k.id] });
     });
   }
   return out;
@@ -115,6 +121,47 @@ export function vehicle(k) {
   const lamps = (y, h = .14) => { for (const s of [1, -1]) { lt.push(B(.08, h, W * .24, L / 2 - .02, y, s * W * .32, H)); lt.push(B(.08, h, W * .26, -L / 2 + .02, y + .05, s * W * .32, R)); } };
   const mirrors = (x, y) => { for (const s of [1, -1]) p.push(B(.18, .12, .2, x, y, s * (W / 2 + .08), BODY)); };
   const kind = k.id === "taxi" || k.id === "police" ? "sedan" : k.id;
+  const tyre = (x, z, r, w) => { p.push(tint(new THREE.CylinderGeometry(r, r, w, 16).rotateX(Math.PI / 2).translate(x, r, z).toNonIndexed(), TYRE)); p.push(tint(new THREE.CylinderGeometry(r * .55, r * .55, .04, 10).rotateX(Math.PI / 2).translate(x, r, z + Math.sign(z) * w / 2).toNonIndexed(), RIM));
+    for (let t = 0; t < 8; t++) { const a = t / 8 * Math.PI * 2; p.push(B(.12, .1, w * 1.02, x + Math.cos(a) * r * .97, r + Math.sin(a) * r * .97, z, [.06, .06, .06])); } };      // chunky tread blocks
+  if (kind === "monster") {                                                   // a pickup on huge tyres and long-travel suspension
+    const [body, glass, roof] = PROFILES.pickup(L * .88), up = 1.25;
+    p.push(ext(body, W * .78, BODY, .1).translate(0, up, 0), ext(glass, W * .7, GLASS, .06).translate(0, up, 0), ext(roof, W * .68, BODY, .05).translate(0, up, 0));
+    p.push(B(L * .8, .25, W * .55, 0, up + .25, 0, DARK));
+    for (const x of [L / 2 - 1.15, -L / 2 + 1.15]) { for (const z of [W / 2 - .38, -W / 2 + .38]) tyre(x, z, .98, .72); p.push(B(.18, .9, W * .7, x, up - .1, 0, CHROME)); }
+    p.push(B(.14, .9, .14, -.8, up + 1.55, W * .3, DARK), B(.14, .9, .14, -.8, up + 1.55, -W * .3, DARK), B(.14, .14, W * .64, -.8, up + 2, 0, DARK));       // roll bar
+    lt.push(B(.1, .14, W * .5, -1, up + 2.08, 0, [1, .95, .7]));                                                                                                // light bar
+    lamps(up + .7); return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
+  }
+  if (kind === "buggy") {                                                     // an open tube-frame dune buggy
+    p.push(B(L * .8, .14, W * .7, 0, .55, 0, DARK), ext([[L / 2 - 1.2, .6], [L / 2, .6], [L / 2, .85], [L / 2 - 1.2, 1.05]], W * .62, BODY, .06), B(.9, .5, W * .55, -L / 2 + .65, .9, 0, BODY));
+    const rail = (x0, y0, z0, x1, y1, z1) => { const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0), g = new THREE.CylinderGeometry(.045, .045, len, 6); g.translate(0, len / 2, 0);
+      const dir = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0).normalize(); g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)).translate(x0, y0, z0); p.push(tint(g.toNonIndexed(), [.12, .12, .13])); };
+    for (const z of [W * .3, -W * .3]) { rail(.8, .6, z, .3, 1.75, z * .9); rail(-.9, .6, z, -.7, 1.75, z * .9); rail(.3, 1.75, z * .9, -.7, 1.75, z * .9); }
+    rail(.3, 1.75, W * .27, .3, 1.75, -W * .27); rail(-.7, 1.75, W * .27, -.7, 1.75, -W * .27);
+    p.push(B(.5, .6, .5, -.3, .9, .3, [.1, .1, .1]), B(.5, .6, .5, -.3, .9, -.3, [.1, .1, .1]));           // seats
+    for (const z of [W / 2 - .25, -W / 2 + .25]) { tyre(L / 2 - .7, z, .46, .38); tyre(-L / 2 + .75, z, .58, .48); }
+    lamps(.82); return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
+  }
+  if (kind === "crawler") {                                                   // a boxy, lifted rock crawler with a spare on the back
+    const up = .55;
+    p.push(ext([[-L / 2, .35], [L / 2, .35], [L / 2, .8], [L / 2 - 1.1, .9], [-L / 2, .95]], W * .9, BODY, .08).translate(0, up, 0));
+    p.push(B(.06, .55, W * .8, L / 2 - 1.15, up + 1.2, 0, GLASS), B(1.9, .06, W * .82, -.25, up + 1.5, 0, BODY));
+    for (const z of [W * .4, -W * .4]) for (const x of [L / 2 - 1.15, -L / 2 + .15]) p.push(B(.08, .6, .08, x, up + 1.2, z, DARK));
+    p.push(tint(new THREE.CylinderGeometry(.42, .42, .3, 14).rotateZ(Math.PI / 2).translate(-L / 2 - .15, up + .9, 0).toNonIndexed(), TYRE));
+    p.push(B(.25, .3, W * 1.02, L / 2 + .1, up + .45, 0, DARK), B(.25, .3, W * 1.02, -L / 2 - .05, up + .45, 0, DARK));
+    for (const x of [L / 2 - .95, -L / 2 + .95]) for (const z of [W / 2 - .2, -W / 2 + .2]) tyre(x, z, .64, .48);
+    lamps(up + .7); lt.push(B(.08, .1, W * .6, L / 2 - 1.1, up + 1.58, 0, [1, .95, .7]));
+    return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
+  }
+  if (kind === "sixer") {                                                     // a six-wheel-drive cab and flatbed
+    const up = .45;
+    p.push(ext([[L / 2 - 2.3, .4], [L / 2, .4], [L / 2, 1.3], [L / 2 - .5, 2.1], [L / 2 - 2.3, 2.15]], W * .95, BODY, .1).translate(0, up, 0));
+    p.push(ext([[L / 2 - .55, 1.4], [L / 2 - .15, 1.35], [L / 2 - .55, 2.0]], W * .9, GLASS, .02).translate(0, up, 0));
+    p.push(B(L - 2.4, .25, W * .98, -1.15, up + .75, 0, BODY), B(L - 2.4, .5, .08, -1.15, up + 1.1, W * .48, BODY), B(L - 2.4, .5, .08, -1.15, up + 1.1, -W * .48, BODY), B(.08, .5, W * .98, -L / 2 + .05, up + 1.1, 0, BODY));
+    p.push(B(L * .95, .35, W * .5, 0, up + .25, 0, DARK));
+    for (const x of [L / 2 - 1.2, -L / 2 + 1.0, -L / 2 + 2.45]) for (const z of [W / 2 - .25, -W / 2 + .25]) tyre(x, z, .62, .45);
+    lamps(up + .8); return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
+  }
   if (kind === "bus" || kind === "truck") {
     if (kind === "bus") {
       p.push(ext([[-L / 2, .45], [L / 2, .45], [L / 2, 3.1], [-L / 2, 3.1]], W, BODY, .15), ext([[-L / 2 + .3, 1.55], [L / 2 - .3, 1.55], [L / 2 - .3, 2.6], [-L / 2 + .3, 2.6]], W + .04, GLASS, .02));
@@ -179,7 +226,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   const cross = (axis, k) => axis === 0 ? ax(k) : sz(k);               // the coordinate of the k-th crossing road along this axis
   const crossW = (axis, k) => axis === 0 ? avW(k) : stW(k);
   const roadC = (axis, road) => axis === 0 ? sz(road) : ax(road);
-  const LOWMEM = (navigator.deviceMemory || 8) <= 4, N = COARSE ? (LOWMEM ? 320 : 500) : 1100, NP = COARSE ? (LOWMEM ? 500 : 900) : 2000;
+  const LOWMEM = (navigator.deviceMemory || 8) <= 4, N = COARSE ? (LOWMEM ? 360 : 600) : 1500, NP = COARSE ? (LOWMEM ? 600 : 1100) : 2800;
 
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });

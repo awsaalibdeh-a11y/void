@@ -151,10 +151,22 @@ const walker = (() => {
   const shirt = new THREE.MeshStandardMaterial({ vertexColors: true, color: 0x22252d, roughness: .8 }), pants = new THREE.MeshStandardMaterial({ vertexColors: true, color: 0x2b3a55, roughness: .85 });
   g.add(new THREE.Mesh(pg.body, shirt), new THREE.Mesh(pg.head, new THREE.MeshStandardMaterial({ color: 0xc68a5e, roughness: .7 })), new THREE.Mesh(pg.hair, new THREE.MeshStandardMaterial({ color: 0x18120e, roughness: .9 })));
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(.46, .06, .28), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.4), toneMapped: false })); stripe.position.y = 1.32; g.add(stripe);
-  const legs = [1, -1].map(s => { const p = new THREE.Group(); p.position.set(0, .86, s * .1); p.add(new THREE.Mesh(pg.leg, pants)); g.add(p); return p; });
+  const legs = [1, -1].map(s => { const p = new THREE.Group(); p.position.set(0, .88, s * .1); p.add(new THREE.Mesh(pg.leg, pants)); g.add(p); return p; });
+  const arms = [1, -1].map(s => { const p = new THREE.Group(); p.position.set(0, 1.45, s * .245); p.add(new THREE.Mesh(pg.arm, shirt)); g.add(p); return p; });
   g.traverse(o => { if (o.isMesh) o.castShadow = true; }); g.visible = false; scene.add(g);
-  return { g, legs };
+  return { g, legs, arms };
 })();
+// the hoverboard
+const boardMesh = (() => {
+  const g = new THREE.Group(), glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(.3, 2.2, 2.6), toneMapped: false });
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.3, .07, .4), new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: .35, metalness: .6 })); deck.position.y = .05; deck.castShadow = true; g.add(deck);
+  for (const x of [-.62, .62]) { const tip = new THREE.Mesh(new THREE.CylinderGeometry(.2, .2, .07, 16, 1, false, 0, Math.PI), deck.material); tip.position.set(x, .05, 0); tip.rotation.y = x > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(tip); }
+  const under = new THREE.Mesh(new THREE.PlaneGeometry(1.2, .3).rotateX(Math.PI / 2), glow); under.position.y = .005; g.add(under);
+  for (const x of [-.4, .4]) { const pod = new THREE.Mesh(new THREE.CylinderGeometry(.11, .09, .1, 12), new THREE.MeshStandardMaterial({ color: 0x2a2c32, metalness: .7, roughness: .3 })); pod.position.set(x, -.03, 0); g.add(pod); const ring = new THREE.Mesh(new THREE.TorusGeometry(.1, .02, 6, 16).rotateX(Math.PI / 2), glow); ring.position.set(x, -.08, 0); g.add(ring); }
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(1.32, .015, .02), glow); strip.position.set(0, .085, .19); g.add(strip); const strip2 = strip.clone(); strip2.position.z = -.19; g.add(strip2);
+  g.visible = false; scene.add(g); return g;
+})();
+const qSide = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), boardUp = new THREE.Vector3();
 // cars that aren't your VOID car: the one you're driving and the one you left parked, drawn from the traffic shapes
 const rideMesh = () => { const g = new THREE.Group(); g.visible = false; scene.add(g); return { g, key: "" }; };
 const RIDE = rideMesh(), RPARK = rideMesh();
@@ -519,9 +531,14 @@ function frameLoop(fixed) {
   carRoot.visible = heroDriven || !!(gsx && gsx.heroPark); lastS = S;
   if (gsx && gsx.ride && veh === "car") { dressRide(RIDE, gsx.ride); RIDE.g.visible = true; RIDE.g.position.copy(S.pos); RIDE.g.quaternion.copy(S.quat); } else RIDE.g.visible = false;
   if (gsx && gsx.ridePark) { const P = gsx.ridePark; dressRide(RPARK, P.ride); RPARK.g.visible = true; RPARK.g.position.set(P.x, 0, P.z); RPARK.g.rotation.set(0, -P.yaw, 0); } else RPARK.g.visible = false;
-  walker.g.visible = veh === "foot";
-  if (veh === "foot") { walker.g.position.copy(S.pos); walker.g.rotation.set(0, -gsx.yaw, 0); const sw = Math.sin(S.walk || 0) * Math.min(.7, S.speed / 14) * (S.alt > .3 ? .3 : 1); walker.legs[0].rotation.z = sw; walker.legs[1].rotation.z = -sw; }
-  vehicles.show(veh === "car" || veh === "foot" ? null : veh, S.pos, S.quat, S, time, dt);
+  walker.g.visible = veh === "foot" || veh === "board"; boardMesh.visible = veh === "board";
+  if (veh === "board") {                                       // stand sideways on the board, knees apart, arms out for balance
+    boardMesh.position.copy(S.pos); boardMesh.quaternion.copy(S.quat);
+    walker.g.position.copy(boardUp.set(0, .1, 0).applyQuaternion(S.quat).add(S.pos)); walker.g.quaternion.copy(S.quat).multiply(qSide);
+    walker.legs[0].rotation.set(-.24, 0, 0); walker.legs[1].rotation.set(.24, 0, 0); walker.arms[0].rotation.set(-.95, 0, Math.sin(time * 2) * .1); walker.arms[1].rotation.set(.95, 0, -Math.sin(time * 2) * .1);
+  }
+  if (veh === "foot") { walker.legs[0].rotation.x = walker.legs[1].rotation.x = walker.arms[0].rotation.x = walker.arms[1].rotation.x = 0; walker.g.position.copy(S.pos); walker.g.rotation.set(0, -gsx.yaw, 0); const sw = Math.sin(S.walk || 0) * Math.min(.7, S.speed / 14) * (S.alt > .3 ? .3 : 1); walker.legs[0].rotation.z = sw; walker.legs[1].rotation.z = -sw; walker.arms[0].rotation.z = -sw * .8; walker.arms[1].rotation.z = sw * .8; }
+  vehicles.show(veh === "car" || veh === "foot" || veh === "board" ? null : veh, S.pos, S.quat, S, time, dt);
   if (S.splash) for (let k = 0; k < 6; k++) { const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(S.pos).add(new THREE.Vector3((Math.random() - .5) * 3, .3, (Math.random() - .5) * 3)); pf.life = 1; pf.s.visible = true; pf.grow = .8; pf.s.scale.setScalar(.8); pf.s.material.color.set(0xeaf6ff); pf.v.set((Math.random() - .5) * 6, 4 + Math.random() * 4, (Math.random() - .5) * 6); }
   if (veh === "boat" && S.speed > 12 && Math.random() < .6) { const back = new THREE.Vector3(-3.6, .1, (Math.random() - .5) * 2).applyQuaternion(S.quat).add(S.pos); const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(back); pf.life = 1; pf.s.visible = true; pf.grow = .5; pf.s.scale.setScalar(.5); pf.s.material.color.set(0xf4fbff); pf.v.set((Math.random() - .5) * 2, .6, (Math.random() - .5) * 2); }
   const night = W.timeOfDay !== "day";
@@ -533,6 +550,7 @@ function frameLoop(fixed) {
   extras.sky(dt, time);
   // the living city: when switched on, the day turns and the weather changes on its own
   if (SET.cycle === "on" && mode === "play" && (cycleT += dt) > 150) { cycleT = 0; cycleTime(); if (Math.random() < .5) { const w = ["clear", "clear", "rain", "fog", "storm", "snow"][Math.floor(Math.random() * 6)]; atmos.setWeather(w); SET.weather = w; } }
+  life.raining = atmos.weather === "rain" || atmos.weather === "storm";
   if (mode === "play") { contracts.update(dt, time); dealer.update(dt, time); tutUpdate(); if ((dailyT += dt) > 1) { dailyT = 0; dailyCheck(); } extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   if (heroDriven) { car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat); } else if (gsx && gsx.heroPark) { car.group.position.set(gsx.heroPark.x, 0, gsx.heroPark.z); car.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -gsx.heroPark.yaw); }
@@ -618,7 +636,7 @@ function frameLoop(fixed) {
   // the car's own sound
   if (S.gear > prevGear && !S.air && S.speed > 20) sound.pop();
   prevGear = S.gear;
-  sound.car({ rpm: S.rpm, load: S.load, engine: mode === "build" || mode === "home" ? .4 : S.engine, thrust: S.thrust.power, speed: S.speed, inside: S.inside, slip: mode === "play" && game.state && game.state.mode === "drive" && game.state.veh === "car" && !paused0() ? game.state.slip || 0 : 0 });
+  sound.car({ rpm: S.rpm, load: S.load, engine: mode === "build" || mode === "home" ? .4 : S.engine, thrust: veh === "board" ? .12 + Math.min(.35, S.speed / 160) : S.thrust.power, speed: S.speed, inside: S.inside, slip: mode === "play" && game.state && game.state.mode === "drive" && game.state.veh === "car" && !paused0() ? game.state.slip || 0 : 0 });
 
   if (++shadowN % ((W.QUALITY[W.quality] || {}).shEvery || 3) === 0) renderer.shadowMap.needsUpdate = true;
   composer.render();

@@ -9,7 +9,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 export const pip = (x, z, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const [x1, z1] = p[i], [x2, z2] = p[j]; if ((z1 > z) !== (z2 > z) && x < (x2 - x1) * (z - z1) / (z2 - z1) + x1) c = !c; } return c; };
 
 // ---- the grid ----
-const AV = 160, ST = 70, NX = 13, NZ = 21, X0 = -960, Z0 = -700;
+const AV = 160, ST = 70, NX = 13, NZ = 41, X0 = -960, Z0 = -700;       // NZ was 21: the city now runs twice as far south
 export const GRID = {
   AV, ST, NX, NZ, X0, Z0,
   ax: i => X0 + i * AV,                                   // avenue i runs along z at this x
@@ -37,6 +37,8 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const pick = a => a[Math.floor(rnd() * a.length)], range = (a, b) => a + rnd() * (b - a);
   const m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1), Y = new THREE.Vector3(0, 1, 0);
   const XA = GRID.ax(0), XB = GRID.ax(NX - 1), ZA = GRID.sz(0), ZB = GRID.sz(NZ - 1);
+  const MT = { x0: 2650, x1: 4450, z0: -900, z1: 900, S: 8, peak: [3900, -380] };
+  const TRAIL = [[2640, 0], [2780, 30], [2920, -50], [3060, 40], [3200, -90], [3330, -30], [3450, -180], [3560, -110], [3660, -280], [3780, -220], [3880, -360], [3900, -380]];
   const emissive = [];                                     // materials whose glow follows the time of day
   const glassMats = [];                                    // materials that reflect the city
 
@@ -291,6 +293,10 @@ export async function buildCity(scene, canvasTex, COARSE) {
     let ax0 = x0, ax1 = x1, az0 = z0, az1 = z1, y = 0;
     const tiers = H > 120 ? 1 + Math.floor(rnd() * 3) : 1;
     shops(x0, x1, z0, z1, ["s", "n", "e", "w"]); const base = 4.5;
+    if (H > 90 && rnd() < .42) {                                               // a big screen on one face
+      const f = Math.floor(rnd() * 4), [cx, cz, nx, nz, L] = [[(x0 + x1) / 2, z1, 0, 1, x1 - x0], [(x0 + x1) / 2, z0, 0, -1, x1 - x0], [x1, (z0 + z1) / 2, 1, 0, z1 - z0], [x0, (z0 + z1) / 2, -1, 0, z1 - z0]][f];
+      const w = Math.min(34, L * range(.55, .8)), h = w * .56; screenQuad(Math.floor(rnd() * 6), cx, cz, nx, nz, range(14, Math.max(16, Math.min(H * .5, 60))), w, h);
+    }
     walls(trimB, x0 - .3, x1 + .3, z0 - .3, z1 + .3, 4.5, 4.85);                  // a ledge over the shopfronts
     for (let t = 0; t < tiers; t++) {
       const h = t === tiers - 1 ? H : y + (H - y) * range(.45, .7), y0 = t === 0 ? base : y;
@@ -313,6 +319,12 @@ export async function buildCity(scene, canvasTex, COARSE) {
     footprints.push([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]);
   };
   const spires = [];
+  const screenG = [[], [], [], [], [], []];
+  const screenQuad = (k, cx, cz, nx, nz, y, w, h) => {
+    const tx = -nz, tz = nx, a = [cx + nx * .3 - tx * w / 2, cz + nz * .3 - tz * w / 2], b = [cx + nx * .3 + tx * w / 2, cz + nz * .3 + tz * w / 2], g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute([a[0], y, a[1], b[0], y, b[1], b[0], y + h, b[1], a[0], y, a[1], b[0], y + h, b[1], a[0], y + h, a[1]], 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1], 2)); screenG[k].push(g);
+  };
   const walkup = (x0, x1, z0, z1, floors, faces) => {                        // brick, shops below, a water tower on top
     const o = bucket(wallA, 12, 9.6, Math.floor(rnd() * BRICK.length)), h = 4.5 + floors * 3.2;
     shops(x0, x1, z0, z1, faces);
@@ -356,14 +368,17 @@ export async function buildCity(scene, canvasTex, COARSE) {
     if (rnd() < .16) P.carts.push([bx1 - 2.4, bz0 + 3.5, rnd() * 6]);
     if (cx > -400 && cx < 900 && cz > -700 && cz < 500 && rnd() < .3) P.steam.push([GRID.ax(i), (bz0 + bz1) / 2 + (rnd() - .5) * 20]);
     if (rnd() < .45) P.subway.push([bx0 + 2.6, bz0 + 6, 0]);
-    const midtown = cx > -170 && cx < 650 && cz > -570 && cz < -60, downtown = cx > 470 && cz > 270, film = cz > 0 && cz < 300 && cx > 100;
-    const towerZone = (midtown || downtown) && !film;
+    const midtown = cx > -170 && cx < 650 && cz > -570 && cz < -60, downtown = cx > 470 && cz > 270 && cz < 760, film = cz > 0 && cz < 300 && cx > 100;
+    const south = cz > 820 && !(cz > 1300 && cz < 1450 && cx < -500);          // the new southern skyline (with a little square left open)
+    if (cz > 1300 && cz < 1450 && cx < -500) { slab(parkG, bx0, bx1, bz0, bz1, .08); for (let k = 0; k < 10; k++) P.trees.push([range(bx0 + 4, bx1 - 4), range(bz0 + 4, bz1 - 4), range(.8, 1.2)]); continue; }
+    const towerZone = (midtown || downtown || south) && !film;
     if (towerZone) {
       const n = bx1 - bx0 > 120 ? 3 : 2, lw = (x1 - x0) / n;
       for (let k = 0; k < n; k++) {
         const lx0 = x0 + k * lw + 1.5, lx1 = x0 + (k + 1) * lw - 1.5;
         let H = range(90, downtown ? 330 : 300) * (k === 1 ? 1.15 : 1);
         if (downtown && cz < 360) H = Math.min(H, 170);
+        if (south) { H = range(140, 400) * (k === 1 ? 1.2 : 1); if (rnd() < .08) H = range(470, 560); }        // supertalls
         if (rnd() < .3) { tower(lx0, lx1, z0, (z0 + z1) / 2 - 1, H * .7, Math.floor(rnd() * 5)); tower(lx0, lx1, (z0 + z1) / 2 + 1, z1, H, Math.floor(rnd() * 5)); }
         else tower(lx0, lx1, z0, z1, H, Math.floor(rnd() * 5));
       }
@@ -441,7 +456,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const stations = [];
   {
     const xW = (W1 + XA - 9) / 2, xE = (XB + 9 + W2) / 2;
-    const spots = [[xW, -560], [xW, -140], [xW, 280], [xW, 560], [xE, -420], [xE, 140], [xE, 490], [-2560, 60], [brooklyn + 60, -60]];
+    const spots = [[xW, -560], [xW, -140], [xW, 280], [xW, 560], [xE, -420], [xE, 140], [xE, 490], [-2560, 60], [brooklyn + 60, -60], [xW, 1180], [xE, 1460], [xW, 1880], [xE, 980], [2590, 60]];
     const pad = mat({ color: 0x6b6d72, roughness: .8 }), canopyM = mat({ color: 0xf2f2f2, roughness: .5 }), redM = mat({ color: 0xc1121f, roughness: .4 }), pumpM = mat({ color: 0x1b1c20, roughness: .5, metalness: .3 });
     const under = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff6e0).multiplyScalar(1.6), toneMapped: false }); emissive.push(under);
     const greenM = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dff8a).multiplyScalar(1.4), toneMapped: false, transparent: true, opacity: .5 });
@@ -463,8 +478,83 @@ export async function buildCity(scene, canvasTex, COARSE) {
     mk("pad", pad); mk("canopy", canopyM); mk("red", redM); mk("pump", pumpM); mk("under", under); mk("green", greenM);
   }
   for (let k = 0; k < 90; k++) { const x = range(brooklyn + 20, brooklyn + 800), z = range(-600, 600); if (Math.abs(z) < 20) continue; const w = range(8, 18), d = range(8, 18), h = range(6, 20); walkup(x, x + w, z, z + d, Math.max(1, Math.round((h - 4.5) / 3.2)), []); }
-  for (let k = 0; k < 300; k++) P.trees.push([range(brooklyn, brooklyn + 900), range(-700, 700), range(.7, 1.2)]);
+  for (let k = 0; k < 300; k++) { const z = range(-700, 700); if (Math.abs(z) < 14) continue; P.trees.push([range(brooklyn, brooklyn + 900), z, range(.7, 1.2)]); }
+  // the highway: from the bridge, straight through Brooklyn, to the foot of the mountains
+  {
+    const L = MT.x0 + 20 - 1700, hw = new THREE.PlaneGeometry(L, 18).rotateX(-Math.PI / 2).translate(1700 + L / 2, .035, 0);
+    const uv = hw.attributes.uv, ps = hw.attributes.position; for (let k = 0; k < ps.count; k++) uv.setXY(k, ps.getX(k) / 5, ps.getZ(k) / 5);
+    scene.add(new THREE.Mesh(hw, asphaltMat));
+    const lines = new THREE.MeshBasicMaterial({ color: 0xf2c230 }), dash = new THREE.MeshBasicMaterial({ color: 0xe8e8e8 });
+    scene.add(new THREE.Mesh(mergeGeometries([new THREE.PlaneGeometry(L, .18).rotateX(-Math.PI / 2).translate(1700 + L / 2, .05, -.2), new THREE.PlaneGeometry(L, .18).rotateX(-Math.PI / 2).translate(1700 + L / 2, .05, .2)]), lines));
+    const ds = []; for (let x = 1710; x < MT.x0; x += 12) for (const z of [-4.5, 4.5]) ds.push(new THREE.PlaneGeometry(4, .18).rotateX(-Math.PI / 2).translate(x, .05, z));
+    scene.add(new THREE.Mesh(mergeGeometries(ds), dash));
+    roads.push({ p: [[1700, 0], [MT.x0 + 20, 0]], w: 18 });
+  }
+  const terrain = buildMountains();
   for (let k = 0; k < (COARSE ? 400 : 900); k++) { const x = range(XA - 40, XB + 40), z = pick([range(ZB + 20, ZB + 600), range(ZA - 600, ZA - 20)]); P.trees.push([x, z, range(.8, 1.4)]); }
+
+  // ---- the mountains past Brooklyn: rough ground, rock and snow, pine forest, boulders, a dirt trail to the summit ----
+  function buildMountains() {
+    const h2 = (i, j) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+    const vn = (x, z) => { const i = Math.floor(x), j = Math.floor(z), fx = x - i, fz = z - j, u = fx * fx * (3 - 2 * fx), w = fz * fz * (3 - 2 * fz), a = h2(i, j), b = h2(i + 1, j), c = h2(i, j + 1), d = h2(i + 1, j + 1); return a + (b - a) * u + (c - a) * w + (a - b - c + d) * u * w; };
+    const fbm = (x, z, o) => { let s = 0, a = .5, f = 1; for (let k = 0; k < o; k++) { s += a * vn(x * f, z * f); a *= .5; f *= 2.03; } return s; };
+    const sm = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+    const segD = (x, z) => { let best = 1e9; for (let k = 0; k < TRAIL.length - 1; k++) { const [ax, az] = TRAIL[k], [bx, bz] = TRAIL[k + 1], dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz))); best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t)); } return best; };
+    const rawH = (x, z) => {
+      const rise = sm((x - MT.x0) / 380) * sm((MT.x1 - x) / 260) * sm((z - MT.z0) / 260) * sm((MT.z1 - z) / 260);
+      if (rise <= 0) return 0;
+      const big = fbm(x / 430 + 3.1, z / 430 - 1.7, 4), ridge = 1 - Math.abs(fbm(x / 250 + 7, z / 250 - 3, 3) * 2 - 1), peak = Math.max(0, 1 - Math.hypot(x - MT.peak[0], z - MT.peak[1]) / 950);
+      const trail = sm(1 - segD(x, z) / 16);
+      let h = Math.max(0, big * 140 + ridge * 95 + peak * peak * 230 - 70) * rise;
+      const rough = ((vn(x / 15, z / 15) - .5) * 2.2 + (vn(x / 9 + 31, z / 9 - 17) - .5) * 1.1) * Math.min(1, rise * 3);   // the bumps that make it rough
+      return Math.max(.06, h * (1 - trail * .12) + rough * (1 - trail * .75));
+    };
+    const S = MT.S, NXm = Math.round((MT.x1 - MT.x0) / S), NZm = Math.round((MT.z1 - MT.z0) / S), H = new Float32Array((NXm + 1) * (NZm + 1));
+    for (let j = 0; j <= NZm; j++) for (let i = 0; i <= NXm; i++) H[j * (NXm + 1) + i] = rawH(MT.x0 + i * S, MT.z0 + j * S);
+    const at = (i, j) => H[j * (NXm + 1) + i];
+    // height anywhere: the same triangles the mesh is made of, so wheels sit exactly on the ground you see
+    const height = (x, z) => {
+      const gx = (x - MT.x0) / S, gz = (z - MT.z0) / S;
+      if (gx < 0 || gz < 0 || gx >= NXm || gz >= NZm) return 0;
+      const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
+      return fx + fz <= 1 ? at(i, j) + fx * (at(i + 1, j) - at(i, j)) + fz * (at(i, j + 1) - at(i, j)) : at(i + 1, j + 1) + (1 - fx) * (at(i, j + 1) - at(i + 1, j + 1)) + (1 - fz) * (at(i + 1, j) - at(i + 1, j + 1));
+    };
+    const pos = new Float32Array((NXm + 1) * (NZm + 1) * 3), col = new Float32Array(pos.length), idx = [];
+    for (let j = 0; j <= NZm; j++) for (let i = 0; i <= NXm; i++) {
+      const k = j * (NXm + 1) + i, x = MT.x0 + i * S, z = MT.z0 + j * S, h = H[k];
+      pos.set([x, h, z], k * 3);
+      const sl = i > 0 && j > 0 && i < NXm && j < NZm ? Math.hypot(at(i + 1, j) - at(i - 1, j), at(i, j + 1) - at(i, j - 1)) / (2 * S) : 0, n = vn(x / 7, z / 7), tr = sm(1 - segD(x, z) / 7);
+      let c = [.24 + n * .08, .4 + n * .1, .17 + n * .05];                                   // grass
+      if (h > 60) c = [c[0] * .9 + .03, c[1] * .85, c[2] * .9];                             // darker, higher up
+      if (sl > .55 || h > 175) { const m = sm((sl - .55) / .25 + (h - 175) / 40); c = c.map((v, q) => v + ([.44, .42, .4][q] + n * .06 - v) * Math.max(m, sm((h - 175) / 40))); }   // rock
+      if (h > 215 + n * 20) c = [.92, .93, .96];                                             // snow
+      if (tr > 0) c = c.map((v, q) => v + ([.45, .35, .23][q] - v) * tr);                   // the dirt trail
+      col.set(c, k * 3);
+      if (i < NXm && j < NZm) { const a = k, b = k + NXm + 1, d = k + 1, e = k + NXm + 2; idx.push(a, b, d, d, b, e); }
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); geo.setAttribute("color", new THREE.BufferAttribute(col, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, mat({ vertexColors: true, roughness: .96 })); mesh.receiveShadow = true; scene.add(mesh);
+    // pines and boulders (they stop you, but you can't land on top of them)
+    const pines = [], rocks = [];
+    for (let k = 0; k < (COARSE ? 700 : 1600); k++) {
+      const x = range(MT.x0 + 80, MT.x1 - 40), z = range(MT.z0 + 40, MT.z1 - 40), h = height(x, z), sl = Math.abs(height(x + 3, z) - height(x - 3, z)) / 6 + Math.abs(height(x, z + 3) - height(x, z - 3)) / 6;
+      if (h < 3 || h > 190 || sl > .6 || segD(x, z) < 10) continue;
+      const s = range(.8, 1.5); pines.push([x, h, z, s]); solid(x - .45, x + .45, z - .45, z + .45, h + 7 * s, { noRoof: true });
+    }
+    for (let k = 0; k < (COARSE ? 160 : 340); k++) {
+      const x = range(MT.x0 + 60, MT.x1 - 40), z = range(MT.z0 + 40, MT.z1 - 40), h = height(x, z); if (segD(x, z) < 9) continue;
+      const s = range(.8, 3.6); rocks.push([x, h - s * .3, z, s, rnd() * 6]); if (s > 1.6) solid(x - s * .7, x + s * .7, z - s * .7, z + s * .7, h + s * .6, { noRoof: true });
+    }
+    const T = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute("color", new THREE.BufferAttribute(a, 3)); return g; };
+    const pineGeo = mergeGeometries([T(new THREE.CylinderGeometry(.18, .28, 2.2, 6).translate(0, 1.1, 0).toNonIndexed(), [.35, .25, .17]), T(new THREE.ConeGeometry(2.2, 3.6, 7).translate(0, 3.4, 0).toNonIndexed(), [.12, .3, .16]), T(new THREE.ConeGeometry(1.7, 3, 7).translate(0, 5, 0).toNonIndexed(), [.14, .34, .18]), T(new THREE.ConeGeometry(1.1, 2.4, 7).translate(0, 6.5, 0).toNonIndexed(), [.16, .38, .2])]);
+    const pm = new THREE.InstancedMesh(pineGeo, mat({ vertexColors: true, roughness: .9, flatShading: true }), Math.max(1, pines.length)); pines.forEach(([x, h, z, s], i) => { m4.compose(v.set(x, h - .2, z), q0.setFromAxisAngle(Y, i), sc.set(s, s, s)); pm.setMatrixAt(i, m4); }); pm.castShadow = true; scene.add(pm);
+    const rm = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), mat({ color: 0x777470, roughness: .95, flatShading: true }), Math.max(1, rocks.length)); rocks.forEach(([x, h, z, s, r], i) => { m4.compose(v.set(x, h, z), q0.setFromAxisAngle(Y, r), sc.set(s * 1.2, s * .8, s)); rm.setMatrixAt(i, m4); }); scene.add(rm);
+    // a cairn and a flag at the summit
+    const sx = MT.peak[0], sz2 = MT.peak[1], sh = height(sx, sz2);
+    scene.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(.06, .06, 7, 6).translate(sx, sh + 3.5, sz2), mat({ color: 0xdddddd })), {}));
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.4).translate(sx + 1.2, sh + 6.2, sz2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.3), side: THREE.DoubleSide, toneMapped: false })); scene.add(flag);
+    return { height, trail: TRAIL.map(([x, z]) => [x, height(x, z), z]), peak: [sx, sh, sz2] };
+  }
 
   // ---- Times Square: big glowing billboards round one intersection ----
   const TSX = GRID.ax(7), TSZ = GRID.sz(6), billboards = [];
@@ -496,6 +586,21 @@ export async function buildCity(scene, canvasTex, COARSE) {
       const m = new THREE.Mesh(g, mtl); m.userData.solid = true; scene.add(m);
     }
   }
+  const screenTex = Array.from({ length: 6 }, () => { const c = document.createElement("canvas"); c.width = 256; c.height = 144; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; });
+  screenG.forEach((list, k) => { if (list.length) scene.add(new THREE.Mesh(mergeGeometries(list), new THREE.MeshBasicMaterial({ map: screenTex[k], toneMapped: false, color: new THREE.Color(1.35, 1.35, 1.35) }))); });
+  const NEWS = ["BREAKING: VOID CITY GROWS TO TWICE ITS SIZE", "TRAFFIC: HEAVY ON THE BRIDGE TO BROOKLYN", "WEATHER: CLEAR SKIES, LIGHT WIND", "VOID MOTORS: 106 CARS IN STOCK", "MOUNTAINS OPEN: HILL CLIMB RACE NOW LIVE", "HOT DOGS $10 ON EVERY CORNER"];
+  const drawScreen = (k, t) => {
+    const c = screenTex[k].image, g = c.getContext("2d"), w = c.width, h = c.height;
+    if (k === 0) { const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, `hsl(${(t * 40) % 360},90%,45%)`); gr.addColorStop(1, `hsl(${(t * 40 + 120) % 360},90%,30%)`); g.fillStyle = gr; g.fillRect(0, 0, w, h); g.fillStyle = "#fff"; g.font = "900 64px Unbounded, Impact, sans-serif"; g.textAlign = "center"; g.fillText("VOID", w / 2 + Math.sin(t * 2) * 10, 92); g.font = "700 16px Inter, sans-serif"; g.fillText("DRIVE · FLY · LAND", w / 2, 122); }
+    if (k === 1) { g.fillStyle = "#06060a"; g.fillRect(0, 0, w, h); for (let i = 0; i < 24; i++) { const v = (Math.sin(t * 6 + i * .7) * .5 + .5) * (Math.sin(t * 2.3 + i * 1.9) * .3 + .7); g.fillStyle = `hsl(${180 + i * 6},100%,${50 + v * 15}%)`; g.fillRect(6 + i * 10.3, h - 10 - v * (h - 30), 8, v * (h - 30)); } }
+    if (k === 2) { g.fillStyle = "#0b1730"; g.fillRect(0, 0, w, h); g.fillStyle = "#c1121f"; g.fillRect(0, h - 40, w, 40); g.fillStyle = "#fff"; g.font = "900 22px Inter, sans-serif"; g.textAlign = "left"; const msg = NEWS.join("   •   ") + "   •   "; const tw = g.measureText(msg).width, x = -(t * 60 % tw); g.fillText(msg, x, h - 13); g.fillText(msg, x + tw, h - 13); g.font = "900 40px Unbounded, Impact, sans-serif"; g.fillText("VOID NEWS", 14, 56); const d = new Date(); g.font = "700 22px Inter, sans-serif"; g.fillText(d.toTimeString().slice(0, 5), 14, 88); }
+    if (k === 3) { g.fillStyle = "#111"; g.fillRect(0, 0, w, h); for (let i = -2; i < 10; i++) { g.fillStyle = i % 2 ? "#ffd23d" : "#1a1a1a"; g.beginPath(); const x = i * 40 + (t * 50 % 80); g.moveTo(x, 0); g.lineTo(x + 30, 0); g.lineTo(x - 10, h); g.lineTo(x - 40, h); g.fill(); } g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(0, 36, w, 74); g.fillStyle = "#ffd23d"; g.font = "900 34px Unbounded, Impact, sans-serif"; g.textAlign = "center"; g.fillText("VOID MOTORS", w / 2, 78); g.fillStyle = "#fff"; g.font = "700 15px Inter, sans-serif"; g.fillText("106 CARS · IN THE PARK", w / 2, 100); }
+    if (k === 4) { g.fillStyle = "#000"; g.fillRect(0, 0, w, h); for (let i = 0; i < 5; i++) { const x = w / 2 + Math.sin(t * (.7 + i * .3) + i) * 90, y = h / 2 + Math.cos(t * (.9 + i * .2) + i * 2) * 45, r = g.createRadialGradient(x, y, 0, x, y, 70); r.addColorStop(0, `hsla(${(i * 70 + t * 30) % 360},100%,60%,.9)`); r.addColorStop(1, "hsla(0,0%,0%,0)"); g.fillStyle = r; g.fillRect(0, 0, w, h); } }
+    if (k === 5) { g.fillStyle = "#e8f1ff"; g.fillRect(0, 0, w, h); g.fillStyle = "#0b1730"; g.font = "900 46px Unbounded, Impact, sans-serif"; g.textAlign = "left"; g.fillText("HOVER", 14, 60); g.fillText("BOARDS", 14, 108); g.fillStyle = "#3dc8ff"; g.font = "700 16px Inter, sans-serif"; g.fillText("PRESS Y · RIDE ANYWHERE", 14, 132); g.save(); g.translate(205, 70 + Math.sin(t * 3) * 6); g.rotate(-.3); g.fillStyle = "#111"; g.fillRect(-36, -7, 72, 14); g.fillStyle = "#3df5ff"; g.fillRect(-30, 7, 60, 4); g.restore(); }
+    screenTex[k].needsUpdate = true;
+  };
+  for (let k = 0; k < 6; k++) drawScreen(k, 0);
+  let screenK = 0, screenT = 0;
   if (spires.length) scene.add(new THREE.Mesh(mergeGeometries(spires.map(g => g.toNonIndexed())), mat({ color: 0xb8bcc4, metalness: .9, roughness: .25 })));
   const walkMat = mat({ map: walkTex, roughness: .9 }); walkTex.repeat.set(1, 1);
   const wg = mergeGeometries(walkG); { const p = wg.attributes.position, uv = wg.attributes.uv; for (let k = 0; k < p.count; k++) uv.setXY(k, p.getX(k) / 4, p.getZ(k) / 4); }
@@ -635,7 +740,8 @@ export async function buildCity(scene, canvasTex, COARSE) {
     beaches: [], walkways: [], bounds: { x0: XA - 220, x1: brooklyn + 300, z0: ZA - 160, z1: ZB + 160 }, credit: "a made-up city in code",
     near, nearR, nearFast, helipads, carts: P.carts, lawn, lake, stations, asphaltMat, poolMat, emissive, glassMats, billboards,
     // ground under a point: rooftops count (so you can land and drive on them), water is -1
-    roofAt(x, z) { let h = 0; for (const b of near(x, z)) if (Math.abs(x - b.x) < b.hw && Math.abs(z - b.z) < b.hd && b.h > h) h = b.h; return h; },
+    roofAt(x, z) { let h = 0; for (const b of near(x, z)) if (!b.noRoof && Math.abs(x - b.x) < b.hw && Math.abs(z - b.z) < b.hd && b.h > h) h = b.h; return h; },
+    terrainH: terrain.height, mountains: { ...MT, trail: terrain.trail, peak: terrain.peak },
     isWater(x, z) {
       if (x > HW0 && x < W1) return !(x > W1 - 80 && Math.abs(((z - ZA + 8) % 140 + 140) % 140 - 8) < 8);   // the Hudson, except on the piers
       if (x > W2 && x < EW1) return Math.abs(z) > 15;                                               // the East River, except on the bridge
@@ -646,6 +752,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
       if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 283; }
       waveTex.offset.set((t * .004) % 1, (t * .011) % 1);
       avMat.opacity = Math.sin(t * 3) > 0 ? 1 : .15;
+      if (t - screenT > .05) { screenT = t; drawScreen(screenK, t); screenK = (screenK + 1) % 6; }      // one screen redrawn per tick, each at about 3 fps
       // steam from the stacks near the camera
       const dt = Math.min(.1, Math.max(0, t - (this._t || t))); this._t = t;
       if (cam && (puffT += dt) > .14) { puffT = 0; for (const [x, z] of P.steam) if (Math.abs(x - cam.x) < 150 && Math.abs(z - cam.z) < 150) { const pf = puffs[puffI++ % puffs.length]; pf.life = 1; pf.p.set(x + (Math.random() - .5) * .3, 2.5, z + (Math.random() - .5) * .3); pf.vx = (Math.random() - .5) * .6; pf.vz = (Math.random() - .5) * .6; } }
