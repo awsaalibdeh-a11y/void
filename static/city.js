@@ -749,7 +749,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     },
     update(t, cam) {
       setLights(t);
-      if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 283; }
+      if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 283 * Math.min(1, far); /* Lite pulls the margin in too */ }
       waveTex.offset.set((t * .004) % 1, (t * .011) % 1);
       avMat.opacity = Math.sin(t * 3) > 0 ? 1 : .15;
       if (t - screenT > .05) { screenT = t; drawScreen(screenK, t); screenK = (screenK + 1) % 6; }      // one screen redrawn per tick, each at about 3 fps

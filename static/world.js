@@ -149,8 +149,8 @@ export async function createWorld(canvas, COARSE) {
     captureCity();
   }
   // quality: Low / Medium / High / Ultra (the adaptive system steps it down by itself when frames run slow)
-  const QUALITY = { low: { pr: .75, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25 }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true, msaa: 0, bres: .3, shEvery: 4 }, high: { pr: 1.25, shadow: 2048, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 3 }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 2 } };
-  let quality = "high"; const W0 = { bres: .5 };
+  const QUALITY = { lite: { pr: .7, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25, shEvery: 9, flat: true }, low: { pr: .75, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25 }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true, msaa: 0, bres: .3, shEvery: 4 }, high: { pr: 1.25, shadow: 2048, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 3 }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 2 } };
+  let quality = "high"; const W0 = { bres: .5, flat: false };
   function setQuality(q) {
     const Q = QUALITY[q] || QUALITY.high; quality = q;
     const on = Q.shadow > 0;
@@ -158,6 +158,8 @@ export async function createWorld(canvas, COARSE) {
     sun.castShadow = on;
     if (on && sun.shadow.mapSize.x !== Q.shadow) { sun.shadow.mapSize.set(Q.shadow, Q.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
     bloom.enabled = Q.bloom; grade.enabled = Q.grade; W0.bres = Q.bres;
+    // Lite also drops the surface relief maps (each costs a texture read per pixel, which built-in graphics feel)
+    if (!!Q.flat !== W0.flat) { W0.flat = !!Q.flat; scene.traverse(o => { const m = o.material; if (!m || Array.isArray(m) || !(m.normalMap || m.userData.nm)) return; if (W0.flat) { m.userData.nm = m.normalMap; m.normalMap = null; } else if (m.userData.nm) { m.normalMap = m.userData.nm; } m.needsUpdate = true; }); }
     // multisampling only where the card can afford it (it is the biggest cost on laptop graphics)
     for (const t of [composer.renderTarget1, composer.renderTarget2]) if (t.samples !== Q.msaa) { t.samples = Q.msaa; t.dispose(); }
     return Math.min(devicePixelRatio || 1, Q.pr);

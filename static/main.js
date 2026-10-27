@@ -13,7 +13,13 @@ setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
-const W = await createWorld($("gl"), COARSE), { renderer, scene, camera, composer, bloom, camLight, fx } = W;
+// a quick look at the machine before anything is built: built-in graphics or a small CPU (an i3 has 4 threads) gets the light build:
+// fewer cars, people and trees, a shorter view, no shadows or glow. Anyone can switch it in Settings (Graphics: Lite).
+const PROBE_GPU = (() => { try { const c = document.createElement("canvas").getContext("webgl2") || document.createElement("canvas").getContext("webgl"), e = c && c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
+const SAVED_Q = (store.get("void.settings") || {}).q;
+const WEAK_GPU = /Intel|UHD|Iris|HD Graphics|Radeon\(TM\) Graphics|Vega \d|SwiftShader|llvmpipe|Basic Render|Mali|Adreno|PowerVR/i.test(PROBE_GPU) && !/RTX|GTX|Radeon RX|Arc A/i.test(PROBE_GPU);
+const LITE = SAVED_Q === "lite" || (SAVED_Q == null && (WEAK_GPU || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4));
+const W = await createWorld($("gl"), COARSE || LITE), { renderer, scene, camera, composer, bloom, camLight, fx } = W;
 setLoad(55);
 
 // the car you drive: a fixed root the game and the film move around, with the chosen model swapped inside it
@@ -42,7 +48,7 @@ setLoad(80);
 const interior = addInterior(car, renderer);
 const sound = new Sound();
 const watch = createWatch(W, car, interior);
-const life = createLife(scene, W.roads, W.walkways, COARSE);
+const life = createLife(scene, W.roads, W.walkways, COARSE || LITE);
 const TIMES = ["night", "sunset", "day"];
 function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % 3]; W.setTime(k); store.set("void.time", k); toast({ night: "Night in the city", sunset: "Golden hour", day: "Daytime" }[k]); cubeN = 0; }
 let police, races, nav;
@@ -53,7 +59,7 @@ setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a h
 const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
 const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
 const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;      // recent RTX cards start on Ultra
-const SET = Object.assign({ q: TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal" }, store.get("void.settings") || {});
+const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal" }, store.get("void.settings") || {});
 const gameOpts = {
   handling: () => SET.handling, buyFood: () => { if (cash < 10) return false; cash -= 10; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
@@ -473,10 +479,10 @@ function frameLoop(fixed) {
     perf.t += raw; perf.n++;
     if (perf.t > 1.5) {
       const avg = perf.t / perf.n, was = perf.pr; fpsNow = Math.round(1 / avg); const fe = document.getElementById("gFps"); if (fe) fe.textContent = fpsNow + " fps";
-      if (avg > 1 / 25 && mode === "play" && SET.q !== "low") perf.down = 3;          // very slow: skip straight to a lower level
-      if (avg > 1 / 45 && perf.pr > .75 && perf.down < 3) perf.pr = Math.max(.75, perf.pr - .12);          // below 75% everything turns to mush: drop a quality level instead
-      else if (avg > 1 / 40 && mode === "play" && ++perf.down >= 3 && SET.q !== "low") {      // still slow at the lowest resolution: drop a quality level
-        perf.down = 0; SET.q = { ultra: "high", high: "medium", medium: "low" }[SET.q]; perf.pr = W.QUALITY[SET.q].pr; applySettings(false); toast(`Graphics set to ${SET.q} to keep it smooth`);
+      if (avg > 1 / 25 && mode === "play" && SET.q !== "lite") perf.down = 3;          // very slow: skip straight to a lower level
+      if (avg > 1 / 45 && perf.pr > .75 && SET.q !== "lite" && perf.down < 3) perf.pr = Math.max(.75, perf.pr - .12);          // below 75% everything turns to mush: drop a quality level instead
+      else if (avg > 1 / 40 && mode === "play" && ++perf.down >= 3 && SET.q !== "lite") {      // still slow at the lowest resolution: drop a quality level
+        perf.down = 0; SET.q = { ultra: "high", high: "medium", medium: "low", low: "lite" }[SET.q]; perf.pr = W.QUALITY[SET.q].pr; applySettings(false); toast(`Graphics set to ${SET.q} to keep it smooth`);
       }
       else if (avg < 1 / 58 && perf.pr < perf.max) perf.pr = Math.min(perf.max, perf.pr + .08);
       if (perf.pr !== was) { renderer.setPixelRatio(perf.pr); composer.setPixelRatio(perf.pr); lastW = 0; resize(); }
@@ -608,7 +614,8 @@ function frameLoop(fixed) {
     fx.lines.instanceMatrix.needsUpdate = true;
   }
 
-  // the front seat and its screens
+  // the front seat and its screens (the cockpit is only drawn when you can see it: from the seat, in the showroom, or on Ultra)
+  interior.parts.visible = mode !== "play" || S.inside || S.screenOn || W.quality === "ultra";
   if (S.screenOn) {
     if (!COARSE || (feedFlip++ & 1)) interior.renderFeed(scene);
     if (time - lastHud > .1) {
@@ -626,7 +633,7 @@ function frameLoop(fixed) {
   camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .06 : .35; camera.updateProjectionMatrix();
   camLight.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0)); camLight.target.position.copy(S.pos);
   scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)) * W.weatherFog; scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt)) * W.weatherFog;
-  const DET = { low: .55, medium: .8, high: 1, ultra: 1.2 }[W.quality] || 1; life.detail = DET; W.city.detail = DET;
+  const DET = { lite: .42, low: .55, medium: .8, high: 1, ultra: 1.2 }[W.quality] || 1; life.detail = DET; W.city.detail = DET;
   cullSmall(time, DET);
   scene.fog.far *= Math.min(1, DET + .2); camera.far = scene.fog.far * 1.1 + 150; camera.updateProjectionMatrix();          // nothing past the fog gets drawn
   // refresh the car's reflections every few frames (the car hides from its own camera)
