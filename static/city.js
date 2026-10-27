@@ -94,12 +94,48 @@ export async function buildCity(scene, canvasTex, COARSE) {
     else { g.fillStyle = "rgba(0,0,0,.5)"; for (let i = 0; i < 6; i++) g.fillRect(20 + rnd() * 130, 90 + rnd() * 30, 8, 30); }      // people inside
   }, [1, 1]);
 
+  // height maps -> normal maps (white is proud, black is deep)
+  const normalTex = (w, h, draw, k = 3) => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); draw(g, w, h);
+    const src = g.getImageData(0, 0, w, h).data, out = g.createImageData(w, h), H = (x, y) => src[((((y % h) + h) % h) * w + (((x % w) + w) % w)) * 4] / 255;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const dx = (H(x + 1, y) - H(x - 1, y)) * k, dy = (H(x, y + 1) - H(x, y - 1)) * k, l = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+      out.data[i] = (-dx / l * .5 + .5) * 255; out.data[i + 1] = (dy / l * .5 + .5) * 255; out.data[i + 2] = (1 / l * .5 + .5) * 255; out.data[i + 3] = 255;
+    }
+    g.putImageData(out, 0, 0);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+  };
+  const shade = (g, v) => { g.fillStyle = `rgb(${v * 255 | 0},${v * 255 | 0},${v * 255 | 0})`; };
+  const brickN = normalTex(256, 256, (g, w, h) => {
+    shade(g, .8); g.fillRect(0, 0, w, h);
+    shade(g, .5); for (let y = 0; y < h; y += 5) { g.fillRect(0, y, w, 1); for (let x = (y / 5) % 2 ? 0 : 6; x < w; x += 12) g.fillRect(x, y, 1, 5); }
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+      const x = c * 85 + 26, y = r * 85 + 18;
+      shade(g, 1); g.fillRect(x - 3, y - 6, 40, 6); g.fillRect(x - 2, y + 50, 38, 4);             // lintel and sill stand proud
+      shade(g, .3); g.fillRect(x, y, 34, 50); shade(g, .05); g.fillRect(x + 3, y + 3, 28, 44);      // the frame, then the glass set deep
+      shade(g, .3); g.fillRect(x + 3, y + 24, 28, 2);
+    }
+  });
+  const stoneN = normalTex(256, 256, (g, w, h) => {
+    shade(g, .8); g.fillRect(0, 0, w, h);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { const x = c * 85 + 22, y = r * 85 + 14; shade(g, .1); g.fillRect(x, y, 40, 56); shade(g, 1); g.fillRect(x - 4, y + 56, 48, 4); }
+    shade(g, 1); for (let c = 0; c < 3; c++) g.fillRect(c * 85, 0, 6, h);
+  });
+  const glassN = normalTex(256, 256, (g, w, h) => {
+    shade(g, .5); g.fillRect(0, 0, w, h);
+    for (let r = 0; r < 4; r++) { shade(g, .7); g.fillRect(0, r * 64 + 52, w, 12); }                     // spandrels
+    shade(g, 1); for (let c = 0; c <= 8; c++) g.fillRect(c * 32 - 2, 0, 4, h); for (let r = 0; r <= 4; r++) g.fillRect(0, r * 64 - 2, w, 4);   // mullions
+  }, 2.5);
+
   // ---- materials ----
   const mat = (o) => new THREE.MeshStandardMaterial(o);
   const lit = (m, k = 1) => { m.userData.glow = k; emissive.push(m); return m; };
-  const glassM = [0, 1, 2, 3].map(s => { const m = lit(mat({ map: glassTex(s, false), emissive: 0xffffff, emissiveMap: glassTex(s, true), emissiveIntensity: .9, metalness: .9, roughness: .1, envMapIntensity: 1.6 })); glassMats.push(m); return m; });
-  const stoneM = lit(mat({ map: stoneTex(false), emissive: 0xffffff, emissiveMap: stoneTex(true), emissiveIntensity: .75, roughness: .85 }));
-  const brickM = BRICK.map((c, i) => lit(mat({ map: brickTex(c, false, i % 2 === 0), emissive: 0xffffff, emissiveMap: brickTex(c, true, false), emissiveIntensity: .75, roughness: .9 })));
+  const NS = new THREE.Vector2(1, 1);
+  const glassM = [0, 1, 2, 3].map(s => { const m = lit(mat({ map: glassTex(s, false), emissive: 0xffffff, emissiveMap: glassTex(s, true), emissiveIntensity: .9, metalness: .9, roughness: .1, envMapIntensity: 1.6, normalMap: glassN, normalScale: NS })); glassMats.push(m); return m; });
+  const stoneM = lit(mat({ map: stoneTex(false), emissive: 0xffffff, emissiveMap: stoneTex(true), emissiveIntensity: .75, roughness: .85, normalMap: stoneN, normalScale: NS }));
+  const brickM = BRICK.map((c, i) => lit(mat({ map: brickTex(c, false, false), emissive: 0xffffff, emissiveMap: brickTex(c, true, false), emissiveIntensity: .75, roughness: .9, normalMap: brickN, normalScale: NS })));
+  // glowing crown bands on the glass towers (cyan, violet, warm white, gold)
+  const crownM = [0x3df5ff, 0xb38cff, 0xfff1d6, 0xffc23d].map(c => { const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(2.2), toneMapped: false }); emissive.push(m); return m; });
   const shopM = AWN.map((_, k) => lit(mat({ map: shopTex(k, false), emissive: 0xffffff, emissiveMap: shopTex(k, true), emissiveIntensity: 1, roughness: .5, metalness: .1 }), 1.1));
   const roofM = mat({ color: 0x3b3c40, roughness: .9 }), trimM = mat({ color: 0xd9d2c4, roughness: .7 }), darkM = mat({ color: 0x1c1d21, roughness: .6, metalness: .4 });
   for (const m of [...glassM, stoneM, ...brickM, ...shopM]) for (const t of [m.map, m.emissiveMap]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -115,7 +151,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const top = (o, x0, x1, z0, z1, y) => { o.pos.push(x0, y, z0, x0, y, z1, x1, y, z1, x0, y, z0, x1, y, z1, x1, y, z0); o.uv.push(0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0); };
   // walls go round counter-clockwise seen from above so they face out
   const walls = (o, x0, x1, z0, z1, y0, y1) => { quad(o, x0, z1, x1, z1, y0, y1); quad(o, x1, z1, x1, z0, y0, y1); quad(o, x1, z0, x0, z0, y0, y1); quad(o, x0, z0, x0, z1, y0, y1); };
-  const roofB = bucket(roofM, 8, 8), trimB = bucket(trimM, 4, 4), darkB = bucket(darkM, 4, 4);
+  const roofB = bucket(roofM, 8, 8), trimB = bucket(trimM, 4, 4), darkB = bucket(darkM, 4, 4), crownB = crownM.map(m => bucket(m, 4, 4));
   const box = (o, x0, x1, z0, z1, y0, y1, roof = roofB) => { walls(o, x0, x1, z0, z1, y0, y1); top(roof, x0, x1, z0, z1, y1); };
 
   // collision boxes, in a spatial hash so lookups stay quick with thousands of buildings
@@ -136,7 +172,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const nearR = (x, z, r) => { const out = new Set(); for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) for (let cz = Math.floor((z - r) / CELL); cz <= Math.floor((z + r) / CELL); cz++) for (const b of hash.get(cx * 10007 + cz) || []) out.add(b); return [...out]; };
 
   // instanced props, gathered as lists then placed at the end
-  const P = { acs: [], trees: [], lamps: [], hydrants: [], towers: [], subway: [], aviation: [], helipads: [], benches: [], burgers: [], pizzas: [], signs: [], awn: [], stoops: [], bins: [] };
+  const P = { acs: [], trees: [], lamps: [], hydrants: [], towers: [], subway: [], aviation: [], helipads: [], benches: [], burgers: [], pizzas: [], signs: [], awn: [], stoops: [], bins: [], escapes: [], carts: [], steam: [] };
 
   // ---- ground: grass everywhere, asphalt under the grid, sidewalks on every block ----
   // land: Manhattan between the rivers, New Jersey west of the Hudson, Brooklyn east of the East River (the rivers are gaps)
@@ -228,6 +264,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     let ax0 = x0, ax1 = x1, az0 = z0, az1 = z1, y = 0;
     const tiers = H > 120 ? 1 + Math.floor(rnd() * 3) : 1;
     shops(x0, x1, z0, z1, ["s", "n", "e", "w"]); const base = 4.5;
+    walls(trimB, x0 - .3, x1 + .3, z0 - .3, z1 + .3, 4.5, 4.85);                  // a ledge over the shopfronts
     for (let t = 0; t < tiers; t++) {
       const h = t === tiers - 1 ? H : y + (H - y) * range(.45, .7), y0 = t === 0 ? base : y;
       walls(o, ax0, ax1, az0, az1, y0, h); top(roofB, ax0, ax1, az0, az1, h);
@@ -237,6 +274,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
       if (t < tiers - 1) { ax0 += ix; ax1 -= ix; az0 += iz; az1 -= iz; }
     }
     const cx = (ax0 + ax1) / 2, cz = (az0 + az1) / 2, wTop = Math.min(ax1 - ax0, az1 - az0);
+    if (glass && H > 110 && rnd() < .55) walls(pick(crownB), ax0 - .06, ax1 + .06, az0 - .06, az1 + .06, H - 1.6, H - 1);     // a band of light round the top
     const crown = film ? 0 : rnd();
     if (crown < .22 && H > 150) {                                             // a spire with an antenna
       const sh = H * range(.12, .22); const g = new THREE.ConeGeometry(wTop * .32, sh, 4).rotateY(Math.PI / 4).translate(cx, H + sh / 2, cz);
@@ -254,6 +292,11 @@ export async function buildCity(scene, canvasTex, COARSE) {
     const other = ["s", "n", "e", "w"].filter(f => !faces.includes(f));
     for (const f of other) { const [ax, az, bx, bz] = f === "s" ? [x0, z1, x1, z1] : f === "n" ? [x1, z0, x0, z0] : f === "e" ? [x1, z1, x1, z0] : [x0, z0, x0, z1]; quad(o, ax, az, bx, bz, 0, 4.5); }
     walls(o, x0, x1, z0, z1, 4.5, h); top(roofB, x0, x1, z0, z1, h); walls(trimB, x0 - .35, x1 + .35, z0 - .35, z1 + .35, h - .7, h + .5);
+    walls(trimB, x0 - .3, x1 + .3, z0 - .3, z1 + .3, 4.5, 4.85);                          // a ledge over the shopfronts
+    if (floors > 4) walls(trimB, x0 - .15, x1 + .15, z0 - .15, z1 + .15, 4.5 + 3.2 * 3 - .15, 4.5 + 3.2 * 3 + .1);   // a belt course
+    { const bx = range(x0 + 2, x1 - 6), bz = range(z0 + 2, z1 - 6); walls(darkB, bx, bx + 3.2, bz, bz + 3.4, h, h + 2.6); top(roofB, bx, bx + 3.2, bz, bz + 3.4, h + 2.6); }   // the stair bulkhead
+    // a black iron fire escape down one street face
+    if (floors >= 4 && rnd() < .8) { const f = rnd() < .5 ? "s" : "n", ex = range(x0 + 4, x1 - 4); for (let k = 0; k < floors; k++) P.escapes.push([ex, 4.5 + k * 3.2, f === "s" ? z1 : z0, f === "s" ? 0 : Math.PI, k > 0]); }
     solid(x0, x1, z0, z1, h + .5);
     if (rnd() < .65) P.towers.push([x0 + (x1 - x0) * range(.25, .75), h + .5, z0 + (z1 - z0) * range(.25, .75), range(.85, 1.15)]);
     for (let k = 0, n = 1 + Math.floor(rnd() * 3); k < n; k++) P.acs.push([range(x0 + 2, x1 - 2), h, range(z0 + 2, z1 - 2), rnd() * 3]);
@@ -283,6 +326,8 @@ export async function buildCity(scene, canvasTex, COARSE) {
     for (let x = bx0 + 8; x < bx1 - 4; x += 26) { P.lamps.push([x, bz0 + 1, 0], [x, bz1 - 1, Math.PI]); }
     for (let z = bz0 + 10; z < bz1 - 4; z += 26) { P.lamps.push([bx0 + 1, z, Math.PI / 2], [bx1 - 1, z, -Math.PI / 2]); }
     P.hydrants.push([bx0 + 2, bz0 + 2]); P.bins.push([bx1 - 2, bz1 - 2]);
+    if (rnd() < .16) P.carts.push([bx1 - 2.4, bz0 + 3.5, rnd() * 6]);
+    if (cx > -400 && cx < 900 && cz > -700 && cz < 500 && rnd() < .3) P.steam.push([GRID.ax(i), (bz0 + bz1) / 2 + (rnd() - .5) * 20]);
     if (rnd() < .45) P.subway.push([bx0 + 2.6, bz0 + 6, 0]);
     const midtown = cx > -170 && cx < 650 && cz > -570 && cz < -60, downtown = cx > 470 && cz > 270, film = cz > 0 && cz < 300 && cx > 100;
     const towerZone = (midtown || downtown) && !film;
@@ -463,6 +508,34 @@ export async function buildCity(scene, canvasTex, COARSE) {
   instT(new THREE.BoxGeometry(1.4, .9, 1).translate(0, .45, 0), mat({ color: 0xb8bcc2, roughness: .6, metalness: .4 }), P.acs, ([x, y, z, r]) => at(x, y, z, r));
   instT(towerGeo, mat({ color: 0x6e5238, roughness: .9 }), P.towers, ([x, y, z, s]) => at(x, y, z, 0, s));
   P.towers.forEach(([x, y, z, s]) => solid(x - 2.4 * s, x + 2.4 * s, z - 2.4 * s, z + 2.4 * s, y + 8.5 * s));
+  // fire escapes: a grated platform, railings, and a stair down to the one below
+  {
+    const bx = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z).toNonIndexed(), parts = [bx(3.4, .05, 1.2, 0, 0, .6), bx(3.4, .04, .04, 0, 1, 1.18), bx(3.4, .03, .03, 0, .5, 1.18), bx(.04, .04, 1.2, 1.7, 1, .6), bx(.04, .04, 1.2, -1.7, 1, .6)];
+    for (const x of [-1.7, -.85, 0, .85, 1.7]) parts.push(bx(.035, 1, .035, x, .5, 1.18));
+    for (const x of [-1.7, 1.7]) parts.push(bx(.035, 1, .035, x, .5, .05));
+    const stair = bx(4.06, .05, .55, 0, 0, 0).rotateZ(Math.atan2(3.2, 2.5)).translate(-.05, -1.6, .75);
+    const escMat = mat({ color: 0x18191c, roughness: .55, metalness: .6 });
+    instT(mergeGeometries(parts), escMat, P.escapes, ([x, y, z, ry]) => at(x, y, z, ry), null, 300);
+    instT(stair, escMat, P.escapes.filter(e => e[4]), ([x, y, z, ry]) => at(x, y, z, ry), null, 300);
+  }
+  // hot dog carts: a steel cart with a striped umbrella and someone selling
+  {
+    const T = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute("color", new THREE.BufferAttribute(a, 3)); return g; };
+    const bx = (w, h, d, x, y, z, c) => T(new THREE.BoxGeometry(w, h, d).translate(x, y, z).toNonIndexed(), c), cy = (rt, rb, h, x, y, z, c, seg = 8) => T(new THREE.CylinderGeometry(rt, rb, h, seg).translate(x, y, z).toNonIndexed(), c);
+    const umb = new THREE.ConeGeometry(1.4, .5, 8).translate(0, 2.55, 0).toNonIndexed(); { const p = umb.attributes.position, a = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) { const st = Math.floor((Math.atan2(p.getZ(i), p.getX(i)) + Math.PI) / (Math.PI / 4)) % 2; a.set(st ? [1, .82, .1] : [.15, .35, .8], i * 3); } umb.setAttribute("color", new THREE.BufferAttribute(a, 3)); }
+    const cart = mergeGeometries([bx(1.8, .9, .9, 0, .75, 0, [.8, .82, .85]), bx(1.9, .06, 1, 0, 1.22, 0, [.55, .56, .6]), bx(.5, .3, .5, -.5, 1.4, 0, [.7, .7, .72]), cy(.25, .25, .1, .5, .3, .48, [.1, .1, .1], 12).rotateX(Math.PI / 2).translate(0, 0, 0),
+      cy(.03, .03, 2.1, .7, 1.6, 0, [.6, .6, .6]), umb.translate(.7, 0, 0), bx(.3, .7, .44, .1, 1.2, -1, [.85, .15, .15]), bx(.26, .8, .2, .1, .45, -1, [.15, .17, .25]), T(new THREE.IcosahedronGeometry(.13, 1).translate(.1, 1.72, -1).toNonIndexed(), [.8, .6, .45]),
+      bx(.32, .05, .3, .12, 1.84, -1, [.95, .95, .95])]);
+    instT(cart, mat({ vertexColors: true, roughness: .5, metalness: .3 }), P.carts, ([x, z, r]) => at(x, 0, z, r), null, 260);
+    P.carts.forEach(([x, z]) => solid(x - 1.1, x + 1.1, z - 1.1, z + 1.1, 2.6));
+    // steam stacks: orange and white striped chimneys in the street that never stop puffing
+    const stack = new THREE.CylinderGeometry(.42, .5, 2.4, 12, 6, true).translate(0, 1.2, 0).toNonIndexed(); { const p = stack.attributes.position, a = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) a.set(Math.floor(p.getY(i) / .4 + .001) % 2 ? [1, 1, 1] : [1, .42, .08], i * 3); stack.setAttribute("color", new THREE.BufferAttribute(a, 3)); }
+    instT(stack, mat({ vertexColors: true, roughness: .6, side: THREE.DoubleSide }), P.steam, ([x, z]) => at(x, 0, z), null, 300);
+    P.steam.forEach(([x, z]) => solid(x - .5, x + .5, z - .5, z + .5, 2.4));
+  }
+  const steamTex = canvasTex(64, 64, (g, w) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, "rgba(255,255,255,.55)"); r.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
+  const puffs = Array.from({ length: COARSE ? 40 : 90 }, () => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: steamTex, transparent: true, depthWrite: false, opacity: 0 })); sp.visible = false; scene.add(sp); return { sp, life: 0, vx: 0, vz: 0 }; });
+  let puffI = 0, puffT = 0;
   // subway entrances: green railings, two green globes, a dark stair
   const globe = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dff6a).multiplyScalar(2), toneMapped: false }); globe.userData.glow = 2; globe.userData.base = new THREE.Color(0x3dff6a); emissive.push(globe);
   instT(mergeGeometries([new THREE.BoxGeometry(2.4, 1.1, .08).translate(0, .55, -1.6), new THREE.BoxGeometry(2.4, 1.1, .08).translate(0, .55, 1.6), new THREE.BoxGeometry(.08, 1.1, 3.2).translate(1.2, .55, 0),
@@ -526,7 +599,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     buildings, footprints, roads, parks: [[[PX0, PZ0], [PX1, PZ0], [PX1, PZ1], [PX0, PZ1]]], water: [[[HW0, -9000], [W1, -9000], [W1, 9000], [HW0, 9000]], [[W2, -9000], [EW1, -9000], [EW1, 9000], [W2, 9000]], Array.from({ length: 24 }, (_, k) => [lake.x + Math.cos(k / 24 * 6.283) * lake.rx, lake.z + Math.sin(k / 24 * 6.283) * lake.rz])],
     WATER_Y, rivers: { hudson: [HW0, W1], east: [W2, EW1] },
     beaches: [], walkways: [], bounds: { x0: XA - 220, x1: brooklyn + 300, z0: ZA - 160, z1: ZB + 160 }, credit: "a made-up city in code",
-    near, nearR, nearFast, helipads, lawn, lake, stations, asphaltMat, poolMat, emissive, glassMats, billboards,
+    near, nearR, nearFast, helipads, carts: P.carts, lawn, lake, stations, asphaltMat, poolMat, emissive, glassMats, billboards,
     // ground under a point: rooftops count (so you can land and drive on them), water is -1
     roofAt(x, z) { let h = 0; for (const b of near(x, z)) if (Math.abs(x - b.x) < b.hw && Math.abs(z - b.z) < b.hd && b.h > h) h = b.h; return h; },
     isWater(x, z) {
@@ -539,6 +612,10 @@ export async function buildCity(scene, canvasTex, COARSE) {
       if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 141; }
       waveTex.offset.set((t * .004) % 1, (t * .011) % 1);
       avMat.opacity = Math.sin(t * 3) > 0 ? 1 : .15;
+      // steam from the stacks near the camera
+      const dt = Math.min(.1, Math.max(0, t - (this._t || t))); this._t = t;
+      if (cam && (puffT += dt) > .09) { puffT = 0; for (const [x, z] of P.steam) if (Math.abs(x - cam.x) < 160 && Math.abs(z - cam.z) < 160) { const pf = puffs[puffI++ % puffs.length]; pf.life = 1; pf.sp.position.set(x + (Math.random() - .5) * .3, 2.5, z + (Math.random() - .5) * .3); pf.vx = (Math.random() - .5) * .6; pf.vz = (Math.random() - .5) * .6; pf.sp.visible = true; } }
+      for (const pf of puffs) if (pf.life > 0) { pf.life -= dt * .32; pf.sp.position.x += pf.vx * dt; pf.sp.position.z += pf.vz * dt; pf.sp.position.y += dt * 1.6; const k = 1 - pf.life; pf.sp.scale.setScalar(1 + k * 4.5); pf.sp.material.opacity = Math.max(0, pf.life) * .6; if (pf.life <= 0) pf.sp.visible = false; }
       billboards.forEach((b, k) => { b.material.color.setScalar(1.15 + .25 * Math.sin(t * 2 + k)); });
     },
   };

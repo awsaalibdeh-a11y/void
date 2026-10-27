@@ -160,7 +160,8 @@ export function createGame(W, car, sound, life, opts = {}) {
     return best;
   }
   function enterNearest() {
-    const n = nearestCar(); if (!n) return say("No car close enough: walk right up to one", 1.6);
+    const n = nearestCar();
+    if (!n) { const cart = cartNear(); if (cart) { if (opts.buyFood && opts.buyFood()) { g.hp = Math.min(100, g.hp + 30); sound.pop(); say("🌭 Hot dog: +30 health", 2); } else say("A hot dog is $10", 1.6); return; } return say("No car close enough: walk right up to one", 1.6); }
     const o = n.o; Object.assign(g, { veh: "car", mode: "drive", x: o.x, z: o.z, yaw: o.yaw, y: 0, pitch: 0, roll: 0 }); g.vel.set(0, 0, 0); rig.yaw = null;
     if (n.kind === "hero") { g.ride = null; g.heroPark = null; say("Back in your VOID car", 2); }
     else if (n.kind === "owned") { g.ride = o.ride; g.ridePark = null; say(`${o.ride.model.name}`, 2); }
@@ -173,6 +174,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     }
     sound.rev && sound.rev();
   }
+  const cartNear = () => (city.carts || []).find(([x, z]) => Math.hypot(x - g.x, z - g.z) < 3.4);
   function releaseRide() { if (g.ride && g.ride.c) { g.ride.c.taken = false; } g.ride = null; }
   function walk(dt, turn, fwd) {
     const cy = (rig.yaw ?? g.yaw) + orbit.yaw, fx = Math.cos(cy), fz = Math.sin(cy);
@@ -646,8 +648,8 @@ export function createGame(W, car, sound, life, opts = {}) {
       const zones = zonesFrom(fr.p, fr.f);
       $("gSpd").textContent = Math.round(speed); $("gAlt").textContent = Math.round(Math.max(0, g.y)); $("gVs").textContent = (air ? g.vel.y : 0).toFixed(1);
       const landAid = air && g.above < 40 && g.vel.y < -1 ? `${g.above < 12 && g.vel.y < -5 ? "PULL UP · " : ""}${Math.round(g.above)} m · sink ${(-g.vel.y).toFixed(1)} m/s${-g.vel.y < 3 ? " ✓" : ""}` : "";
-      if (g.veh === "foot" && (g.nearT = (g.nearT || 0) - dt) <= 0) { g.nearT = .25; const n = nearestCar(); g.nearName = n ? (n.kind === "hero" ? "your VOID car" : n.kind === "owned" ? n.o.ride.model.name : n.o.model.name) : ""; }
-      $("gHint").textContent = g.msgT > 0 ? g.msg : g.veh === "foot" && g.nearName ? `E: get into ${g.nearName}` : g.stall > .5 ? "STALL: push the nose down or add thrust" : landAid || (g.drift > 20 ? `Drift ${Math.round(g.drift)}` : "");
+      if (g.veh === "foot" && (g.nearT = (g.nearT || 0) - dt) <= 0) { g.nearT = .25; const n = nearestCar(); g.nearName = n ? (n.kind === "hero" ? "your VOID car" : n.kind === "owned" ? n.o.ride.model.name : n.o.model.name) : cartNear() ? "🌭" : ""; }
+      $("gHint").textContent = g.msgT > 0 ? g.msg : g.veh === "foot" && g.nearName ? (g.nearName === "🌭" ? "E: buy a hot dog ($10, +30 health)" : `E: get into ${g.nearName}`) : g.stall > .5 ? "STALL: push the nose down or add thrust" : landAid || (g.drift > 20 ? `Drift ${Math.round(g.drift)}` : "");
       $("gFly").textContent = g.mode === "air" ? (g.landing ? "Hover" : "Land") : "Fly";
       if ($("gHp")) { $("gHp").style.setProperty("--v", g.hp / 100); $("gHp").classList.toggle("low", g.hp < 35); }
       if ($("gNos")) $("gNos").style.setProperty("--v", g.nitro);

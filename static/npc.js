@@ -145,14 +145,27 @@ export function vehicle(k) {
   return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
 }
 // people: torso and arms (shirt colour), each leg on its own so they can swing, a head and hair
+const C = (rt, rb, h, seg, x, y, z, c, sx = 1, sz = 1) => tint(new THREE.CylinderGeometry(rt, rb, h, seg).scale(sx, 1, sz).translate(x, y, z).toNonIndexed(), c);
 export function personGeo() {
-  const s = [1, 1, 1];
+  const s = [1, 1, 1], hip = [.24, .24, .27], hand = [.86, .66, .52], sole = [.07, .07, .07];
   return {
-    body: mergeGeometries([B(.44, .6, .26, 0, 1.2, 0, s), B(.4, .12, .24, 0, .9, 0, [.25, .25, .28]), B(.11, .56, .12, 0, 1.16, .29, s), B(.11, .56, .12, 0, 1.16, -.29, s),
-      B(.1, .1, .1, 0, .86, .29, [.85, .7, .6]), B(.1, .1, .1, 0, .86, -.29, [.85, .7, .6])]),
-    leg: mergeGeometries([B(.16, .82, .18, 0, -.41, 0, [1, 1, 1]), B(.24, .08, .18, .04, -.84, 0, [.08, .08, .08])]),
-    head: mergeGeometries([new THREE.IcosahedronGeometry(.135, 1).translate(0, 1.66, 0).toNonIndexed(), new THREE.CylinderGeometry(.055, .06, .1, 5).translate(0, 1.5, 0).toNonIndexed()]),
-    hair: new THREE.SphereGeometry(.142, 7, 3, 0, Math.PI * 2, 0, Math.PI * .5).translate(-.015, 1.68, 0),
+    // a tapered torso (wider at the chest), rounded shoulders, a belt line
+    body: mergeGeometries([C(.205, .165, .56, 10, 0, 1.19, 0, s, .58), C(.19, .21, .1, 10, 0, 1.47, 0, s, .6), C(.17, .175, .2, 10, 0, .95, 0, hip, .62),
+      B(.2, .03, .33, 0, 1.04, 0, [.12, .1, .08])]),
+    // each arm hangs from the shoulder: sleeve, forearm, hand
+    arm: mergeGeometries([C(.062, .055, .32, 6, 0, -.16, 0, s), C(.052, .046, .28, 6, .02, -.44, 0, s), B(.08, .1, .06, .03, -.63, 0, hand)]),
+    // each leg hangs from the hip: thigh, shin, shoe
+    leg: mergeGeometries([C(.085, .072, .46, 7, 0, -.23, 0, [1, 1, 1]), C(.066, .056, .38, 7, 0, -.65, 0, [1, 1, 1]), B(.26, .08, .12, .05, -.86, 0, sole)]),
+    head: mergeGeometries([new THREE.IcosahedronGeometry(.13, 2).scale(1, 1.12, .95).translate(0, 1.67, 0).toNonIndexed(), new THREE.CylinderGeometry(.055, .062, .12, 6).translate(0, 1.52, 0).toNonIndexed(),
+      new THREE.BoxGeometry(.04, .05, .03).translate(.13, 1.66, 0).toNonIndexed()]),
+    hair: new THREE.SphereGeometry(.142, 9, 4, 0, Math.PI * 2, 0, Math.PI * .5).scale(1, 1.05, 1).translate(-.018, 1.69, 0),
+    // things some people have
+    hat: mergeGeometries([C(.135, .142, .1, 10, -.01, 1.8, 0, s), B(.16, .018, .24, .12, 1.765, 0, s)]),
+    bag: mergeGeometries([B(.15, .34, .28, -.17, 1.18, 0, s), B(.05, .16, .22, -.25, 1.1, 0, [.6, .6, .6])]),
+    skirt: C(.165, .29, .42, 10, 0, .8, 0, s, .8),
+    umbrella: mergeGeometries([tint(new THREE.ConeGeometry(.62, .22, 8).translate(.12, 2.12, .18).toNonIndexed(), s), C(.012, .012, 1.05, 4, .12, 1.55, .18, [.15, .15, .15])]),
+    dog: mergeGeometries([C(.12, .12, .5, 7, 0, .34, 0, s).rotateZ(Math.PI / 2).translate(0, .34, 0), B(.2, .17, .15, .32, .48, 0, s), B(.1, .08, .09, .45, .45, 0, [.1, .1, .1]),
+      ...[[.18, .07], [.18, -.07], [-.18, .07], [-.18, -.07]].map(([x, z]) => C(.035, .03, .3, 5, x, .15, z, s)), C(.02, .012, .22, 4, -.3, .48, 0, s).rotateZ(-.8).translate(-.12, .12, 0)]),
   };
 }
 
@@ -217,7 +230,12 @@ export function createLife(scene, roads, walkways, COARSE) {
   const peopleMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 }), headMat = new THREE.MeshStandardMaterial({ roughness: .7 });
   const bodies = new THREE.InstancedMesh(pg.body, peopleMat, NP), heads = new THREE.InstancedMesh(pg.head, headMat, NP);
   const legMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 }), legL = new THREE.InstancedMesh(pg.leg, legMat, NP), legR = new THREE.InstancedMesh(pg.leg, legMat, NP), hair = new THREE.InstancedMesh(pg.hair, new THREE.MeshStandardMaterial({ roughness: .9 }), NP);
-  for (const m of [bodies, heads, legL, legR, hair]) { m.frustumCulled = false; m.layers.set(1); scene.add(m); }
+  const armL = new THREE.InstancedMesh(pg.arm, peopleMat, NP), armR = new THREE.InstancedMesh(pg.arm, peopleMat, NP);
+  const kit = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .75 }), NK = Math.ceil(NP * .4);
+  const hats = new THREE.InstancedMesh(pg.hat, kit, NK), bags = new THREE.InstancedMesh(pg.bag, kit, NK), skirts = new THREE.InstancedMesh(pg.skirt, kit, NK);
+  const umbs = new THREE.InstancedMesh(pg.umbrella, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .5, side: THREE.DoubleSide }), NP), dogs = new THREE.InstancedMesh(pg.dog, kit, Math.ceil(NP * .1));
+  const ALLP = [bodies, heads, legL, legR, hair, armL, armR, hats, bags, skirts, umbs, dogs];
+  for (const m of ALLP) { m.frustumCulled = false; m.layers.set(1); scene.add(m); }
   debris.layers.enable(1);
   const SHIRTS = [0xe8e8e8, 0x1f1f22, 0xb22234, 0x2e5aa8, 0x2f6b3a, 0xf7c414, 0x7a2a8a, 0xff7a2e, 0x8a8f96, 0x4a2e1e, 0xf2a0b0, 0x30c0c0], SKIN = [0xf1c8a8, 0xd9a07a, 0xa8714a, 0x6b4430, 0xffdcc0, 0x8a5a3a];
   const people = [];
@@ -229,8 +247,17 @@ export function createLife(scene, roads, walkways, COARSE) {
     people.push({ x0: x0 + inset, x1: x1 - inset, z0: z0 + inset, z1: z1 - inset, per: per - 8 * inset, d: rnd() * per, v: .9 + rnd() * .8, dir: rnd() < .5 ? 1 : -1, x: 0, z: 0, push: new THREE.Vector2(), scare: 0, ph: rnd() * 6, wait: 0 });
     people[n].shirt = new THREE.Color(SHIRTS[Math.floor(rnd() * SHIRTS.length)]); people[n].skin = new THREE.Color(SKIN[Math.floor(rnd() * SKIN.length)]);
     people[n].pants = new THREE.Color([0x1e2a44, 0x222226, 0x5a4a3a, 0x2f4a6a, 0x6a6a70, 0x111111][Math.floor(rnd() * 6)]); people[n].hairC = new THREE.Color([0x1a120c, 0x3a2414, 0x0c0c0c, 0x8a6a3a, 0x6a3a1a, 0xb0a090][Math.floor(rnd() * 6)]);
+    const q = people[n], role = rnd();
+    q.h = .9 + rnd() * .17; q.wd = .88 + rnd() * .26;                        // height and build
+    q.jog = role < .07; q.phone = !q.jog && role < .2; q.dog = !q.jog && !q.phone && role < .26;
+    if (q.jog) { q.v = 2.6 + rnd() * .8; q.shirt.setHex([0xff4fd8, 0x3df5ff, 0xc0d84a, 0xff7a2e, 0xffffff][Math.floor(rnd() * 5)]); q.pants.setHex(0x1b1c20); }
+    if (q.dog) { q.v *= .8; q.dogC = new THREE.Color([0xd9b27a, 0x3a2a1e, 0xf2f2f0, 0x6b6b6b, 0x111111, 0xb5651d][Math.floor(rnd() * 6)]); q.dogS = .75 + rnd() * .55; }
+    q.hat = !q.jog && rnd() < .22 ? new THREE.Color([0x1b1c20, 0xb22234, 0x2e5aa8, 0xd8cfb8, 0x2f6b3a][Math.floor(rnd() * 5)]) : null;
+    q.bag = !q.jog && rnd() < .2 ? new THREE.Color([0x222226, 0x5a3a2a, 0x2e5aa8, 0x8a1a14, 0x3a4a3a][Math.floor(rnd() * 5)]) : null;
+    q.skirt = !q.jog && rnd() < .2 ? new THREE.Color([0x111111, 0x6b1a1a, 0x24364f, 0xd8cfb8, 0x7a2a8a, 0x2f4a3a][Math.floor(rnd() * 6)]) : null;
+    q.umb = new THREE.Color([0x111111, 0xb22234, 0x2e5aa8, 0xf7c414, 0x2f6b3a, 0xe8e8e8][Math.floor(rnd() * 6)]); q.umbOK = !q.jog && rnd() < .75;
   }
-  bodies.setColorAt(0, col); heads.setColorAt(0, col); legL.setColorAt(0, col); legR.setColorAt(0, col); hair.setColorAt(0, col);
+  for (const m of ALLP) m.setColorAt(0, col);
   const around = (p, d, out) => {           // a point on the rectangle loop round the block
     const w = p.x1 - p.x0, h = p.z1 - p.z0; d = ((d % p.per) + p.per) % p.per;
     if (d < w) { out.x = p.x0 + d; out.z = p.z0; out.yaw = 0; }
@@ -244,7 +271,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), legT = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
   const buckets = new Map(), tmp = {}, cell = new Map(), CELL = 30;
   let frameN = 0, debLive = 1;
-  const LEGS = [[null, 1, .1], [null, -1, -.1]];
+  const LEGS = [[null, 1, .1], [null, -1, -.1]], pscale = new THREE.Vector3();
   function decide(c, k) {       // at the crossing k: straight on, or turn onto the cross road
     const axis = c.axis, ok = segOK(axis, c.road, c.dir > 0 ? k : k - 1), oAxis = 1 - axis, oRoad = k;
     const opts = [];
@@ -280,13 +307,49 @@ export function createLife(scene, roads, walkways, COARSE) {
     }
     if (debris.instanceColor) debris.instanceColor.needsUpdate = true;
   }
+  const birdGeo = { body: mergeGeometries([C(.06, .045, .26, 6, 0, 0, 0, [1, 1, 1]).rotateZ(Math.PI / 2), B(.09, .09, .08, .14, .05, 0, [1, 1, 1]), B(.04, .02, .02, .2, .04, 0, [.9, .6, .2])]),
+    wing: (() => { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute([.06, 0, 0, -.08, 0, 0, -.02, .1, .26, .06, 0, 0, -.02, .1, -.26, -.08, 0, 0], 3)); g.computeVertexNormals(); return tint(g, [.75, .75, .8]); })() };
+  const birdMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, side: THREE.DoubleSide });
+  const flocks = [], NB = COARSE ? 90 : 220;
+  for (let f = 0; f < NB / 11; f++) {
+    let hx, hz;
+    if (f % 3 === 0) { const pkk = GRID.park; hx = ax(pkk.i0) + rnd() * (ax(pkk.i1) - ax(pkk.i0)); hz = sz(pkk.j0) + rnd() * (sz(pkk.j1) - sz(pkk.j0)); }
+    else { const i = Math.floor(rnd() * (NX - 1)), j = Math.floor(rnd() * (NZ - 1)); hx = ax(i) + avW(i) / 2 + 2.2; hz = sz(j) + stW(j) / 2 + 2.2 + rnd() * 20; }
+    flocks.push({ hx, hz, birds: Array.from({ length: 11 }, () => ({ x: hx + (rnd() - .5) * 5, z: hz + (rnd() - .5) * 5, y: 0, vx: 0, vy: 0, vz: 0, yaw: rnd() * 6, fly: 0, ph: rnd() * 6, peck: rnd() * 3 })) });
+  }
+  const birdBody = new THREE.InstancedMesh(birdGeo.body, birdMat, NB), birdWing = new THREE.InstancedMesh(birdGeo.wing, birdMat, NB);
+  for (const m of [birdBody, birdWing]) { m.frustumCulled = false; m.layers.set(1); scene.add(m); }
+  const bq = new THREE.Quaternion(), be = new THREE.Euler(), bs = new THREE.Vector3();
+  function updateBirds(dt, time, player, camPos) {
+    let k = 0; const cx = camPos ? camPos.x : 0, cz = camPos ? camPos.z : 0;
+    for (const fl of flocks) {
+      if (Math.abs(fl.hx - cx) > 260 || Math.abs(fl.hz - cz) > 260) continue;          // far flocks just sit there
+      const scare = player && Math.hypot(player.x - fl.hx, player.z - fl.hz) < (player.foot ? 7 : 14) + (player.speed || 0) * .3 && player.y < 6;
+      for (const b of fl.birds) {
+        if (scare && b.fly <= 0) { const a = Math.atan2(b.z - player.z, b.x - player.x) + (rnd() - .5); b.fly = 6 + rnd() * 5; b.vx = Math.cos(a) * (4 + rnd() * 3); b.vz = Math.sin(a) * (4 + rnd() * 3); b.vy = 3 + rnd() * 2; }
+        if (b.fly > 0) {                                                                 // up and away, a lazy circle, then back down home
+          b.fly -= dt; const home = b.fly < 3; const tx = home ? fl.hx - b.x : 0, tz = home ? fl.hz - b.z : 0;
+          b.vx += (tx * .6 - b.vx * (home ? .8 : .05)) * dt; b.vz += (tz * .6 - b.vz * (home ? .8 : .05)) * dt; b.vy += ((home ? -1.5 : (b.y < 9 ? 1.2 : -.2)) - b.vy) * dt * 1.5;
+          b.x += b.vx * dt; b.z += b.vz * dt; b.y = Math.max(0, b.y + b.vy * dt); b.yaw = Math.atan2(b.vz, b.vx);
+          if (b.fly <= 0 || (home && b.y <= 0 && Math.hypot(tx, tz) < 4)) { b.fly = 0; b.y = 0; }
+        } else if ((b.peck -= dt) < 0) { b.peck = 1 + rnd() * 3; b.yaw += (rnd() - .5) * 2; const st = rnd() * .6; b.x += Math.cos(b.yaw) * st; b.z += Math.sin(b.yaw) * st; }
+        const flap = b.fly > 0 ? Math.sin(time * 26 + b.ph) * 1.6 : .15, bob = b.fly > 0 ? 0 : Math.max(0, Math.sin(time * 6 + b.ph)) * .03;
+        be.set(0, -b.yaw, b.fly > 0 ? 0 : -.25 * Math.max(0, Math.sin(time * 3 + b.ph)), "YXZ"); bq.setFromEuler(be);
+        m4.compose(pos.set(b.x, b.y + .1 + bob, b.z), bq, one); birdBody.setMatrixAt(k, m4); birdBody.setColorAt(k, col.setRGB(.42, .44, .5));
+        m4.compose(pos.set(b.x, b.y + .14, b.z), bq, bs.set(1, flap, 1)); birdWing.setMatrixAt(k, m4); k++;
+        if (k >= NB) break;
+      }
+      if (k >= NB) break;
+    }
+    for (const m of [birdBody, birdWing]) { m.count = k; m.visible = k > 0; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+  }
   const NONE = [], near = (x, z) => cell.get(Math.floor(x / CELL) * 7919 + Math.floor(z / CELL)) || NONE;
 
   const api = { detail: 1 };
   return {
     get detail() { return api.detail; }, set detail(v) { api.detail = v; },
     cars, people, meshes, smash, near, models: CAR_MODELS,
-    set onHit(f) { api.onHit = f; }, set collide(f) { api.collide = f; },
+    set onHit(f) { api.onHit = f; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; },
     take(c) { c.taken = true; c.parked = false; c.turn = null; },
     park(c, x, z, yaw) { Object.assign(c, { taken: false, parked: true, x, z, yaw, v: 0, y: 0, wreck: null, turn: null, crush: 0 }); },
     geoOf(k) { const m = meshes[KINDS.indexOf(k)]; return m ? { body: m.body.geometry, lights: m.lights.geometry } : null; },
@@ -362,7 +425,7 @@ export function createLife(scene, roads, walkways, COARSE) {
       }
       debris.instanceMatrix.needsUpdate = glassBits.instanceMatrix.needsUpdate = true; if (debLive) debLive++; else debLive = 0; }
       // people
-      let pk = 0;
+      let pk = 0, hk = 0, bk = 0, sk = 0, uk = 0, dk = 0;
       for (let n = 0; n < people.length; n++) {
         const p = people[n];
         const far = (Math.abs(p.x - px) > 300 || Math.abs(p.z - pz) > 300) && (Math.abs(p.x - cx0) > RP || Math.abs(p.z - cz0) > RP);
@@ -403,14 +466,32 @@ export function createLife(scene, roads, walkways, COARSE) {
           let lie = 0, y = bob + .06;
           let rx = 0, rz = 0;
           if (p.down > 0) { const f = p.fall; lie = p.down > 1.2 ? 1 : p.down / 1.2; rx = f.rx * lie; rz = f.rz * lie; y = f.y + .06 + Math.abs(Math.sin(rx)) * .14; }      // thrown, down, then back on their feet
-          e.set(rx, yaw + (p.fall ? p.fall.rot : 0), rz, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(x, y, z), q, one);
+          if (p.jog && !(p.down > 0)) y += Math.abs(Math.sin(walk)) * .06;
+          e.set(rx + (p.jog && !(p.down > 0) ? 0 : 0), yaw + (p.fall ? p.fall.rot : 0), rz - (p.jog && !(p.down > 0) ? .12 : 0), "YXZ"); q.setFromEuler(e); m4.compose(pos.set(x, y, z), q, pscale.set(p.wd, p.h, p.wd));
           bodies.setMatrixAt(pk, m4); heads.setMatrixAt(pk, m4); hair.setMatrixAt(pk, m4);
-          const swing = p.down > 0 ? (p.fall.air ? Math.sin(time * 19 + n) * .9 : .15) : p.wait > 0 ? 0 : Math.sin(walk) * .5;
-          LEGS[0][0] = legL; LEGS[1][0] = legR; for (const [leg, sgn, off] of LEGS) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .86, off), legQ, one); leg.setMatrixAt(pk, legT.copy(m4).multiply(legM)); }
-          bodies.setColorAt(pk, p.shirt); heads.setColorAt(pk, p.skin); legL.setColorAt(pk, p.pants); legR.setColorAt(pk, p.pants); hair.setColorAt(pk, p.hairC); pk++;
+          const amp = p.jog ? .85 : .5, swing = p.down > 0 ? (p.fall.air ? Math.sin(time * 19 + n) * .9 : .15) : p.wait > 0 ? 0 : Math.sin(walk) * amp;
+          LEGS[0][0] = legL; LEGS[1][0] = legR; for (const [leg, sgn, off] of LEGS) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .88, off), legQ, one); leg.setMatrixAt(pk, legT.copy(m4).multiply(legM)); }
+          // arms swing against the legs; a phone or an umbrella keeps the right one up
+          const rain = api.raining && p.umbOK && !(p.down > 0), flail = p.down > 0 && p.fall.air;
+          const aL = flail ? Math.sin(time * 23 + n) * 1.6 : -swing * (p.jog ? 1.1 : .75), aR = flail ? -Math.sin(time * 21 + n) * 1.6 : p.phone && !(p.down > 0) ? 1.25 : rain ? .7 : swing * (p.jog ? 1.1 : .75);
+          legQ.setFromAxisAngle(Z, aL); legM.compose(pos.set(0, 1.45, .245), legQ, one); armL.setMatrixAt(pk, legT.copy(m4).multiply(legM));
+          legQ.setFromAxisAngle(Z, aR); legM.compose(pos.set(0, 1.45, -.245), legQ, one); armR.setMatrixAt(pk, legT.copy(m4).multiply(legM));
+          bodies.setColorAt(pk, p.shirt); heads.setColorAt(pk, p.skin); legL.setColorAt(pk, p.pants); legR.setColorAt(pk, p.pants); hair.setColorAt(pk, p.hairC); armL.setColorAt(pk, p.shirt); armR.setColorAt(pk, p.shirt);
+          if (p.hat && hk < NK) { hats.setMatrixAt(hk, m4); hats.setColorAt(hk++, p.hat); }
+          if (p.bag && bk < NK) { bags.setMatrixAt(bk, m4); bags.setColorAt(bk++, p.bag); }
+          if (p.skirt && sk < NK) { skirts.setMatrixAt(sk, m4); skirts.setColorAt(sk++, p.skirt); }
+          if (rain) { umbs.setMatrixAt(uk, m4); umbs.setColorAt(uk++, p.umb); }
+          if (p.dog && dk < dogs.instanceMatrix.count && !(p.down > 0)) {             // the dog trots beside and a little ahead
+            const fx = Math.cos(yaw), fz = -Math.sin(yaw), sx = Math.sin(yaw), sz = Math.cos(yaw), d = p.wait > 0 ? .3 : .9;
+            e.set(0, yaw, 0, "YXZ"); q.setFromEuler(e); m4.compose(pos.set(x + fx * d + sx * .65, Math.abs(Math.sin(walk * 1.6)) * .04, z + fz * d + sz * .65), q, pscale.setScalar(p.dogS));
+            dogs.setMatrixAt(dk, m4); dogs.setColorAt(dk++, p.dogC);
+          }
+          pk++;
         }
       }
-      for (const m of [bodies, heads, legL, legR, hair]) { m.count = pk; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+      for (const m of [bodies, heads, legL, legR, hair, armL, armR]) { m.count = pk; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+      for (const [m, c] of [[hats, hk], [bags, bk], [skirts, sk], [umbs, uk], [dogs, dk]]) { m.count = c; m.visible = c > 0; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+      updateBirds(dt, time, player, camPos);
     },
   };
 }
