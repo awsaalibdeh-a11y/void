@@ -379,7 +379,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     else if (g.fuel < .15 && g.fuelMsg !== 2 && g.fuel > 0) { g.fuelMsg = 2; say("Low fuel: find a ⛽ station", 4); }
     if (g.fuel > .2) g.fuelMsg = 0;
     service(dt);
-    const wantNitro = held("nitro") && g.nitro > .02 && g.fuel > 0;
+    const wantNitro = (held("nitro") || (g.ap && g.ap.nitro)) && g.nitro > .02 && g.fuel > 0;
     g.nitroOn = lerp(g.nitroOn, wantNitro ? 1 : 0, clamp(dt * 8));
     if (wantNitro) g.nitro = Math.max(0, g.nitro - dt / (5 * (1 + .35 * ((opts.upg || {}).nitro || 0)))); else g.nitro = Math.min(1, g.nitro + dt / 14);
 

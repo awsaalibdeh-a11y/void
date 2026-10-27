@@ -135,7 +135,7 @@ document.getElementById("gSens").addEventListener("input", e => { SET.sens = +e.
 const heads = new THREE.SpotLight(0xfff1d6, 0, 70, .55, .6, 1.2); heads.position.set(2.2, .7, 0); heads.target.position.set(18, -1.5, 0); carRoot.add(heads, heads.target);
 police = createPolice(scene, game.api, sound, life);
 races = createRaces(scene, game.api, sound, W.canvasTex, net);
-nav = createNav(scene, game.api, W, ZONES, races.starts);
+nav = createNav(scene, game.api, W, ZONES, races.starts, () => clock.elapsedTime);
 const extras = createExtras(W, game.api, nav, sound);
 document.getElementById("gTaxi").onclick = () => extras.toggle();
 // people knocked over: a thud, a shake, and the police notice; they bounce off walls instead of flying through them
@@ -681,4 +681,4 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { cancelAnimationFrame(raf); if (mode === "watch" && w.playing) pause(); if (sound.ctx) sound.ctx.suspend(); }
   else { clock.getDelta(); loop(); if (sound.on && sound.ctx) sound.ctx.resume(); }
 });
-window.VOID = { contracts, step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frameLoop(dt); }, W, car, life, carCube, carEnv, get police() { return police; }, get races() { return races; }, get nav() { return nav; }, net, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console
+window.VOID = { clock: () => clock, contracts, step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frameLoop(dt); }, W, car, life, carCube, carEnv, get police() { return police; }, get races() { return races; }, get nav() { return nav; }, net, orbit, go, seek: t => { w.t = t; if (w.playing) playFrom(t); }, pause, get w() { return w; }, game };   // handy for testing in the console
