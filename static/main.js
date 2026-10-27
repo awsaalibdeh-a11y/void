@@ -1,6 +1,7 @@
 // VOID: one WebGL canvas, three modes on top of a showroom home screen.
 //   Watch: a 48 s film whose clock is the music.  Play: drive it, fly it, land it.  Build: paint it.
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const V = new URL(import.meta.url).search;
 const $ = id => document.getElementById(id);
@@ -139,6 +140,8 @@ document.getElementById("gTaxi").onclick = () => extras.toggle();
 // people knocked over: a thud, a shake, and the police notice; they bounce off walls instead of flying through them
 life.onHit = sp => { sound.thud && sound.thud(Math.min(1, sp / 22)); if (game.state) game.state.shake = Math.min(1, (game.state.shake || 0) + .25); police && police.event("ped"); };
 life.collide = (x, z) => !!game.api.hitBox(x, z, .8, .3);
+// crashes between other cars: you hear them, and close ones shake the camera
+life.onCrash = (x, z, power) => { const s = game.state; if (!s || mode !== "play") return; const d = Math.hypot(x - s.x, z - s.z); if (d < 170) { sound.crash(); if (d < 70) s.shake = Math.min(1, (s.shake || 0) + .35 * (1 - d / 70)); } };
 // VOID Motors: 50 cars for sale
 const dealer = createDealer(W, game, life, nav, sound, store, toast, { cash: () => cash, spend: n => { if (cash < n) return false; cash -= n; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), unlockHero: () => unlockHero() });
 document.getElementById("gDealer").onclick = () => dealer.menu();
@@ -371,7 +374,7 @@ function go(next) {
     $("fade").classList.remove("on");
   }, 320);
 }
-document.addEventListener("click", e => { const b = e.target.closest("[data-rgo]"); if (b) { e.preventDefault(); go(b.dataset.go); } });
+document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) { e.preventDefault(); go(b.dataset.go); } });
 $("exit").onclick = () => go("home");
 addEventListener("keydown", e => {
   if (e.code === "Escape" && mode === "play" && !document.body.classList.contains("garage")) { menu(); return; }
@@ -528,6 +531,7 @@ function frameLoop(fixed) {
     }
   } else { for (const r of remotes.values()) r.root.visible = false; net.tick(dt, null); }     // the host keeps relaying from the menus
   W.city.camQ = camera.quaternion; W.city.update(time, camera.position);
+  vehicles.tick(dt, time, mode === "play" ? game.state : null);
   W.follow(S.pos);
   if (mode !== "watch") $("fade").style.opacity = "";
 
@@ -649,6 +653,19 @@ function frameLoop(fixed) {
   composer.render();
 }
 
+// the flying VOID cars in traffic wear your car's real shape: everything visible on it, baked into one mesh (paint left white so each one gets its own colour)
+try {
+  carRoot.updateMatrixWorld(true);
+  const inv = carRoot.matrixWorld.clone().invert(), paintHex = OPTS.paint.items[build.paint][1].replace("#", "").toLowerCase(), parts = [];
+  inner.group.traverseVisible(o => {
+    if (!o.isMesh || !o.geometry.attributes.position) return; const m = Array.isArray(o.material) ? o.material[0] : o.material; if (m.transparent && m.opacity < .4) return;
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "normal") g.deleteAttribute(k); if (!g.attributes.normal) g.computeVertexNormals();
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    const c = m.color ? (m.color.getHexString() === paintHex ? new THREE.Color(1, 1, 1) : m.color.clone()) : new THREE.Color(.5, .5, .5), n = g.attributes.position.count, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } g.setAttribute("color", new THREE.BufferAttribute(a, 3)); parts.push(g);
+  });
+  if (parts.length) { const geo = mergeGeometries(parts); geo.translate(0, -.02, 0); life.setVoidGeo(geo); window.__voidTris = geo.attributes.position.count / 3; }
+} catch (e) { console.warn("VOID flyers keep the simple shape", e); }
 setLoad(95);
 renderer.compile(scene, camera);
 let raf;

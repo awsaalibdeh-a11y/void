@@ -31,6 +31,7 @@ export const KINDS = [
   { id: "buggy", L: 3.9, W: 2.1, share: 0, cols: [0xff6a00, 0xf7c414, 0x3df5ff, 0xd21f2b, 0x2f6b3a] },
   { id: "crawler", L: 4.3, W: 2.05, share: 0, cols: [0x6b5a44, 0x2f4a3a, 0xc8962a, 0xf2f2f0, 0x8a1a14] },
   { id: "sixer", L: 7.2, W: 2.55, share: 0, cols: [0x4a5a3a, 0x6b5a44, 0x2b2d32, 0xc8ccd2] },
+  { id: "voidcar", L: 4.7, W: 2.0, share: 0, fly: true, cols: [0x0a0a0c, 0x6f0a12, 0x123a8c, 0xe9e9ea, 0x2d6a1e, 0xb8862a, 0x4a1270, 0xd8dadd] },
 ];
 // the catalogue: 200 named models. Each is a body type with its own proportions, paint range, condition and handling.
 const BRANDS = ["Aurex", "Kova", "Bellmont", "Zentri", "Harlow", "Vanta", "Ostrel", "Mirage", "Dunmore", "Caldera", "Nexo", "Ryden", "Solace", "Torvik"];
@@ -51,13 +52,13 @@ const WORDS = {
   hover: ["Skylane", "Aerodyne", "Hoverline", "Levitas", "Zephyrus", "Glide", "Nimbus", "Halcyon", "Strato", "Drift-X", "Airwave", "Cirrus", "Orbit", "Lumina"],
 };
 const OFFROAD = { monster: 1.4, buggy: 1.3, crawler: 1.45, sixer: 1.3, suv: .85, pickup: .9, van: .65 };
-const PERF = { monster: [50, 1.35, 1.0], buggy: [56, 1.4, 1.05], crawler: [38, 1.0, 1.2], sixer: [42, .9, 1.0], sedan: [52, 1, 1], suv: [48, .9, .9], van: [42, .8, .85], pickup: [47, .9, .9], sports: [80, 1.35, 1.15], compact: [44, .85, 1.05], hatch: [50, .95, 1.05], wagon: [50, .95, 1], coupe: [62, 1.1, 1.05], muscle: [74, 1.4, .85], supercar: [92, 1.6, 1.2], classic: [46, .85, .8], limo: [48, .8, .8], hover: [70, 1.2, 1.1], taxi: [52, 1, 1], police: [70, 1.25, 1.05], bus: [30, .55, .7], truck: [34, .6, .7] };
+const PERF = { voidcar: [80, 1.6, 1.2], monster: [50, 1.35, 1.0], buggy: [56, 1.4, 1.05], crawler: [38, 1.0, 1.2], sixer: [42, .9, 1.0], sedan: [52, 1, 1], suv: [48, .9, .9], van: [42, .8, .85], pickup: [47, .9, .9], sports: [80, 1.35, 1.15], compact: [44, .85, 1.05], hatch: [50, .95, 1.05], wagon: [50, .95, 1], coupe: [62, 1.1, 1.05], muscle: [74, 1.4, .85], supercar: [92, 1.6, 1.2], classic: [46, .85, .8], limo: [48, .8, .8], hover: [70, 1.2, 1.1], taxi: [52, 1, 1], police: [70, 1.25, 1.05], bus: [30, .55, .7], truck: [34, .6, .7] };
 export const CAR_MODELS = (() => {
   let sd = 4242; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   const out = [];
   for (const k of KINDS) {
     const words = WORDS[k.id], perf = PERF[k.id];
-    if (!words) { out.push({ id: k.id, name: { taxi: "VOID Cab", police: "Interceptor", bus: "City Bus", truck: "Box Truck", monster: "Monster Truck", buggy: "Dune Buggy", crawler: "Rock Crawler", sixer: "6x6 Hauler" }[k.id], kind: k, sl: 1, sh: 1, sw: 1, cols: k.cols, rust: 0, top: perf[0], acc: perf[1], grip: perf[2], offroad: OFFROAD[k.id] }); continue; }
+    if (!words) { out.push({ id: k.id, name: { voidcar: "VOID Hydra", taxi: "VOID Cab", police: "Interceptor", bus: "City Bus", truck: "Box Truck", monster: "Monster Truck", buggy: "Dune Buggy", crawler: "Rock Crawler", sixer: "6x6 Hauler" }[k.id], kind: k, sl: 1, sh: 1, sw: 1, cols: k.cols, rust: 0, top: perf[0], acc: perf[1], grip: perf[2], offroad: OFFROAD[k.id] }); continue; }
     words.forEach((w, i) => {
       const beater = k.id !== "hover" && k.id !== "supercar" && (i % 5 === 3 || k.id === "classic" && i % 3 === 0);
       const brand = BRANDS[(i * 5 + k.id.length) % BRANDS.length];
@@ -120,7 +121,7 @@ export function vehicle(k) {
   const H = [1, .95, .85], R = [1, .12, .12], A = [1, .7, .2];
   const lamps = (y, h = .14) => { for (const s of [1, -1]) { lt.push(B(.08, h, W * .24, L / 2 - .02, y, s * W * .32, H)); lt.push(B(.08, h, W * .26, -L / 2 + .02, y + .05, s * W * .32, R)); } };
   const mirrors = (x, y) => { for (const s of [1, -1]) p.push(B(.18, .12, .2, x, y, s * (W / 2 + .08), BODY)); };
-  const kind = k.id === "taxi" || k.id === "police" ? "sedan" : k.id;
+  const kind = k.id === "taxi" || k.id === "police" ? "sedan" : k.id === "voidcar" ? "sports" : k.id;
   const tyre = (x, z, r, w) => { p.push(tint(new THREE.CylinderGeometry(r, r, w, 16).rotateX(Math.PI / 2).translate(x, r, z).toNonIndexed(), TYRE)); p.push(tint(new THREE.CylinderGeometry(r * .55, r * .55, .04, 10).rotateX(Math.PI / 2).translate(x, r, z + Math.sign(z) * w / 2).toNonIndexed(), RIM));
     for (let t = 0; t < 8; t++) { const a = t / 8 * Math.PI * 2; p.push(B(.12, .1, w * 1.02, x + Math.cos(a) * r * .97, r + Math.sin(a) * r * .97, z, [.06, .06, .06])); } };      // chunky tread blocks
   if (kind === "monster") {                                                   // a pickup on huge tyres and long-travel suspension
@@ -238,13 +239,18 @@ export function createLife(scene, roads, walkways, COARSE) {
       .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - vRust * .85;");
   };
   const lightMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2.2, 2.2, 2.2) });
-  const total = KINDS.reduce((s, k) => s + k.share, 0), counts = KINDS.map(k => Math.round(N * k.share / total));
+  const total = KINDS.reduce((s, k) => s + k.share, 0), counts = KINDS.map(k => k.id === "voidcar" ? (COARSE ? 4 : 8) : Math.round(N * k.share / total));
   const meshes = KINDS.map((k, ti) => {
     const g = vehicle(k), body = new THREE.InstancedMesh(g.body, carMat, Math.max(1, counts[ti])), lights = new THREE.InstancedMesh(g.lights, lightMat, Math.max(1, counts[ti]));
     const rust = new Float32Array(Math.max(1, counts[ti])); body.geometry.setAttribute("aRust", new THREE.InstancedBufferAttribute(rust, 1)); body.rust = rust;
     body.castShadow = true; body.frustumCulled = lights.frustumCulled = false; scene.add(body, lights); return { body, lights };
   });
   const cars = [], col = new THREE.Color();
+  const FLYK = new Set(["sedan", "suv", "sports", "supercar", "coupe", "muscle", "taxi", "police", "compact", "hatch", "limo", "classic", "van", "pickup"]);
+  // thruster glow under flying cars (hover cars have their own)
+  const jetGeo = mergeGeometries([new THREE.CircleGeometry(.42, 14).rotateX(Math.PI / 2).translate(1.3, .12, 0), new THREE.CircleGeometry(.42, 14).rotateX(Math.PI / 2).translate(-1.3, .12, 0)]);
+  const jets = new THREE.InstancedMesh(jetGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(.4, 1.8, 2.4), toneMapped: false, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 900);
+  jets.frustumCulled = false; scene.add(jets); let jk = 0;
   function place(c) {           // drop a car somewhere on a random open segment
     for (let tries = 0; tries < 40; tries++) {
       const axis = rnd() < .5 ? 0 : 1, road = Math.floor(rnd() * (axis === 0 ? NZ : NX)), k = Math.floor(rnd() * ((axis === 0 ? NX : NZ) - 1));
@@ -258,13 +264,14 @@ export function createLife(scene, roads, walkways, COARSE) {
   KINDS.forEach((k, ti) => {
     for (let n = 0; n < counts[ti]; n++) {
       const ms = CAR_MODELS.filter(m => m.kind === k), model = ms[Math.floor(rnd() * ms.length)];
-      const c = { kind: k, ti, n, model, v: 0, want: (k.id === "bus" || k.id === "truck" ? 8 : k.id === "sports" || k.id === "supercar" ? 13 : k.fly ? 18 : 10) + rnd() * 4, x: 0, z: 0, yaw: 0, y: 0, rx: 0, rz: 0, bump: 0, near: false, rust: model.rust ? Math.min(1, model.rust * (.8 + rnd() * .4)) : 0, fly: k.fly ? 20 + rnd() * 34 : 0 };
+      const c = { kind: k, ti, n, model, v: 0, want: (k.id === "bus" || k.id === "truck" ? 8 : k.id === "sports" || k.id === "supercar" ? 13 : k.fly ? 18 : 10) + rnd() * 4, x: 0, z: 0, yaw: 0, y: 0, rx: 0, rz: 0, bump: 0, near: false, rust: model.rust ? Math.min(1, model.rust * (.8 + rnd() * .4)) : 0, fly: k.fly ? 20 + rnd() * 34 : FLYK.has(k.id) && rnd() < .09 ? 26 + rnd() * 44 : 0, idx: cars.length };
+      if (c.fly) c.want = 15 + rnd() * 9;
       place(c); cars.push(c);
       c.color = model.cols[Math.floor(rnd() * model.cols.length)]; c.col = new THREE.Color(c.color);
     }
     meshes[ti].body.setColorAt(0, col.setHex(0xffffff));
   });
-  const posOf = c => { const o = c.lane * c.dir; if (c.axis === 0) { c.x = c.s; c.z = roadC(0, c.road) + o; c.yaw = c.dir > 0 ? 0 : Math.PI; } else { c.z = c.s; c.x = roadC(1, c.road) - o; c.yaw = c.dir > 0 ? Math.PI / 2 : -Math.PI / 2; } };
+  const posOf = c => { const o = (c.lane + (c.dodge || 0)) * c.dir; if (c.axis === 0) { c.x = c.s; c.z = roadC(0, c.road) + o; c.yaw = c.dir > 0 ? 0 : Math.PI; } else { c.z = c.s; c.x = roadC(1, c.road) - o; c.yaw = c.dir > 0 ? Math.PI / 2 : -Math.PI / 2; } };
   cars.forEach(posOf);
 
   // debris from smashed cars
@@ -317,7 +324,8 @@ export function createLife(scene, roads, walkways, COARSE) {
   // ---- per frame ----
   const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), legT = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
   const buckets = new Map(), tmp = {}, cell = new Map(), CELL = 30;
-  let frameN = 0, debLive = 1;
+  let frameN = 0, debLive = 1, crashT = 0, reckT = 6;
+  const MASS = { bus: 4, truck: 3.5, sixer: 3, monster: 2.6, van: 1.6, suv: 1.4, pickup: 1.5, limo: 1.5, compact: .75, hatch: .85, buggy: .7 };
   const LEGS = [[null, 1, .1], [null, -1, -.1]], pscale = new THREE.Vector3();
   function decide(c, k) {       // at the crossing k: straight on, or turn onto the cross road
     const axis = c.axis, ok = segOK(axis, c.road, c.dir > 0 ? k : k - 1), oAxis = 1 - axis, oRoad = k;
@@ -396,7 +404,8 @@ export function createLife(scene, roads, walkways, COARSE) {
   return {
     get detail() { return api.detail; }, set detail(v) { api.detail = v; },
     cars, people, meshes, smash, near, models: CAR_MODELS,
-    set onHit(f) { api.onHit = f; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; },
+    set onHit(f) { api.onHit = f; }, set onCrash(f) { api.onCrash = f; },
+    setVoidGeo(geo) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M) return; geo.setAttribute("aRust", M.body.geometry.attributes.aRust); M.body.geometry = geo; M.lights.geometry = jetGeo; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; },
     take(c) { c.taken = true; c.parked = false; c.turn = null; },
     park(c, x, z, yaw) { Object.assign(c, { taken: false, parked: true, x, z, yaw, v: 0, y: 0, wreck: null, turn: null, crush: 0 }); },
     geoOf(k) { const m = meshes[KINDS.indexOf(k)]; return m ? { body: m.body.geometry, lights: m.lights.geometry } : null; },
@@ -412,7 +421,7 @@ export function createLife(scene, roads, walkways, COARSE) {
       for (const m of meshes) m.k = 0;
       if (relead) for (const c of cars) {
         if (c.wreck || c.turn || c.taken || c.parked) continue;
-        const key = c.axis * 100000 + c.road * 1000 + (c.dir > 0 ? 500 : 0) + Math.round(c.lane * 10);
+        const key = c.axis * 100000 + c.road * 1000 + (c.dir > 0 ? 500 : 0) + Math.round(c.lane * 10) + (c.fly ? 200 + Math.round(c.fly / 25) * 20 : 0);
         let b = buckets.get(key); if (!b) buckets.set(key, b = []); b.push(c);
       }
       if (relead) for (const b of buckets.values()) if (b.length) { b.sort((a, d) => a.s * a.dir - d.s * d.dir); for (let k = 0; k < b.length; k++) b[k].lead = b[k + 1] || null; }
@@ -437,21 +446,38 @@ export function createLife(scene, roads, walkways, COARSE) {
           c.x = nx; c.z = nz; c.yaw = Math.atan2(dz, dx); c.v += (Math.min(c.want, 7) - c.v) * Math.min(1, h * 2);
           if (t >= 1) { Object.assign(c, { axis: T.axis, road: T.road, dir: T.dir, lane: T.lane, s: T.axis === 0 ? c.x : c.z, turn: null }); c.lastK = -99; }
         } else {
-          let want = c.want;
+          let want = c.reck > 0 ? Math.max(c.want, 26) : c.want;
+          if (c.reck > 0) c.reck -= h;
+          if (c.crashT > 0) c.crashT -= h;
           // the next crossing ahead and its light
           const along = c.axis === 0 ? (c.s - X0) / AV : (c.s - Z0) / ST, k = c.dir > 0 ? Math.floor(along) + 1 : Math.ceil(along) - 1;
           const lim = c.axis === 0 ? NX : NZ;
           if (k >= 0 && k < lim) {
             const cc = cross(c.axis, k), stop = cc - c.dir * (crossW(c.axis, k) / 2 + 2.5), dist = (stop - c.s) * c.dir;
             const ph = c.axis === 0 ? phase(k, c.road, time) : phase(c.road, k, time), green = c.axis === 0 ? ph === 0 : ph === 2, amber = c.axis === 0 ? ph === 1 : ph === 3;
-            if (!green && !c.fly && dist > (amber ? 10 : -.5) && dist < 40) want = Math.min(want, Math.sqrt(Math.max(0, 2 * 4.5 * (dist - .5))));
+            if (!green && !c.fly && !(c.reck > 0) && dist > (amber ? 10 : -.5) && dist < 40) want = Math.min(want, Math.sqrt(Math.max(0, 2 * 4.5 * (dist - .5))));
+            // green, but someone is still in the junction: wait for them (reckless drivers don't)
+            if (!c.fly && !(c.reck > 0) && dist > -.5 && dist < 9 && !far) {
+              const ix = c.axis === 0 ? cc : roadC(1, c.road), iz = c.axis === 0 ? roadC(0, c.road) : cc, hx = (c.axis === 0 ? crossW(0, k) : avW(c.road)) / 2 + 1.5, hz = (c.axis === 0 ? stW(c.road) : crossW(1, k)) / 2 + 1.5;
+              for (const o of near(ix, iz)) if (o !== c && !o.fly && !o.wreck && o.axis !== c.axis && o.v > 1.5 && Math.abs(o.x - ix) < hx && Math.abs(o.z - iz) < hz) { want = Math.min(want, Math.sqrt(Math.max(0, 2 * 6 * (dist - .5)))); break; }
+            }
             if (dist < 0 && c.lastK !== k) { c.lastK = k; decide(c, k); }
           } else if ((c.dir > 0 && c.s > cross(c.axis, lim - 1) - 12) || (c.dir < 0 && c.s < cross(c.axis, 0) + 12)) c.dir *= -1;
           // keep a gap to the car in front
-          if (c.lead) { const gap = (c.lead.s - c.s) * c.dir - (c.kind.L + c.lead.kind.L) / 2; want = Math.min(want, gap < 2.5 ? 0 : Math.max(0, (gap - 2.5) * 1.1), c.lead.v + gap * .4); }
+          if (c.lead) { const gap = (c.lead.s - c.s) * c.dir - (c.kind.L + c.lead.kind.L) / 2;
+            if (c.reck > 0) { if (gap < 9) want = Math.min(want, c.lead.v * .6); }          // a reckless driver tailgates and brakes far too late
+            else want = Math.min(want, gap < 2.5 ? 0 : Math.max(0, (gap - 2.5) * 1.1), c.lead.v + gap * .4); }
           // and to the player
           if (c.fly) c.y = c.fly + Math.sin(time * 1.3 + c.n) * .6;
-          if (player && player.y < 3 && !c.fly) { const dx = player.x - c.x, dz = player.z - c.z, ah = dx * Math.cos(c.yaw) + dz * Math.sin(c.yaw), sd = -dx * Math.sin(c.yaw) + dz * Math.cos(c.yaw); if (ah > 0 && ah < 22 && Math.abs(sd) < 2.6) want = Math.min(want, Math.max(0, (ah - 6) * .8)); }
+          if (player && player.y < 3 && !c.fly && !far) {
+            const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), dx = player.x - c.x, dz = player.z - c.z, ah = dx * cy + dz * sy, sd = -dx * sy + dz * cy;
+            if (ah > 0 && ah < 22 && Math.abs(sd) < 2.6) want = Math.min(want, Math.max(0, (ah - 6) * .8));
+            // something fast coming at us: brake hard and swerve out of its path
+            const rvx = (player.vx || 0) - cy * c.v, rvz = (player.vz || 0) - sy * c.v, d = Math.hypot(dx, dz) || 1, closing = -(dx * rvx + dz * rvz) / d;
+            if (closing > 7 && d < 34 && d / closing < 1.7 && !(c.reck > 0)) { want = 0; c.dodgeT = 1.4; c.dodgeS = sd > 0 ? -1 : 1; }
+          }
+          if (c.dodgeT > 0) c.dodgeT -= h;
+          c.dodge = (c.dodge || 0) + ((c.dodgeT > 0 ? c.dodgeS * 2.4 : 0) - (c.dodge || 0)) * Math.min(1, h * 3.5);
           if (c.stop > 0) { c.stop -= h; want = 0; }                 // dented: it stops a while before driving on
           c.v += Math.max(-9 * h, Math.min(3 * h, want - c.v));
           if (!c.turn) { c.s += c.v * c.dir * h; posOf(c); }
@@ -460,8 +486,35 @@ export function createLife(scene, roads, walkways, COARSE) {
         const ddx = c.x - cx0, ddz = c.z - cz0;
         if (ddx * ddx + ddz * ddz < RC2) {
           e.set(c.rx, -c.yaw, c.rz + (c.turn ? (c.fly ? .25 : .05) : 0), "YXZ"); q.setFromEuler(e); const md = c.model; m4.compose(pos.set(c.x, c.y, c.z), q, squash.set(md.sl, (c.crush || 1 - (c.dent || 0) * .07) * md.sh, md.sw));
-          const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.body.rust[k] = c.rust; M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
+          const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.body.rust[k] = c.rust;
+          if (c.fly && !c.wreck && c.kind.id !== "hover" && jk < 900) jets.setMatrixAt(jk++, m4); M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
       }
+      // collisions among the cars near the camera: a hard hit wrecks both, mass and momentum decide where they go
+      crashT += dt;
+      if (crashT > .05) { crashT = 0;
+        for (const list of cell.values()) for (const a of list) {
+          const sa = a.wreck ? Math.hypot(a.wreck.vx, a.wreck.vz) : a.v; if (sa < 4 || a.taken) continue;
+          const ra = (a.kind.L + a.kind.W) / 4 * (a.model.sl || 1);
+          for (let gx = -1; gx <= 1; gx++) for (let gz = -1; gz <= 1; gz++) {
+            const l2 = cell.get((Math.floor(a.x / CELL) + gx) * 7919 + Math.floor(a.z / CELL) + gz); if (!l2) continue;
+            for (const b of l2) {
+              if (b === a || b.taken || (a.crashT > 0 && b.crashT > 0) || Math.abs((a.y || 0) - (b.y || 0)) > 1.6) continue;
+              const rb = (b.kind.L + b.kind.W) / 4 * (b.model.sl || 1), dx = a.x - b.x, dz = a.z - b.z, d = Math.hypot(dx, dz);
+              if (d > (ra + rb) * .85 || d < .01) continue;
+              const va = a.wreck ? [a.wreck.vx, a.wreck.vz] : [Math.cos(a.yaw) * a.v, Math.sin(a.yaw) * a.v], vb = b.wreck ? [b.wreck.vx, b.wreck.vz] : [Math.cos(b.yaw) * b.v, Math.sin(b.yaw) * b.v];
+              const rel = Math.hypot(va[0] - vb[0], va[1] - vb[1]), nx = dx / d, nz = dz / d;
+              if (rel < 6.5 || (!a.wreck && !b.wreck && a.turn && b.turn)) continue;
+              const ma = MASS[a.kind.id] || 1, mb = MASS[b.kind.id] || 1, vmx = (va[0] * ma + vb[0] * mb) / (ma + mb), vmz = (va[1] * ma + vb[1] * mb) / (ma + mb);
+              const hit = (c, m, s) => { const bounce = rel * .45 * (mb + ma - m) / (ma + mb); smash(c, vmx + s * nx * bounce, vmz + s * nz * bounce, rel * 1.25 * (ma + mb - m) / (ma + mb) * 2); if (c.wreck) { c.wreck.vx = vmx + s * nx * bounce; c.wreck.vz = vmz + s * nz * bounce; c.wreck.wy = (rnd() - .5) * rel * .4; } c.crashT = 1.2; };
+              hit(a, ma, 1); hit(b, mb, -1);
+              if (api.onCrash) api.onCrash((a.x + b.x) / 2, (a.z + b.z) / 2, rel);
+            }
+          }
+        }
+        // every so often somebody near you drives like a maniac
+        if ((reckT -= .05) < 0 && player) { reckT = 9 + rnd() * 10; for (let t = 0; t < 40; t++) { const c = cars[Math.floor(rnd() * cars.length)], d = Math.hypot(c.x - player.x, c.z - player.z); if (!c.fly && !c.wreck && !c.taken && !c.parked && d > 70 && d < 260 && !(MASS[c.kind.id] > 1.5)) { c.reck = 20 + rnd() * 15; break; } } }
+      }
+      jets.count = jk; jets.visible = jk > 0; jets.instanceMatrix.needsUpdate = true; jk = 0;
       for (const m of meshes) { m.body.count = m.lights.count = m.k; m.body.visible = m.lights.visible = m.k > 0; m.body.instanceMatrix.needsUpdate = m.lights.instanceMatrix.needsUpdate = true; if (m.body.instanceColor) m.body.instanceColor.needsUpdate = true; m.body.geometry.attributes.aRust.needsUpdate = true; }
       // debris (skipped once every piece has landed and been hidden)
       if (debLive) { debLive = 0; for (let k = 0; k < DEB; k++) {

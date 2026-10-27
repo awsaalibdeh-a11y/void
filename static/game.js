@@ -341,6 +341,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   }
   function setVehicle(type) {
     if (!opts.vehicles || g.wreck > 0) return;
+    if (type.startsWith("boat")) { g.boat = type.split(":")[1] || "speedboat"; type = "boat"; }
     if (type === "board") { if (g.veh === "car" && g.mode !== "drive") { g.mode = "drive"; } if (g.veh === "car") { g.vel.set(0, 0, 0); } return boardToggle(); }
     if (g.veh === "foot") { Object.assign(g, { veh: "car", mode: "drive" }); g.heroPark = null; }
     if (g.ride) releaseRide();
@@ -348,7 +349,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     if (type === "car") { if (g.veh !== "car") { const l = g.last; Object.assign(g, { x: l.x, z: l.z, y: 0, yaw: l.yaw, mode: "drive", pitch: 0, roll: 0 }); g.vel.set(0, 0, 0); } }
     else opts.vehicles.spawn(g, type);
     g.veh = type; g.mode = type === "car" ? g.mode : g.y > 1 && type !== "boat" ? "air" : "drive"; rig.yaw = null;
-    say({ car: "Back in the car", plane: "Plane: W/S throttle, Space/Q pitch, A/D bank. Take off down the runway", heli: "Helicopter: Space up, Q down, W/S forward/back, A/D turn", boat: "Speedboat: W/S throttle, A/D steer. Stay on the water" }[type], 5);
+    say({ car: "Back in the car", plane: "Plane: W/S throttle, Space/Q pitch, A/D bank. Take off down the runway", heli: "Helicopter: Space up, Q down, W/S forward/back, A/D turn", boat: { speedboat: "Speedboat: W/S throttle, A/D steer, Shift boost", jetski: "Jet ski: fast and twitchy, jump the swells", yacht: "Yacht: slow and steady, enjoy the view", tug: "Tugboat: heavy, pushes other boats around", hover: "Hovercraft: drives on water AND land" }[g.boat] }[type], 5);
   }
   function step(dt) {
     if (g.msgT > 0) g.msgT -= dt;
@@ -409,6 +410,11 @@ export function createGame(W, car, sound, life, opts = {}) {
       const grip = (hand ? 1.4 + .15 * (U.grip || 0) : 9 * (1 + .12 * (U.grip || 0)) + Math.min(9, Math.abs(u) * .09)) * (RM ? RM.grip : 1) * (HA ? .8 : 1.2) * gripT;
       w *= Math.exp(-grip * dt);
       g.vel.set(fx * u + sx * w, 0, fz * u + sz * w);
+      // suspension: a damped spring for pitch (squat on the throttle, dive on the brakes) and one for body roll in corners
+      const aL = (u - (g.uPrev ?? u)) / dt; g.uPrev = u;
+      const tP = clamp(aL * .0042, -.065, .065), tR = clamp(-yawRate * u * .0065, -.1, .1);
+      g.spV = (g.spV || 0) + ((tP - (g.sp || 0)) * 130 - (g.spV || 0) * 15) * dt; g.sp = (g.sp || 0) + g.spV * dt;
+      g.srV = (g.srV || 0) + ((tR - (g.sr || 0)) * 110 - (g.srV || 0) * 13) * dt; g.sr = (g.sr || 0) + g.srV * dt;
       // drift scoring
       const slip = Math.atan2(Math.abs(w), Math.max(1, Math.abs(u)));
       g.slip = Math.abs(u) > 6 ? clamp((slip - .12) * 3) + (brake && Math.abs(u) > 20 ? .35 : 0) : 0; if (g.thudT > 0) g.thudT -= dt;
@@ -439,15 +445,15 @@ export function createGame(W, car, sound, life, opts = {}) {
       } else if (gr.h < prevY - .35) { g.mode = "air"; g.hover = false; g.landing = false; g.airT = 0; g.jump = true; return; }   // off a roof edge
       else if (gr.terrain) {
         g.y = gr.h; const [sa, sl] = slopes(g.x, g.z, g.yaw); g.slope = sa; g.tRoll = -Math.atan(sl);
-        g.pitch = lerp(g.pitch, Math.atan(sa), clamp(dt * 12));
+        g.pitch = lerp(g.pitch, Math.atan(sa) + g.sp, clamp(dt * 12)); if (Math.abs(u) > 6 && Math.random() < .08) g.spV += (Math.random() - .5) * Math.abs(u) * .02 / Math.max(.6, OR);   // bumps
         if (Math.abs(u) > 4) g.shake = Math.max(g.shake || 0, Math.min(.22, Math.abs(u) * .004 / Math.max(.6, OR)));    // rough ground rattles you, less in a truck
       }
-      else { g.y = gr.h; g.pitch = lerp(g.pitch, clamp(-(gas - brake) * .02 * (Math.abs(u) < 30 ? 1 : .3), -.03, .03), clamp(dt * 6)); }
+      else { g.y = gr.h; g.pitch = g.sp; }
       g.onTerrain = !!gr.terrain; if (!gr.terrain) { g.slope = 0; g.tRoll = 0; }
       // drive into the loop and the track takes you round
       if (g.x > LOOP_X - 1.5 && g.x < LOOP_X + .5 && Math.abs(g.z) < HW && Math.cos(g.yaw) > .8 && u > 3 && g.y < .2) { g.mode = "rail"; g.d = T.D[T.loopIn]; g.v = u; return; }
       traffic(dt);
-      g.roll = lerp(g.roll, clamp(-yawRate * u * .006, -.08, .08) + (g.tRoll || 0), clamp(dt * (g.onTerrain ? 10 : 5)));
+      g.roll = lerp(g.roll, (g.sr || 0) + (g.tRoll || 0), clamp(dt * 20));
       if ((g.y === 0 || gr.terrain) && Math.abs(u) < 40 && !gr.roof && !city.isWater(g.x, g.z) && !hitBox(g.x, g.z, .5, 3)) g.last = { x: g.x, z: g.z, yaw: g.yaw, y: gr.terrain ? g.y : 0 };
       g.gForce = 1 + Math.abs(u * yawRate) / G * .5;
       g.v = u;
@@ -570,7 +576,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (vh2 > 2) g.yaw = Math.atan2(g.vel.z, g.vel.x);
       g.vel.set(Math.cos(g.yaw) * keep, 0, Math.sin(g.yaw) * keep);
       g.mode = "drive"; g.wings = 0; g.hover = false; g.landing = false; g.pitch = -clamp(down2 * .006, 0, .07); g.roll = 0; g.jump = false;
-      if (down2 > 2) { sound.thud && sound.thud(down2 / 14); g.shake = Math.min(1, (g.shake || 0) + down2 / 40); }
+      if (down2 > 2) { sound.thud && sound.thud(down2 / 14); g.shake = Math.min(1, (g.shake || 0) + down2 / 40); g.spV = (g.spV || 0) - down2 * .05; }
       if (keep > 25) say(`Touchdown at ${Math.round(keep * 3.6)} km/h. Rolling on`, 2);
     }
   }
@@ -720,7 +726,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         pos: fr.p.clone(), quat: q, fr, speed, g: g.gForce, alt: Math.max(0, g.y), vs: air ? g.vel.y : 0, player: { x: g.x, y: g.y, z: g.z, speed: speed / 3.6, vx: g.vel.x, vz: g.vel.z, foot: g.veh === "foot" || g.veh === "board" },
         thrust: { power: air && g.veh === "car" ? g.thr : 0, angle: g.ang, deploy: air && g.veh === "car" && !(g.jump && !g.hover && !g.landing && g.thr < .05) ? 1 : 0 }, wings: g.veh === "car" ? g.wings : 0, air, cam,
         inside: view === "seat", screenOn: view === "seat", mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : g.hover ? "HOVER" : "THRUST",
-        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" || g.veh === "board" ? 0 : !air ? 1 : .15, walk: g.walk || 0, ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, zones, reveal: 1,
+        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" || g.veh === "board" ? 0 : !air ? 1 : .15, walk: g.walk || 0, ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, boat: g.boat, zones, reveal: 1,
         splash: g.splashT > 0 ? (g.splashT -= dt, 1) : 0, nitro: g.nitroOn, hp: g.hp, veh: g.veh || "car", fuel: g.fuel, thr: g.thr, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
       };
     },
