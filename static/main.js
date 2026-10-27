@@ -561,7 +561,9 @@ function frameLoop(fixed) {
   extras.sky(dt, time);
   // the living city: when switched on, the day turns and the weather changes on its own
   if (SET.cycle === "on" && mode === "play" && (cycleT += dt) > 150) { cycleT = 0; cycleTime(); if (Math.random() < .5) { const w = ["clear", "clear", "rain", "fog", "storm", "snow"][Math.floor(Math.random() * 6)]; atmos.setWeather(w); SET.weather = w; } }
-  life.raining = atmos.weather === "rain" || atmos.weather === "storm";
+  life.raining = atmos.weather === "rain" || atmos.weather === "storm"; life.night = W.timeOfDay !== "day";
+  // the El train is solid: you get shoved off the track (and hurt if you hit it hard)
+  if (mode === "play" && W.city.el && game.state) { const T = W.city.el.train, s = game.state; if (Math.abs(s.x - W.city.el.x) < 2.6 && s.y > W.city.el.top - .5 && s.y < W.city.el.top + 4 && Math.abs(s.z - T.z) < T.len / 2 + 1) { s.x = W.city.el.x + (s.x >= W.city.el.x ? 3 : -3); const sp = Math.hypot(s.vel.x, s.vel.z); if (sp > 8 || T.v > 5) { game.api.hurt(8 + T.v, "Hit by the train"); sound.crash(); } } }
   if (mode === "play") { contracts.update(dt, time); dealer.update(dt, time); tutUpdate(); if ((dailyT += dt) > 1) { dailyT = 0; dailyCheck(); } extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   if (heroDriven) { car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat); } else if (gsx && gsx.heroPark) { car.group.position.set(gsx.heroPark.x, 0, gsx.heroPark.z); car.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -gsx.heroPark.yaw); }

@@ -251,6 +251,13 @@ export function createLife(scene, roads, walkways, COARSE) {
   const jetGeo = mergeGeometries([new THREE.CircleGeometry(.42, 14).rotateX(Math.PI / 2).translate(1.3, .12, 0), new THREE.CircleGeometry(.42, 14).rotateX(Math.PI / 2).translate(-1.3, .12, 0)]);
   const jets = new THREE.InstancedMesh(jetGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(.4, 1.8, 2.4), toneMapped: false, transparent: true, opacity: .9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 900);
   jets.frustumCulled = false; scene.add(jets); let jk = 0;
+  // soft contact shadows under every car and person near the camera, and the pool of light ahead of each car at night
+  const softTex = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 4, 32, 32, 32); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(.55, "rgba(255,255,255,.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); return t; })();
+  const flat = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const blobs = new THREE.InstancedMesh(flat, new THREE.MeshBasicMaterial({ map: softTex, color: 0x000000, transparent: true, opacity: .62, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }), 2200);
+  const beams = new THREE.InstancedMesh(flat, new THREE.MeshBasicMaterial({ map: softTex, color: new THREE.Color(1, .82, .55).multiplyScalar(.55), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 }), 600);
+  for (const m of [blobs, beams]) { m.frustumCulled = false; m.renderOrder = 1; scene.add(m); }
+  let bk2 = 0, hk2 = 0; const bQ = new THREE.Quaternion(), bE = new THREE.Euler(), bS = new THREE.Vector3(), bP = new THREE.Vector3();
   function place(c) {           // drop a car somewhere on a random open segment
     for (let tries = 0; tries < 40; tries++) {
       const axis = rnd() < .5 ? 0 : 1, road = Math.floor(rnd() * (axis === 0 ? NZ : NX)), k = Math.floor(rnd() * ((axis === 0 ? NX : NZ) - 1));
@@ -407,7 +414,7 @@ export function createLife(scene, roads, walkways, COARSE) {
     set onHit(f) { api.onHit = f; }, set onCrash(f) { api.onCrash = f; },
     // the flying VOID cars: the real car's shape, or (Lite) the simple low-poly body traffic uses
     setVoidGeo(geo) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M) return; M.simple = M.simple || { body: M.body.geometry, lights: M.lights.geometry }; geo.setAttribute("aRust", M.simple.body.attributes.aRust); M.full = geo; },
-    setVoidDetail(full) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M || !M.full) return; M.body.geometry = full ? M.full : M.simple.body; M.lights.geometry = full ? jetGeo : M.simple.lights; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; },
+    setVoidDetail(full) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M || !M.full) return; M.body.geometry = full ? M.full : M.simple.body; M.lights.geometry = full ? jetGeo : M.simple.lights; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; }, set night(v) { api.night = v; },
     take(c) { c.taken = true; c.parked = false; c.turn = null; },
     park(c, x, z, yaw) { Object.assign(c, { taken: false, parked: true, x, z, yaw, v: 0, y: 0, wreck: null, turn: null, crush: 0 }); },
     geoOf(k) { const m = meshes[KINDS.indexOf(k)]; return m ? { body: m.body.geometry, lights: m.lights.geometry } : null; },
@@ -489,7 +496,11 @@ export function createLife(scene, roads, walkways, COARSE) {
         if (ddx * ddx + ddz * ddz < RC2) {
           e.set(c.rx, -c.yaw, c.rz + (c.turn ? (c.fly ? .25 : .05) : 0), "YXZ"); q.setFromEuler(e); const md = c.model; m4.compose(pos.set(c.x, c.y, c.z), q, squash.set(md.sl, (c.crush || 1 - (c.dent || 0) * .07) * md.sh, md.sw));
           const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.body.rust[k] = c.rust;
-          if (c.fly && !c.wreck && c.kind.id !== "hover" && jk < 900) jets.setMatrixAt(jk++, m4); M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
+          if (c.fly && !c.wreck && c.kind.id !== "hover" && jk < 900) jets.setMatrixAt(jk++, m4);
+          if (!c.fly && c.y < 1.5 && bk2 < 2200 && ddx * ddx + ddz * ddz < 40000) {
+            bE.set(0, -c.yaw, 0); bQ.setFromEuler(bE); m4.compose(bP.set(c.x, .045, c.z), bQ, bS.set(c.kind.L * md.sl * 1.25, 1, c.kind.W * md.sw * 1.5)); blobs.setMatrixAt(bk2++, m4);
+            if (api.night && !c.wreck && hk2 < 600 && ddx * ddx + ddz * ddz < 25600) { const L = c.kind.L * md.sl; m4.compose(bP.set(c.x + Math.cos(c.yaw) * (L / 2 + 4.5), .05, c.z + Math.sin(c.yaw) * (L / 2 + 4.5)), bQ, bS.set(9, 1, 5.5)); beams.setMatrixAt(hk2++, m4); }
+          } M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
       }
       // collisions among the cars near the camera: a hard hit wrecks both, mass and momentum decide where they go
       crashT += dt;
@@ -517,6 +528,7 @@ export function createLife(scene, roads, walkways, COARSE) {
         if ((reckT -= .05) < 0 && player) { reckT = 9 + rnd() * 10; for (let t = 0; t < 40; t++) { const c = cars[Math.floor(rnd() * cars.length)], d = Math.hypot(c.x - player.x, c.z - player.z); if (!c.fly && !c.wreck && !c.taken && !c.parked && d > 70 && d < 260 && !(MASS[c.kind.id] > 1.5)) { c.reck = 20 + rnd() * 15; break; } } }
       }
       jets.count = jk; jets.visible = jk > 0; jets.instanceMatrix.needsUpdate = true; jk = 0;
+      beams.count = hk2; beams.visible = hk2 > 0; beams.instanceMatrix.needsUpdate = true; hk2 = 0;
       for (const m of meshes) { m.body.count = m.lights.count = m.k; m.body.visible = m.lights.visible = m.k > 0; m.body.instanceMatrix.needsUpdate = m.lights.instanceMatrix.needsUpdate = true; if (m.body.instanceColor) m.body.instanceColor.needsUpdate = true; m.body.geometry.attributes.aRust.needsUpdate = true; }
       // debris (skipped once every piece has landed and been hidden)
       if (debLive) { debLive = 0; for (let k = 0; k < DEB; k++) {
@@ -571,6 +583,7 @@ export function createLife(scene, roads, walkways, COARSE) {
           if (p.jog && !(p.down > 0)) y += Math.abs(Math.sin(walk)) * .06;
           e.set(rx + (p.jog && !(p.down > 0) ? 0 : 0), yaw + (p.fall ? p.fall.rot : 0), rz - (p.jog && !(p.down > 0) ? .12 : 0), "YXZ"); q.setFromEuler(e); m4.compose(pos.set(x, y, z), q, pscale.set(p.wd, p.h, p.wd));
           bodies.setMatrixAt(pk, m4); heads.setMatrixAt(pk, m4); hair.setMatrixAt(pk, m4);
+          if (bk2 < 2200) { bE.set(0, yaw, 0); bQ.setFromEuler(bE); const sc = p.down > 0 ? 1.8 : .95; legM.compose(bP.set(x, .05, z), bQ, bS.set(sc * p.wd, 1, sc * .8 * p.wd)); blobs.setMatrixAt(bk2++, legM); }
           const amp = p.jog ? .85 : .5, swing = p.down > 0 ? (p.fall.air ? Math.sin(time * 19 + n) * .9 : .15) : p.wait > 0 ? 0 : Math.sin(walk) * amp;
           LEGS[0][0] = legL; LEGS[1][0] = legR; for (const [leg, sgn, off] of LEGS) { legQ.setFromAxisAngle(Z, swing * sgn); legM.compose(pos.set(0, .88, off), legQ, one); leg.setMatrixAt(pk, legT.copy(m4).multiply(legM)); }
           // arms swing against the legs; a phone or an umbrella keeps the right one up
@@ -591,6 +604,7 @@ export function createLife(scene, roads, walkways, COARSE) {
           pk++;
         }
       }
+      blobs.count = bk2; blobs.visible = bk2 > 0; blobs.instanceMatrix.needsUpdate = true; bk2 = 0;
       for (const m of [bodies, heads, legL, legR, hair, armL, armR]) { m.count = pk; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
       for (const [m, c] of [[hats, hk], [bags, bk], [skirts, sk], [umbs, uk], [dogs, dk]]) { m.count = c; m.visible = c > 0; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
       updateBirds(dt, time, player, camPos);

@@ -556,6 +556,50 @@ export async function buildCity(scene, canvasTex, COARSE) {
     return { height, trail: TRAIL.map(([x, z]) => [x, height(x, z), z]), peak: [sx, sh, sz2] };
   }
 
+  // ---- the El: an elevated subway over avenue 9, four stations, a train running up and down ----
+  const EL = { x: GRID.ax(9), top: 10.5, z0: ZA - 20, z1: ZB + 20, stations: [GRID.sz(5) + 35, GRID.sz(15) + 35, GRID.sz(25) + 35, GRID.sz(35) + 35] };
+  {
+    const steel = mat({ color: 0x4a5058, roughness: .55, metalness: .6 }), X = EL.x, L = EL.z1 - EL.z0, zc = (EL.z0 + EL.z1) / 2, parts = [];
+    const bx = (w, h, d, x, y, z) => parts.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z).toNonIndexed());
+    bx(8, .8, L, X, EL.top - .4, zc); bx(.3, .7, L, X - 3.95, EL.top + .35, zc); bx(.3, .7, L, X + 3.95, EL.top + .35, zc);
+    bx(.2, .15, L, X - .75, EL.top + .07, zc); bx(.2, .15, L, X + .75, EL.top + .07, zc);
+    const onStreet = z => { for (let j = 0; j < NZ; j++) if (Math.abs(z - GRID.sz(j)) < GRID.stW(j) / 2 + 3) return true; return false; };
+    for (let z = EL.z0 + 10; z < EL.z1; z += 32) { if (onStreet(z)) continue; bx(1, EL.top - .8, 1, X, (EL.top - .8) / 2, z); bx(7, .6, .8, X, EL.top - 1.1, z); solid(X - .6, X + .6, z - .6, z + .6, EL.top - .8, { noRoof: true }); }
+    for (const z of EL.stations) for (const sgn of [-1, 1]) { bx(4, .5, 64, X + sgn * 6, EL.top - .25, z); bx(4, .15, 64, X + sgn * 6, EL.top + 3.6, z); for (let k = -30; k <= 30; k += 10) bx(.2, 3.6, .2, X + sgn * 7.8, EL.top + 1.8, z + k); solid(X + sgn * 6 - 2, X + sgn * 6 + 2, z - 32, z + 32, EL.top, { y0: EL.top - 1 }); }
+    solid(X - 4, X + 4, EL.z0, EL.z1, EL.top, { y0: EL.top - 1 });          // drive along the top if you land on it
+    scene.add(new THREE.Mesh(mergeGeometries(parts), steel));
+    // the train: four silver cars with a window band and a red stripe
+    const carTex = canvasTex(256, 64, (g, w, h) => { g.fillStyle = "#b8bcc4"; g.fillRect(0, 0, w, h); g.fillStyle = "#c1121f"; g.fillRect(0, 44, w, 5); for (let x = 6; x < w; x += 30) { g.fillStyle = "#1b2633"; g.fillRect(x, 12, 22, 24); g.fillStyle = "rgba(255,240,200,.25)"; g.fillRect(x, 12, 22, 5); } g.fillStyle = "#2a2d33"; g.fillRect(0, h - 6, w, 6); });
+    const train = new THREE.Group(), carM = new THREE.MeshStandardMaterial({ map: carTex, roughness: .35, metalness: .7 }), headM = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .95, .8).multiplyScalar(2), toneMapped: false });
+    for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.BoxGeometry(3, 3.4, 15.6), carM); c.position.set(0, 1.9, (k - 1.5) * 16.4); c.castShadow = true; train.add(c); }
+    for (const z of [-32.6, 32.6]) for (const x of [-.9, .9]) { const l = new THREE.Mesh(new THREE.BoxGeometry(.4, .3, .1), headM); l.position.set(x, 1.2, z); train.add(l); }
+    train.position.set(X, EL.top, EL.stations[0]); scene.add(train);
+    EL.train = { g: train, z: EL.stations[0], v: 0, dir: 1, wait: 6, len: 66 };
+  }
+  // ---- the Ferris wheel and a boardwalk on the East River esplanade ----
+  const FW = { x: (XB + 9 + W2) / 2, z: 1320, y: 31, R: 26, a: 0 };
+  {
+    const white = mat({ color: 0xe8e8ea, roughness: .4, metalness: .5 }), wood = mat({ color: 0x8a6a48, roughness: .85 });
+    const wheel = new THREE.Group(); wheel.position.set(FW.x, FW.y, FW.z); scene.add(wheel); FW.g = wheel;
+    for (const x of [-1.4, 1.4]) { const rim = new THREE.Mesh(new THREE.TorusGeometry(FW.R, .3, 8, 72), white); rim.rotation.y = Math.PI / 2; rim.position.x = x; wheel.add(rim); const inner = new THREE.Mesh(new THREE.TorusGeometry(FW.R * .55, .2, 6, 48), white); inner.rotation.y = Math.PI / 2; inner.position.x = x; wheel.add(inner); }
+    for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2; for (const x of [-1.4, 1.4]) { const sp = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, FW.R, 5), white); sp.position.set(x, Math.cos(a) * FW.R / 2, Math.sin(a) * FW.R / 2); sp.rotation.x = a; wheel.add(sp); } }
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 3.6, 16).rotateZ(Math.PI / 2), white); wheel.add(hub);
+    const bulb = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .75, .4).multiplyScalar(2.4), toneMapped: false }); emissive.push(bulb);
+    const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(.28, 6, 4), bulb, 144), bm = new THREE.Matrix4();
+    for (let k = 0; k < 72; k++) for (const [j, x] of [[0, -1.4], [1, 1.4]]) { const a = k / 72 * Math.PI * 2; bulbs.setMatrixAt(k * 2 + j, bm.makeTranslation(x, Math.cos(a) * FW.R, Math.sin(a) * FW.R)); }
+    wheel.add(bulbs);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const len = Math.hypot(FW.y, 14), leg = new THREE.Mesh(new THREE.CylinderGeometry(.35, .5, len, 8), white); leg.position.set(FW.x + sx * 3.2, FW.y / 2, FW.z + sz * 7); leg.rotation.x = -sz * Math.atan2(14, FW.y) * .5; scene.add(leg); solid(FW.x + sx * 3.2 - .8, FW.x + sx * 3.2 + .8, FW.z + sz * 10 - .8, FW.z + sz * 10 + .8, 6, { noRoof: true }); }
+    const gondM = new THREE.MeshStandardMaterial({ vertexColors: false, roughness: .4 }); FW.gond = new THREE.InstancedMesh(new THREE.BoxGeometry(2.2, 2.2, 2.6).translate(0, -1.6, 0), gondM, 18);
+    for (let k = 0; k < 18; k++) FW.gond.setColorAt(k, new THREE.Color().setHSL(k / 18, .75, .55)); scene.add(FW.gond);
+    // the boardwalk: planks, a few stalls with striped awnings
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(46, .2, 230), wood); deck.position.set(FW.x, .12, FW.z); deck.receiveShadow = true; scene.add(deck);
+    const stallT = canvasTex(64, 16, (g, w, h) => { for (let x = 0; x < w; x += 8) { g.fillStyle = (x / 8) % 2 ? "#ffffff" : "#d21f2b"; g.fillRect(x, 0, 8, h); } });
+    for (const [dz, c] of [[-70, 0xf7c414], [-50, 0x2e5aa8], [55, 0x2f6b3a], [75, 0xd21f2b]]) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(4, 2.4, 3), mat({ color: c, roughness: .6 })); st.position.set(FW.x - 12, 1.3, FW.z + dz); scene.add(st);
+      const aw = new THREE.Mesh(new THREE.BoxGeometry(4.6, .15, 3.8), new THREE.MeshStandardMaterial({ map: stallT })); aw.position.set(FW.x - 12, 2.8, FW.z + dz); scene.add(aw); solid(FW.x - 14, FW.x - 10, FW.z + dz - 1.5, FW.z + dz + 1.5, 2.6);
+    }
+  }
+
   // ---- Times Square: big glowing billboards round one intersection ----
   const TSX = GRID.ax(7), TSZ = GRID.sz(6), billboards = [];
   ADS.forEach(([t1, t2, fg, bg], k) => {
@@ -623,8 +667,14 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const at = (x, y, z, ry = 0, s = 1) => m4.compose(v.set(x, y, z), q0.setFromAxisAngle(Y, ry), sc.set(s, s, s));
   // trees: a trunk and two leafy blobs, each a little different green
   instT(new THREE.CylinderGeometry(.18, .28, 3, 5).translate(0, 1.5, 0), mat({ color: 0x5a4330, roughness: .9 }), P.trees, ([x, z, s]) => at(x, 0, z, 0, s), null, 520);
-  const leafGeo = mergeGeometries([new THREE.IcosahedronGeometry(2.2, 0).translate(0, 4.4, 0), new THREE.IcosahedronGeometry(1.7, 0).translate(.8, 5.8, .3), new THREE.IcosahedronGeometry(1.5, 0).translate(-.9, 5.3, -.4)].map(g => g.toNonIndexed()));
-  instT(leafGeo, mat({ roughness: .85, flatShading: true }), P.trees, ([x, z, s], i) => at(x, 0, z, i, s), () => new THREE.Color().setHSL(.26 + rnd() * .08, .45 + rnd() * .2, .26 + rnd() * .12), 520);
+  const leafGeo = COARSE ? mergeGeometries([new THREE.IcosahedronGeometry(2.2, 0).translate(0, 4.4, 0), new THREE.IcosahedronGeometry(1.7, 0).translate(.8, 5.8, .3), new THREE.IcosahedronGeometry(1.5, 0).translate(-.9, 5.3, -.4)].map(g => g.toNonIndexed()))
+    : mergeGeometries([[2.2, 0, 4.4, 0], [1.8, .9, 5.9, .3], [1.6, -1, 5.4, -.5], [1.45, .2, 6.7, -.6], [1.35, -.3, 4.8, 1.2]].map(([rad, x, y, z]) => {
+      const g = new THREE.IcosahedronGeometry(rad, 1).toNonIndexed(), p = g.attributes.position, col = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) { const j = 1 + Math.sin(p.getX(i) * 7.1 + p.getY(i) * 3.3 + p.getZ(i) * 5.7) * .14; p.setXYZ(i, p.getX(i) * j, p.getY(i) * j, p.getZ(i) * j); }
+      g.translate(x, y, z); for (let i = 0; i < p.count; i++) { const v = .6 + .48 * Math.max(0, Math.min(1, (p.getY(i) - (y - rad)) / (2 * rad))); col[i * 3] = v; col[i * 3 + 1] = v; col[i * 3 + 2] = v; }
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
+    }));
+  instT(leafGeo, mat({ roughness: .85, flatShading: true, vertexColors: !COARSE }), P.trees, ([x, z, s], i) => at(x, 0, z, i, s), () => new THREE.Color().setHSL(.26 + rnd() * .08, .45 + rnd() * .2, .26 + rnd() * .12), 520);
   // street lamps: a pole, an arm and a warm head
   // pools of warm light under every lamp (only at night)
   const poolTex = canvasTex(128, 128, (g, w) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, "rgba(255,200,130,.55)"); r.addColorStop(.5, "rgba(255,180,110,.18)"); r.addColorStop(1, "rgba(255,170,100,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
@@ -665,6 +715,28 @@ export async function buildCity(scene, canvasTex, COARSE) {
     const stack = new THREE.CylinderGeometry(.42, .5, 2.4, 12, 6, true).translate(0, 1.2, 0).toNonIndexed(); { const p = stack.attributes.position, a = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) a.set(Math.floor(p.getY(i) / .4 + .001) % 2 ? [1, 1, 1] : [1, .42, .08], i * 3); stack.setAttribute("color", new THREE.BufferAttribute(a, 3)); }
     instT(stack, mat({ vertexColors: true, roughness: .6, side: THREE.DoubleSide }), P.steam, ([x, z]) => at(x, 0, z), null, 300);
     P.steam.forEach(([x, z]) => solid(x - .5, x + .5, z - .5, z + .5, 2.4));
+  }
+  const bladeTex = canvasTex(64, 64, (g, w, h) => { g.clearRect(0, 0, w, h); for (let k = 0; k < 26; k++) { const x = 4 + rnd() * 56, lean = (rnd() - .5) * 18, ht = 30 + rnd() * 30; g.strokeStyle = `rgb(${60 + rnd() * 40 | 0},${110 + rnd() * 60 | 0},${40 + rnd() * 30 | 0})`; g.lineWidth = 2 + rnd() * 2; g.beginPath(); g.moveTo(x, h); g.quadraticCurveTo(x + lean * .3, h - ht * .6, x + lean, h - ht); g.stroke(); } });
+  const tuftGeo = mergeGeometries([new THREE.PlaneGeometry(1.1, .6).translate(0, .3, 0), new THREE.PlaneGeometry(1.1, .6).translate(0, .3, 0).rotateY(Math.PI / 2)]);
+  const NTUFT = COARSE ? 0 : 3200, tufts = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ map: bladeTex, alphaTest: .45, side: THREE.DoubleSide, roughness: .9 }), Math.max(1, NTUFT));
+  tufts.frustumCulled = false; tufts.count = 0; tufts.setColorAt(0, new THREE.Color(1, 1, 1)); scene.add(tufts);
+  let tuftAt = null;
+  const grassy = (x, z) => {
+    if (inPark(x, z)) return Math.hypot((x - lake.x) / (lake.rx + 6), (z - lake.z) / (lake.rz + 6)) > 1 ? .08 : -1;
+    if (x > MT.x0 && x < MT.x1 && z > MT.z0 && z < MT.z1 && terrain) { const h = terrain.height(x, z); return h > .3 && h < 165 ? h : -1; }
+    if (x < HW0 - 30 && !(x > -2660 && x < -1860 && Math.abs(z) < 34)) return 0;                                     // New Jersey, off the runway
+    if (x > XA - 5 && x < XB + 5 && (z > ZB + 30 || z < ZA - 30)) return 0;                                         // north and south of the city
+    return -1;
+  };
+  function placeTufts(cam) {
+    let k = 0; const S = 1.5, R = 42, gx0 = Math.floor((cam.x - R) / S), gz0 = Math.floor((cam.z - R) / S);
+    for (let gx = gx0; gx < gx0 + R * 2 / S && k < NTUFT; gx++) for (let gz = gz0; gz < gz0 + R * 2 / S && k < NTUFT; gz++) {
+      const hsh = Math.sin(gx * 127.1 + gz * 311.7) * 43758.5453, f = hsh - Math.floor(hsh), x = (gx + f) * S, z = (gz + (f * 7.3 % 1)) * S;
+      if ((x - cam.x) ** 2 + (z - cam.z) ** 2 > R * R || f < .25) continue;
+      const y = grassy(x, z); if (y < 0) continue;
+      m4.compose(v.set(x, y, z), q0.setFromAxisAngle(Y, f * 6.28), sc.set(.7 + f * .7, .7 + f * .8, .7 + f * .7)); tufts.setMatrixAt(k, m4); tufts.setColorAt(k++, new THREE.Color().setHSL(.24 + f * .06, .55, .32 + f * .14));
+    }
+    tufts.count = k; tufts.instanceMatrix.needsUpdate = true; if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
   }
   const steamTex = canvasTex(64, 64, (g, w) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, "rgba(255,255,255,.55)"); r.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
   const NPUFF = COARSE ? 40 : 90, steamMat = new THREE.MeshBasicMaterial({ map: steamTex, transparent: true, depthWrite: false });
@@ -741,7 +813,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     near, nearR, nearFast, helipads, carts: P.carts, lawn, lake, stations, asphaltMat, poolMat, emissive, glassMats, billboards,
     // ground under a point: rooftops count (so you can land and drive on them), water is -1
     roofAt(x, z) { let h = 0; for (const b of near(x, z)) if (!b.noRoof && Math.abs(x - b.x) < b.hw && Math.abs(z - b.z) < b.hd && b.h > h) h = b.h; return h; },
-    terrainH: terrain.height, mountains: { ...MT, trail: terrain.trail, peak: terrain.peak },
+    terrainH: terrain.height, mountains: { ...MT, trail: terrain.trail, peak: terrain.peak }, el: EL, wheel: FW,
     isWater(x, z) {
       if (x > HW0 && x < W1) return !(x > W1 - 80 && Math.abs(((z - ZA + 8) % 140 + 140) % 140 - 8) < 8);   // the Hudson, except on the piers
       if (x > W2 && x < EW1) return Math.abs(z) > 15;                                               // the East River, except on the bridge
@@ -752,6 +824,20 @@ export async function buildCity(scene, canvasTex, COARSE) {
       if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 283 * Math.min(1, far); /* Lite pulls the margin in too */ }
       waveTex.offset.set((t * .004) % 1, (t * .011) % 1);
       avMat.opacity = Math.sin(t * 3) > 0 ? 1 : .15;
+      // grass round the camera (High and Ultra), re-scattered every few metres
+      const grassOn = NTUFT > 0 && (this.detail || 1) >= 1 && cam && cam.y < 60; tufts.visible = grassOn;
+      if (grassOn && (!tuftAt || Math.hypot(cam.x - tuftAt.x, cam.z - tuftAt.z) > 7)) { tuftAt = { x: cam.x, z: cam.z }; placeTufts(cam); }
+      // the El train: up and down the line, stopping at every station
+      { const dtt = Math.min(.1, Math.max(0, t - (this._tt || t))); this._tt = t; const T = EL.train;
+        if (T.wait > 0) { T.wait -= dtt; T.v = 0; } else {
+          const next = EL.stations.filter(z => (z - T.z) * T.dir > 1).sort((a, b) => (a - b) * T.dir)[0], end = T.dir > 0 ? EL.z1 - 40 : EL.z0 + 40, stopAt = next ?? end, dist = Math.abs(stopAt - T.z);
+          T.v = Math.min(T.v + 2.2 * dtt, 20, Math.sqrt(2 * 1.8 * dist) + .3); T.z += T.v * T.dir * dtt;
+          if (dist < .6) { T.z = stopAt; T.wait = next != null ? 7 : 4; if (next == null) T.dir *= -1; }
+        }
+        T.g.position.z = T.z; }
+      // the Ferris wheel turns; its gondolas hang level
+      FW.a += .045 * Math.min(.1, Math.max(0, t - (this._tf || t))); this._tf = t; FW.g.rotation.x = FW.a;
+      for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2 + FW.a; m4.makeTranslation(FW.x, FW.y + Math.cos(a) * FW.R, FW.z + Math.sin(a) * FW.R); FW.gond.setMatrixAt(k, m4); } FW.gond.instanceMatrix.needsUpdate = true;
       if (t - screenT > .05) { screenT = t; drawScreen(screenK, t); screenK = (screenK + 1) % 6; }      // one screen redrawn per tick, each at about 3 fps
       // steam from the stacks near the camera
       const dt = Math.min(.1, Math.max(0, t - (this._t || t))); this._t = t;

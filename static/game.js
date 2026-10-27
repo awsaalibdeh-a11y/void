@@ -83,7 +83,10 @@ export function createGame(W, car, sound, life, opts = {}) {
   const RAMPS = [{ x: RAMP_X, z: LZ, yaw: 0, len: 14, h: 4.5, w: HW, main: true }];
   const W2 = 1040;
   for (const r of [{ x: W2 + 60, z: -6, yaw: 0, len: 22, h: 7 }, { x: W2 + 60, z: 6, yaw: 0, len: 22, h: 7 }, { x: -1040, z: 0, yaw: Math.PI, len: 16, h: 5 }, { x: -1040, z: 280, yaw: Math.PI, len: 16, h: 5 },
-    { x: city.lawn.x - 40, z: city.lawn.z, yaw: 0, len: 18, h: 5.5 }, { x: 1000, z: -300, yaw: -Math.PI / 2, len: 18, h: 6 }, { x: -1000, z: -500, yaw: Math.PI / 2, len: 18, h: 6 }]) RAMPS.push({ w: 4, ...r });
+    { x: city.lawn.x - 40, z: city.lawn.z, yaw: 0, len: 18, h: 5.5 }, { x: 1000, z: -300, yaw: -Math.PI / 2, len: 18, h: 6 }, { x: -1000, z: -500, yaw: Math.PI / 2, len: 18, h: 6 },
+    // the stunt park (south-west square)
+    { x: -900, z: 1345, yaw: 0, len: 10, h: 2.2 }, { x: -860, z: 1365, yaw: 0, len: 8, h: 1.6 }, { x: -760, z: 1350, yaw: Math.PI, len: 10, h: 2.4 }, { x: -880, z: 1420, yaw: 0, len: 22, h: 7.5, w: 5 },
+    { x: -680, z: 1440, yaw: Math.PI, len: 22, h: 7.5, w: 5 }, { x: -620, z: 1350, yaw: Math.PI / 2, len: 12, h: 3 }, { x: -560, z: 1460, yaw: -Math.PI / 2, len: 12, h: 3 }, { x: -800, z: 1395, yaw: Math.PI / 4, len: 9, h: 1.8 }]) RAMPS.push({ w: 4, ...r });
   {
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x1b1c22, metalness: .6, roughness: .35 }), stripe = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.6), toneMapped: false });
     for (const r of RAMPS) {
@@ -270,7 +273,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   // buildings: an axis-aligned box test against the city's spatial hash; returns the push-out normal
   function hitBox(x, z, y, r) {
     for (const b of city.nearFast(x, z, r + 2)) {
-      if (y >= b.h - .4) continue;
+      if (y >= b.h - .4 || (b.y0 != null && y + 1.6 < b.y0)) continue;
       const dx = x - b.x, dz = z - b.z, ox = b.hw + r - Math.abs(dx), oz = b.hd + r - Math.abs(dz);
       if (ox > 0 && oz > 0) return ox < oz ? { nx: Math.sign(dx), nz: 0, d: ox, b } : { nx: 0, nz: Math.sign(dz), d: oz, b };
     }
