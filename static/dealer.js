@@ -1,11 +1,12 @@
-// VOID Motors: a dealership on the boulevard with 50 cars for sale, from city runabouts to hover cars and hypercars.
+// VOID Motors: a dealership in the park with over 100 cars for sale in 14 categories, from microcars and work vans to
+// rally cars, drift cars, electric cars, lowriders, off-roaders, track cars, hover cars and hypercars.
 // Walk or drive up to the showroom (or open it from the Menu once you have been there) and buy with your cash.
 // Bought cars are yours for good: pick one in the showroom and it is delivered next to you, wherever you are.
 import * as THREE from "three";
 import { GRID } from "./city.js";
 
 const BASE = { compact: 6000, hatch: 8000, sedan: 10000, van: 9000, wagon: 11000, pickup: 14000, suv: 16000, classic: 22000, coupe: 25000, limo: 40000, muscle: 45000, sports: 60000, hover: 80000, supercar: 110000 };
-const CLASS = { void: "VOID car (flies, 330 km/h)",  compact: "City car", hatch: "Hatchback", sedan: "Sedan", van: "Van", wagon: "Estate", pickup: "Pickup", suv: "SUV", classic: "Classic", coupe: "Coupe", limo: "Limousine", muscle: "Muscle", sports: "Sports", hover: "Hover car (flies)", supercar: "Hypercar" };
+const CLASS = { void: "VOID car (flies, 330 km/h)", taxi: "Taxi", police: "Police interceptor", bus: "Bus", truck: "Box truck", compact: "City car", hatch: "Hatchback", sedan: "Sedan", van: "Van", wagon: "Estate", pickup: "Pickup", suv: "SUV", classic: "Classic", coupe: "Coupe", limo: "Limousine", muscle: "Muscle", sports: "Sports", hover: "Hover car (flies)", supercar: "Hypercar" };
 
 export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   const api = game.api, $ = id => document.getElementById(id);
@@ -17,9 +18,36 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
     for (const m of ms.slice(0, per[cls] || 3)) STOCK.push({ m, price: Math.round(BASE[cls] * (m.top / ms[ms.length - 1].top) * (.9 + m.acc * .1) / 500) * 500 });
   }
   STOCK.length = Math.min(50, STOCK.length);
+  // the categories you shop by; the regular models go into one by body type
+  const CAT_OF = { compact: "city", hatch: "city", sedan: "city", wagon: "city", van: "work", pickup: "suv", suv: "suv", classic: "classic", limo: "luxury", coupe: "sports", sports: "sports", muscle: "muscle", supercar: "hyper", hover: "flying" };
+  for (const st of STOCK) st.cat = CAT_OF[st.m.kind.id];
+  // and specials built for the showroom: same bodies, their own stance, power, grip and paint
+  const kindOf = id => (life.models.find(m => m.kind.id === id) || life.models[0]).kind;
+  const SPECIALS = [
+    ["offroad", [["suv", "Trailcat"], ["pickup", "Mudslinger"], ["suv", "Basecamp XR"], ["pickup", "Raptor Dirt"], ["van", "Overland"], ["suv", "Boulder 4x4"]], { sh: 1.18, sw: 1.06, grip: 1.15, acc: 1.05, top: 46 }, [0x6b5a44, 0x2f4a3a, 0xc8962a, 0x8a1a14, 0x3a3d44], 26000],
+    ["rally", [["hatch", "Gravel R"], ["compact", "Stage One"], ["hatch", "Group B"], ["wagon", "Rallye Avant"], ["coupe", "Special Stage"], ["hatch", "Snow Tyre"]], { sh: 1.05, grip: 1.35, acc: 1.25, top: 58 }, [0x2e5aa8, 0xf2f2f0, 0xf7c414, 0xd21f2b, 0x111111], 34000],
+    ["drift", [["coupe", "Sideways"], ["sports", "Tandem"], ["coupe", "Smoke Show"], ["muscle", "Burnout"], ["sports", "Clutch Kick"], ["coupe", "Handbrake"]], { sh: .93, grip: .72, acc: 1.4, top: 64 }, [0xff4fd8, 0x3df5ff, 0x8acb1a, 0xff6a00, 0xf2f2f0, 0x111111], 38000],
+    ["electric", [["sedan", "Volt S"], ["hatch", "Spark EV"], ["suv", "Current X"], ["supercar", "Ampere"], ["compact", "Zappy"], ["coupe", "Ion GT"], ["sedan", "Silent Line"]], { acc: 1.75, grip: 1.1, top: 62 }, [0xf2f2f0, 0x1f8a8a, 0x9fa3aa, 0x123a8c, 0x111111], 42000],
+    ["lowrider", [["classic", "Hopper"], ["classic", "Candy Cruiser"], ["limo", "Boulevard"], ["sedan", "Low & Slow"], ["classic", "Hydraulics"], ["coupe", "Sunday Drive"]], { sh: .8, sl: 1.06, grip: .95, acc: .95, top: 44 }, [0x7a2a8a, 0xd2163c, 0x1f8a8a, 0xb8862a, 0x123a8c, 0xe8a6c0], 30000],
+    ["track", [["supercar", "Circuit RS"], ["sports", "Apex Cup"], ["supercar", "Pole Position"], ["coupe", "Time Attack"], ["sports", "Slipstream"]], { sh: .92, grip: 1.3, acc: 1.55, top: 86 }, [0xf2f2f0, 0xd21f2b, 0xf7c414, 0x111111, 0x3df5ff], 95000],
+    ["tiny", [["compact", "Bubble"], ["compact", "Pocket"], ["hatch", "Smart Dot"], ["compact", "Mini Moke"], ["compact", "Thimble"]], { sl: .78, sw: .9, sh: .95, acc: 1.1, top: 38, grip: 1.1 }, [0xf2a0b4, 0x9fd3e8, 0xc0d84a, 0xf7c414, 0xe8e6e0], 4500],
+    ["work", [["taxi", "Yellow Cab"], ["police", "Interceptor"], ["bus", "City Bus"], ["truck", "Box Truck"], ["van", "Ice Cream Van"], ["pickup", "Tow Truck"]], {}, [], 18000],
+    ["luxury", [["sedan", "Ambassador LX"], ["limo", "Royale Stretch"], ["suv", "Estate Black"], ["coupe", "Grand Tourer"], ["sedan", "Chauffeur"]], { sl: 1.05, acc: 1.15, grip: 1.05, top: 64 }, [0x0a0a0c, 0xf2f2f0, 0x2b2d32, 0x0d1838, 0x4a1270], 65000],
+    ["flying", [["hover", "Skyrunner"], ["hover", "Cloud Nine"], ["hover", "Jetstream"]], { acc: 1.3, top: 76 }, [0x3df5ff, 0x9b5cff, 0xe9e9ea, 0xff4fd8], 120000],
+  ];
+  const BRAND = ["Aurex", "Kova", "Bellmont", "Zentri", "Harlow", "Vanta", "Ostrel", "Mirage", "Dunmore", "Caldera", "Nexo", "Ryden", "Solace", "Torvik"];
+  let sd = 77; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  for (const [cat, list, mod, cols, base] of SPECIALS) list.forEach(([kid, word], i) => {
+    const kind = kindOf(kid), ref = life.models.find(m => m.kind === kind && !m.rust) || life.models.find(m => m.kind === kind);
+    const m = { id: `${cat}-${i}`, name: `${BRAND[(i * 3 + cat.length) % BRAND.length]} ${word}`, kind, sl: (mod.sl || 1) * (.97 + rr() * .06), sh: (mod.sh || 1) * (.98 + rr() * .04), sw: (mod.sw || 1),
+      cols: cols.length ? cols : ref.cols, rust: 0, top: (mod.top || ref.top) * (.95 + rr() * .1), acc: (mod.acc || ref.acc) * (.95 + rr() * .1), grip: (mod.grip || ref.grip) * (.97 + rr() * .06) };
+    STOCK.push({ m, cat, price: Math.round(base * (.8 + rr() * .5) * (m.top / 60) / 500) * 500 });
+  });
+  const CATS = { flying: "✈️ Flying", hyper: "🚀 Hypercars", track: "🏁 Track", sports: "🏎️ Sports", muscle: "💪 Muscle", drift: "🌀 Drift", rally: "🌲 Rally", electric: "⚡ Electric",
+    luxury: "💎 Luxury", classic: "🕰️ Classic", lowrider: "🌴 Lowriders", offroad: "⛰️ Off-road", suv: "🚙 SUVs & pickups", city: "🏙️ Everyday", tiny: "🐞 Microcars", work: "🚕 Work & service" };
   // and the one everybody wants: your VOID car, the fastest thing in the city and the only car with wings
   const HERO = { id: "void", name: "VOID Hydra", kind: { id: "void", fly: true }, cols: [0x0a0a0c], top: 92, acc: 1.7, grip: 1.25, sl: 1, sh: 1, sw: 1 };
-  STOCK.unshift({ m: HERO, price: 250000, hero: true });
+  STOCK.unshift({ m: HERO, price: 250000, hero: true, cat: "flying" });
   const owned = store.get("void.owned") || {};          // id -> colour
   if (wallet.heroOwned()) owned.void = 0x0a0a0c;
   // the showroom: a gold column, a sign, and three cars on turntables, on a quiet crossing near the start
@@ -43,13 +71,13 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   const kmh = m => Math.round(m.top * 3.6 * .82);
   const bar = (v, max) => `<i style="--v:${Math.min(1, v / max)}"></i>`;
   function render() {
-    const list = STOCK.filter(s => filter === "all" || (filter === "owned" ? owned[s.m.id] : s.m.kind.id === filter));
+    const list = STOCK.filter(s => filter === "all" || (filter === "owned" ? owned[s.m.id] : s.cat === filter));
     const s = sel || list[0]; sel = s;
-    const cls = ["all", "owned", ...Object.keys(BASE)];
+    const cls = ["all", "owned", ...Object.keys(CATS)];
     panel.innerHTML = `<div class="deal-head"><h2>VOID Motors</h2><span class="deal-cash">$${wallet.cash().toLocaleString()}</span><button class="pill solid" id="gDealX">Close</button></div>
-      <div class="deal-filters">${cls.map(c => `<button class="${c === filter ? "on" : ""}" data-f="${c}">${c === "all" ? `All ${STOCK.length}` : c === "owned" ? `Yours (${Object.keys(owned).length})` : CLASS[c].replace(" (flies)", "")}</button>`).join("")}</div>
-      <div class="deal-body"><div class="deal-list">${list.map(x => `<button class="deal-car${x === s ? " on" : ""}${owned[x.m.id] ? " own" : ""}" data-id="${x.m.id}"><span style="background:#${new THREE.Color(owned[x.m.id] || x.m.cols[0]).getHexString()}"></span><b>${x.m.name}</b><small>${CLASS[x.m.kind.id]} · ${kmh(x.m)} km/h</small><em>${owned[x.m.id] ? "OWNED" : "$" + x.price.toLocaleString()}</em></button>`).join("") || `<p class="small">Nothing here yet.</p>`}</div>
-      ${s ? `<div class="deal-info"><h3>${s.m.name}</h3><p class="small">${CLASS[s.m.kind.id]}${s.m.kind.fly ? " · flies with F" : ""}</p>
+      <div class="deal-filters">${cls.map(c => `<button class="${c === filter ? "on" : ""}" data-f="${c}">${c === "all" ? `All ${STOCK.length}` : c === "owned" ? `Yours (${Object.keys(owned).length})` : `${CATS[c]} ${STOCK.filter(x => x.cat === c).length}`}</button>`).join("")}</div>
+      <div class="deal-body"><div class="deal-list">${list.map(x => `<button class="deal-car${x === s ? " on" : ""}${owned[x.m.id] ? " own" : ""}" data-id="${x.m.id}"><span style="background:#${new THREE.Color(owned[x.m.id] || x.m.cols[0]).getHexString()}"></span><b>${x.m.name}</b><small>${(CATS[x.cat] || "").replace(/^\S+ /, "")} · ${CLASS[x.m.kind.id] || ""} · ${kmh(x.m)} km/h</small><em>${owned[x.m.id] ? "OWNED" : "$" + x.price.toLocaleString()}</em></button>`).join("") || `<p class="small">Nothing here yet.</p>`}</div>
+      ${s ? `<div class="deal-info"><h3>${s.m.name}</h3><p class="small">${CATS[s.cat] || ""} · ${CLASS[s.m.kind.id] || ""}${s.m.kind.fly ? " · flies with F" : ""}</p>
         <div class="deal-stats"><label>Top speed<span>${kmh(s.m)} km/h</span>${bar(s.m.top, 92)}</label><label>Acceleration${bar(s.m.acc, 1.7)}</label><label>Grip${bar(s.m.grip, 1.25)}</label></div>
         <div class="deal-cols">${s.m.cols.map(c => `<button data-col="${c}" style="background:#${new THREE.Color(c).getHexString()}" class="${(owned[s.m.id] || s.m.cols[0]) === c ? "on" : ""}"></button>`).join("")}</div>
         ${owned[s.m.id] ? `<button class="pill solid deal-go" id="gDealDrive">Drive it</button>` : `<button class="pill solid deal-go" id="gDealBuy" ${wallet.cash() < s.price ? "disabled" : ""}>Buy for $${s.price.toLocaleString()}</button>${wallet.cash() < s.price ? `<p class="small">You need $${(s.price - wallet.cash()).toLocaleString()} more. Points from driving, races and contracts are cash.</p>` : ""}`}

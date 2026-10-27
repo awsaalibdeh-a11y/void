@@ -43,7 +43,11 @@ export async function buildCity(scene, canvasTex, COARSE) {
   // ---- textures ----
   const noise = (g, w, h, n, a) => { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(${rnd() > .5 ? 255 : 0},${rnd() > .5 ? 255 : 0},${rnd() > .5 ? 255 : 0},${rnd() * a})`; g.fillRect(rnd() * w, rnd() * h, 2, 2); } };
   const grassTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#3f6b2e"; g.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { g.fillStyle = `rgba(${40 + rnd() * 60 | 0},${90 + rnd() * 70 | 0},${30 + rnd() * 30 | 0},${.25 + rnd() * .5})`; g.fillRect(rnd() * w, rnd() * h, 1, 2 + rnd() * 3); } }, [1, 1]);
-  const asphaltTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#26272b"; g.fillRect(0, 0, w, h); for (let i = 0; i < 6000; i++) { const c = 30 + rnd() * 40 | 0; g.fillStyle = `rgba(${c},${c},${c + 4},${rnd() * .6})`; g.fillRect(rnd() * w, rnd() * h, 1, 1); } }, [1, 1]);
+  const asphaltTex = canvasTex(512, 512, (g, w, h) => {                        // 5 m of road: dark binder, light and dark stones, a few old patches
+    g.fillStyle = "#28292d"; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 6; i++) { g.fillStyle = `rgba(${rnd() < .5 ? "0,0,0" : "70,70,74"},${.06 + rnd() * .08})`; g.fillRect(rnd() * w, rnd() * h, 60 + rnd() * 160, 40 + rnd() * 120); }
+    for (let i = 0; i < 26000; i++) { const c = 20 + rnd() * 70 | 0; g.fillStyle = `rgba(${c},${c},${c + 4},${.3 + rnd() * .6})`; const sz = rnd() < .15 ? 2 : 1; g.fillRect(rnd() * w | 0, rnd() * h | 0, sz, sz); }
+  }, [1, 1]);
   const walkTex = canvasTex(128, 128, (g, w, h) => { g.fillStyle = "#9c9a95"; g.fillRect(0, 0, w, h); noise(g, w, h, 900, .06); g.fillStyle = "rgba(60,60,60,.35)"; g.fillRect(0, 0, w, 2); g.fillRect(0, 0, 2, h); g.fillRect(0, h / 2, w, 1); g.fillRect(w / 2, 0, 1, h); }, [1, 1]);
   const GLASS = [["#1b3248", "#4b7898"], ["#0d1218", "#2a3440"], ["#3a2c1c", "#8a6a44"], ["#16302c", "#4f8a80"]];
   const glassTex = (st, lit) => canvasTex(256, 256, (g, w, h) => {           // 16 m x 16 m: 4 bays x 4 floors
@@ -131,18 +135,39 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const mat = (o) => new THREE.MeshStandardMaterial(o);
   const lit = (m, k = 1) => { m.userData.glow = k; emissive.push(m); return m; };
   const NS = new THREE.Vector2(1, 1);
-  const glassM = [0, 1, 2, 3].map(s => { const m = lit(mat({ map: glassTex(s, false), emissive: 0xffffff, emissiveMap: glassTex(s, true), emissiveIntensity: .9, metalness: .9, roughness: .1, envMapIntensity: 1.6, normalMap: glassN, normalScale: NS })); glassMats.push(m); return m; });
-  const stoneM = lit(mat({ map: stoneTex(false), emissive: 0xffffff, emissiveMap: stoneTex(true), emissiveIntensity: .75, roughness: .85, normalMap: stoneN, normalScale: NS }));
-  const brickM = BRICK.map((c, i) => lit(mat({ map: brickTex(c, false, false), emissive: 0xffffff, emissiveMap: brickTex(c, true, false), emissiveIntensity: .75, roughness: .9, normalMap: brickN, normalScale: NS })));
-  // glowing crown bands on the glass towers (cyan, violet, warm white, gold)
-  const crownM = [0x3df5ff, 0xb38cff, 0xfff1d6, 0xffc23d].map(c => { const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(2.2), toneMapped: false }); emissive.push(m); return m; });
-  const shopM = AWN.map((_, k) => lit(mat({ map: shopTex(k, false), emissive: 0xffffff, emissiveMap: shopTex(k, true), emissiveIntensity: 1, roughness: .5, metalness: .1 }), 1.1));
+  // a texture atlas: several facades side by side; each wall says which one it uses (aTile) and the shader wraps inside it.
+  // One material per family means one draw per city tile instead of one per facade (that was ~80 draw calls a frame).
+  const atlasOf = (texs, srgb = true) => {
+    const w = texs[0].image.width, h = texs[0].image.height, c = document.createElement("canvas"); c.width = w * texs.length; c.height = h;
+    const g = c.getContext("2d"); texs.forEach((t, i) => { g.drawImage(t.image, i * w, 0); t.dispose(); });
+    const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+  };
+  const atlasify = (m, n, normalToo) => {
+    m.onBeforeCompile = sh => {
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float aTile; varying float vTile;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvTile = aTile;");
+      const fn = `varying float vTile;\nvec4 atlas(sampler2D t, vec2 uv) { vec2 k = vec2(1.0 / ${n}.0, 1.0); return textureGrad(t, vec2((clamp(fract(uv.x), .004, .996) + vTile) / ${n}.0, uv.y), dFdx(uv) * k, dFdy(uv) * k); }\n`;
+      let f = sh.fragmentShader.replace("void main() {", fn + "void main() {")
+        .replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace("texture2D( map, vMapUv )", "atlas( map, vMapUv )"))
+        .replace("#include <emissivemap_fragment>", THREE.ShaderChunk.emissivemap_fragment.replace("texture2D( emissiveMap, vEmissiveMapUv )", "atlas( emissiveMap, vEmissiveMapUv )"));
+      if (normalToo) f = f.replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.split("texture2D( normalMap, vNormalMapUv )").join("atlas( normalMap, vNormalMapUv )"));
+      sh.fragmentShader = f;
+    };
+    m.customProgramCacheKey = () => "atlas" + n + (normalToo ? "n" : ""); return m;
+  };
+  const glassA = atlasify(lit(mat({ map: atlasOf([0, 1, 2, 3].map(k => glassTex(k, false))), emissive: 0xffffff, emissiveMap: atlasOf([0, 1, 2, 3].map(k => glassTex(k, true))), emissiveIntensity: .9, metalness: .9, roughness: .1, envMapIntensity: 1.6, normalMap: glassN, normalScale: NS })), 4, false);
+  glassMats.push(glassA);
+  // brick in five colours plus the limestone, in one atlas (tile 5 is stone)
+  const wallA = atlasify(lit(mat({ map: atlasOf([...BRICK.map(c => brickTex(c, false, false)), stoneTex(false)]), emissive: 0xffffff, emissiveMap: atlasOf([...BRICK.map(c => brickTex(c, true, false)), stoneTex(true)]),
+    emissiveIntensity: .75, roughness: .88, normalMap: (() => { const ts = [...BRICK.map(() => brickN.clone()), stoneN]; return atlasOf(ts.map(t => ({ image: t.image, dispose() { } })), false); })(), normalScale: NS })), 6, true);
+  const STONE = 5;
+  const crownA = (() => { const cols = ["#3df5ff", "#b38cff", "#fff1d6", "#ffc23d"]; const t = canvasTex(4, 1, g => cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i, 0, 1, 1); })); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+    const m = atlasify(new THREE.MeshBasicMaterial({ map: t, color: new THREE.Color(2.2, 2.2, 2.2), toneMapped: false }), 4, false); emissive.push(m); return m; })();
+  const shopA = atlasify(lit(mat({ map: atlasOf(AWN.map((_, k) => shopTex(k, false))), emissive: 0xffffff, emissiveMap: atlasOf(AWN.map((_, k) => shopTex(k, true))), emissiveIntensity: 1, roughness: .5, metalness: .1 }), 1.1), AWN.length, false);
   const roofM = mat({ color: 0x3b3c40, roughness: .9 }), trimM = mat({ color: 0xd9d2c4, roughness: .7 }), darkM = mat({ color: 0x1c1d21, roughness: .6, metalness: .4 });
-  for (const m of [...glassM, stoneM, ...brickM, ...shopM]) for (const t of [m.map, m.emissiveMap]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
 
   // ---- geometry buckets: every wall of a kind goes into one merged mesh ----
   const B = new Map();
-  const bucket = (m, tw, th) => { if (!B.has(m)) B.set(m, { m, tw, th, pos: [], uv: [] }); return B.get(m); };
+  const bucket = (m, tw, th, tile = 0) => { const k = m.uuid + ":" + tile + ":" + tw + ":" + th; if (!B.has(k)) B.set(k, { m, tw, th, tile, pos: [], uv: [] }); return B.get(k); };
   const quad = (o, x1, z1, x2, z2, y0, y1) => {
     const L = Math.hypot(x2 - x1, z2 - z1), u1 = L / o.tw, v0 = y0 / o.th, v1 = y1 / o.th;
     o.pos.push(x1, y0, z1, x2, y0, z2, x2, y1, z2, x1, y0, z1, x2, y1, z2, x1, y1, z1);
@@ -151,7 +176,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const top = (o, x0, x1, z0, z1, y) => { o.pos.push(x0, y, z0, x0, y, z1, x1, y, z1, x0, y, z0, x1, y, z1, x1, y, z0); o.uv.push(0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0); };
   // walls go round counter-clockwise seen from above so they face out
   const walls = (o, x0, x1, z0, z1, y0, y1) => { quad(o, x0, z1, x1, z1, y0, y1); quad(o, x1, z1, x1, z0, y0, y1); quad(o, x1, z0, x0, z0, y0, y1); quad(o, x0, z0, x0, z1, y0, y1); };
-  const roofB = bucket(roofM, 8, 8), trimB = bucket(trimM, 4, 4), darkB = bucket(darkM, 4, 4), crownB = crownM.map(m => bucket(m, 4, 4));
+  const roofB = bucket(roofM, 8, 8), trimB = bucket(trimM, 4, 4), darkB = bucket(darkM, 4, 4), crownB = [0, 1, 2, 3].map(k => bucket(crownA, 4, 4, k));
   const box = (o, x0, x1, z0, z1, y0, y1, roof = roofB) => { walls(o, x0, x1, z0, z1, y0, y1); top(roof, x0, x1, z0, z1, y1); };
 
   // collision boxes, in a spatial hash so lookups stay quick with thousands of buildings
@@ -183,9 +208,11 @@ export async function buildCity(scene, canvasTex, COARSE) {
     const g = new THREE.PlaneGeometry(b - a, 40000).rotateX(-Math.PI / 2), uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (b - a) / 10, uv.getY(k) * 4000);
     const m = new THREE.Mesh(g, grassMat); m.position.set((a + b) / 2, -.12, 0); scene.add(m);
   }
-  const asphaltMat = mat({ map: asphaltTex, roughness: .82, envMapIntensity: .35 });
+  const asphaltN = normalTex(256, 256, (g, w, h) => { g.fillStyle = "#808080"; g.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { const v = 90 + rnd() * 120 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(rnd() * w | 0, rnd() * h | 0, 1 + (rnd() < .2), 1 + (rnd() < .2)); } }, 1.6);
+  asphaltN.repeat.copy(asphaltTex.repeat);
+  const asphaltMat = mat({ map: asphaltTex, roughness: .82, envMapIntensity: .35, normalMap: asphaltN, normalScale: new THREE.Vector2(.6, .6) });
   const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(XB - XA + 40, ZB - ZA + 40).rotateX(-Math.PI / 2), asphaltMat);
-  asphaltTex.repeat.set((XB - XA) / 8, (ZB - ZA) / 8); asphalt.position.set((XA + XB) / 2, 0, (ZA + ZB) / 2); scene.add(asphalt);
+  asphaltTex.repeat.set((XB - XA) / 5, (ZB - ZA) / 5); asphaltN.repeat.copy(asphaltTex.repeat); asphalt.position.set((XA + XB) / 2, 0, (ZA + ZB) / 2); scene.add(asphalt);
   const walkG = [], parkG = [];
   const slab = (list, x0, x1, z0, z1, y) => list.push(new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2).translate((x0 + x1) / 2, y, (z0 + z1) / 2));
 
@@ -247,7 +274,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   };
   // a storefront band round the ground floor (on the sides that face a road), with a sign over each shop
   const shops = (x0, x1, z0, z1, faces) => {
-    const o = bucket(pick(shopM), 8, 4.5);
+    const o = bucket(shopA, 8, 4.5, Math.floor(rnd() * AWN.length));
     for (const f of faces) {
       const [ax, az, bx, bz, nx, nz] = f === "s" ? [x0, z1, x1, z1, 0, 1] : f === "n" ? [x1, z0, x0, z0, 0, -1] : f === "e" ? [x1, z1, x1, z0, 1, 0] : [x0, z0, x0, z1, -1, 0];
       quad(o, ax, az, bx, bz, 0, 4.5);
@@ -260,7 +287,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     }
   };
   const tower = (x0, x1, z0, z1, H, style, film) => {
-    const glass = style < 4, o = glass ? bucket(glassM[style], 16, 16) : bucket(stoneM, 12, 12);
+    const glass = style < 4, o = glass ? bucket(glassA, 16, 16, style) : bucket(wallA, 12, 12, STONE);
     let ax0 = x0, ax1 = x1, az0 = z0, az1 = z1, y = 0;
     const tiers = H > 120 ? 1 + Math.floor(rnd() * 3) : 1;
     shops(x0, x1, z0, z1, ["s", "n", "e", "w"]); const base = 4.5;
@@ -287,7 +314,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   };
   const spires = [];
   const walkup = (x0, x1, z0, z1, floors, faces) => {                        // brick, shops below, a water tower on top
-    const o = bucket(pick(brickM), 12, 9.6), h = 4.5 + floors * 3.2;
+    const o = bucket(wallA, 12, 9.6, Math.floor(rnd() * BRICK.length)), h = 4.5 + floors * 3.2;
     shops(x0, x1, z0, z1, faces);
     const other = ["s", "n", "e", "w"].filter(f => !faces.includes(f));
     for (const f of other) { const [ax, az, bx, bz] = f === "s" ? [x0, z1, x1, z1] : f === "n" ? [x1, z0, x0, z0] : f === "e" ? [x1, z1, x1, z0] : [x0, z0, x0, z1]; quad(o, ax, az, bx, bz, 0, 4.5); }
@@ -307,7 +334,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     while (x < x1 - 5) {
       const w = Math.min(x1 - x, range(6, 8.5)), d = range(13, 16), h = 3.2 * (3 + Math.floor(rnd() * 2)) + 1.2;
       const za = side > 0 ? zEdge - d : zEdge, zb = side > 0 ? zEdge : zEdge + d;
-      const o = bucket(pick(brickM), 12, 9.6);
+      const o = bucket(wallA, 12, 9.6, Math.floor(rnd() * BRICK.length));
       walls(o, x, x + w, za, zb, 0, h); top(roofB, x, x + w, za, zb, h); walls(trimB, x - .2, x + w + .2, za - .2, zb + .2, h - .6, h + .3);
       solid(x, x + w, za, zb, h + .3);
       P.stoops.push([x + w / 2, side > 0 ? zEdge + 1.1 : zEdge - 1.1, side]);
@@ -402,7 +429,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   {   // the bridge: a deck at road level, two stone towers, cables
     const deck = new THREE.Mesh(new THREE.BoxGeometry(W2 + 700 - W2 + 120, 1.6, 30).translate((W2 + W2 + 700) / 2, -.75, 0), mat({ color: 0x55565c, roughness: .8 }));
     scene.add(deck);
-    for (const tx of [W2 + 170, W2 + 530]) for (const s of [-1, 1]) { box(bucket(stoneM, 12, 12), tx - 6, tx + 6, s * 15 - 3, s * 15 + 3, 0, 110); solid(tx - 6, tx + 6, s * 15 - 3, s * 15 + 3, 110); }
+    for (const tx of [W2 + 170, W2 + 530]) for (const s of [-1, 1]) { box(bucket(wallA, 12, 12, STONE), tx - 6, tx + 6, s * 15 - 3, s * 15 + 3, 0, 110); solid(tx - 6, tx + 6, s * 15 - 3, s * 15 + 3, 110); }
     const cab = [];
     for (const s of [-1, 1]) { const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(W2 + 170, 108, s * 15), new THREE.Vector3(W2 + 350, 12, s * 15), new THREE.Vector3(W2 + 530, 108, s * 15)); cab.push(new THREE.TubeGeometry(curve, 60, .6, 6)); for (let x = W2 + 190; x < W2 + 520; x += 14) { const y = curve.getPoint((x - W2 - 170) / 360).y; cab.push(new THREE.CylinderGeometry(.12, .12, y, 4).translate(x, y / 2, s * 15)); } }
     scene.add(new THREE.Mesh(mergeGeometries(cab), darkM));
@@ -455,17 +482,18 @@ export async function buildCity(scene, canvasTex, COARSE) {
 
   // ---- finish: one mesh per material per 320 m tile, so whatever is off screen (or out of the shadow box) is skipped ----
   const TILE = 640, tileOf = (x, z) => Math.floor(x / TILE) * 1000 + Math.floor(z / TILE);
-  for (const o of B.values()) {
-    if (!o.pos.length) continue;
+  const byMat = new Map();
+  for (const o of B.values()) { if (!o.pos.length) continue; if (!byMat.has(o.m)) byMat.set(o.m, []); byMat.get(o.m).push(o); }
+  for (const [mtl, list] of byMat) {
     const tiles = new Map();
-    for (let t = 0, u = 0; t < o.pos.length; t += 9, u += 6) {
+    for (const o of list) for (let t = 0, u = 0; t < o.pos.length; t += 9, u += 6) {
       const k = tileOf((o.pos[t] + o.pos[t + 3] + o.pos[t + 6]) / 3, (o.pos[t + 2] + o.pos[t + 5] + o.pos[t + 8]) / 3);
-      let a = tiles.get(k); if (!a) tiles.set(k, a = { pos: [], uv: [] });
-      for (let i = 0; i < 9; i++) a.pos.push(o.pos[t + i]); for (let i = 0; i < 6; i++) a.uv.push(o.uv[u + i]);
+      let a = tiles.get(k); if (!a) tiles.set(k, a = { pos: [], uv: [], tile: [] });
+      for (let i = 0; i < 9; i++) a.pos.push(o.pos[t + i]); for (let i = 0; i < 6; i++) a.uv.push(o.uv[u + i]); a.tile.push(o.tile, o.tile, o.tile);
     }
     for (const a of tiles.values()) {
-      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(a.pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(a.uv, 2)); g.computeVertexNormals();
-      const m = new THREE.Mesh(g, o.m); m.userData.solid = true; scene.add(m);
+      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(a.pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(a.uv, 2)); g.setAttribute("aTile", new THREE.Float32BufferAttribute(a.tile, 1)); g.computeVertexNormals();
+      const m = new THREE.Mesh(g, mtl); m.userData.solid = true; scene.add(m);
     }
   }
   if (spires.length) scene.add(new THREE.Mesh(mergeGeometries(spires.map(g => g.toNonIndexed())), mat({ color: 0xb8bcc4, metalness: .9, roughness: .25 })));
@@ -481,7 +509,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   // small props go in 200 m tiles and are only drawn near the camera (trees a little further)
   const propTiles = [];
   const instT = (geo, material, list, place, colorOf, far = 330) => {
-    const groups = new Map(), PT = 200;
+    const groups = new Map(), PT = 400;
     list.forEach((it, i) => { place(it, i); const e = m4.elements, k = Math.floor(e[12] / PT) * 1000 + Math.floor(e[14] / PT); let gr = groups.get(k); if (!gr) groups.set(k, gr = []); gr.push([m4.clone(), colorOf ? colorOf(it, i) : null]); });
     for (const [k, arr] of groups) { const mesh = new THREE.InstancedMesh(geo, material, arr.length); arr.forEach(([m, c], j) => { mesh.setMatrixAt(j, m); if (c) mesh.setColorAt(j, c); }); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); scene.add(mesh);
       propTiles.push({ mesh, x: (Math.floor(k / 1000) + .5) * PT, z: (((k % 1000) + 1000) % 1000 + .5) * PT, far }); }
@@ -534,7 +562,13 @@ export async function buildCity(scene, canvasTex, COARSE) {
     P.steam.forEach(([x, z]) => solid(x - .5, x + .5, z - .5, z + .5, 2.4));
   }
   const steamTex = canvasTex(64, 64, (g, w) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, "rgba(255,255,255,.55)"); r.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
-  const puffs = Array.from({ length: COARSE ? 40 : 90 }, () => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: steamTex, transparent: true, depthWrite: false, opacity: 0 })); sp.visible = false; scene.add(sp); return { sp, life: 0, vx: 0, vz: 0 }; });
+  const NPUFF = COARSE ? 40 : 90, steamMat = new THREE.MeshBasicMaterial({ map: steamTex, transparent: true, depthWrite: false });
+  steamMat.onBeforeCompile = sh => {                       // each puff fades on its own: its instance colour's red is its opacity
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying float vFade;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvFade = instanceColor.r;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vFade;").replace("#include <color_fragment>", "diffuseColor.a *= vFade;");
+  };
+  const steamMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), steamMat, NPUFF); steamMesh.frustumCulled = false; steamMesh.count = 0; steamMesh.setColorAt(0, new THREE.Color(1, 1, 1)); scene.add(steamMesh);
+  const puffs = Array.from({ length: NPUFF }, () => ({ p: new THREE.Vector3(), life: 0, vx: 0, vz: 0 })), fadeC = new THREE.Color(), puffS = new THREE.Vector3();
   let puffI = 0, puffT = 0;
   // subway entrances: green railings, two green globes, a dark stair
   const globe = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dff6a).multiplyScalar(2), toneMapped: false }); globe.userData.glow = 2; globe.userData.base = new THREE.Color(0x3dff6a); emissive.push(globe);
@@ -564,7 +598,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   for (const [m, list] of food) scene.add(new THREE.Mesh(mergeGeometries(list.map(g => { g.deleteAttribute("uv"); return g; })), m));
   // helipads and red aviation lights
   const padTex = canvasTex(256, 256, (g, w) => { g.fillStyle = "#2a2c30"; g.fillRect(0, 0, w, w); g.strokeStyle = "#ffd23d"; g.lineWidth = 10; g.beginPath(); g.arc(128, 128, 110, 0, 7); g.stroke(); g.fillStyle = "#fff"; g.font = "900 150px sans-serif"; g.textAlign = "center"; g.fillText("H", 128, 180); });
-  for (const h of P.helipads) { const m = new THREE.Mesh(new THREE.CircleGeometry(h.r, 32).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: padTex, roughness: .8 })); m.position.set(h.x, h.y + .05, h.z); scene.add(m); }
+  if (P.helipads.length) scene.add(new THREE.Mesh(mergeGeometries(P.helipads.map(h => new THREE.CircleGeometry(h.r, 32).rotateX(-Math.PI / 2).translate(h.x, h.y + .05, h.z))), new THREE.MeshStandardMaterial({ map: padTex, roughness: .8 })));
   const avMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2020).multiplyScalar(3), toneMapped: false, transparent: true });
   inst(new THREE.SphereGeometry(.6, 8, 6), avMat, P.aviation, ([x, y, z]) => at(x, y, z));
 
@@ -609,13 +643,18 @@ export async function buildCity(scene, canvasTex, COARSE) {
     },
     update(t, cam) {
       setLights(t);
-      if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 141; }
+      if (cam && (++cullN % 10) === 0) { const far = (1 + Math.max(0, cam.y - 20) / 60) * (this.detail || 1); for (const pt of propTiles) pt.mesh.visible = Math.hypot(pt.x - cam.x, pt.z - cam.z) < pt.far * far + 283; }
       waveTex.offset.set((t * .004) % 1, (t * .011) % 1);
       avMat.opacity = Math.sin(t * 3) > 0 ? 1 : .15;
       // steam from the stacks near the camera
       const dt = Math.min(.1, Math.max(0, t - (this._t || t))); this._t = t;
-      if (cam && (puffT += dt) > .09) { puffT = 0; for (const [x, z] of P.steam) if (Math.abs(x - cam.x) < 160 && Math.abs(z - cam.z) < 160) { const pf = puffs[puffI++ % puffs.length]; pf.life = 1; pf.sp.position.set(x + (Math.random() - .5) * .3, 2.5, z + (Math.random() - .5) * .3); pf.vx = (Math.random() - .5) * .6; pf.vz = (Math.random() - .5) * .6; pf.sp.visible = true; } }
-      for (const pf of puffs) if (pf.life > 0) { pf.life -= dt * .32; pf.sp.position.x += pf.vx * dt; pf.sp.position.z += pf.vz * dt; pf.sp.position.y += dt * 1.6; const k = 1 - pf.life; pf.sp.scale.setScalar(1 + k * 4.5); pf.sp.material.opacity = Math.max(0, pf.life) * .6; if (pf.life <= 0) pf.sp.visible = false; }
+      if (cam && (puffT += dt) > .14) { puffT = 0; for (const [x, z] of P.steam) if (Math.abs(x - cam.x) < 150 && Math.abs(z - cam.z) < 150) { const pf = puffs[puffI++ % puffs.length]; pf.life = 1; pf.p.set(x + (Math.random() - .5) * .3, 2.5, z + (Math.random() - .5) * .3); pf.vx = (Math.random() - .5) * .6; pf.vz = (Math.random() - .5) * .6; } }
+      let pn = 0;
+      if (cam && this.camQ) for (const pf of puffs) if (pf.life > 0) {
+        pf.life -= dt * .3; pf.p.x += pf.vx * dt; pf.p.z += pf.vz * dt; pf.p.y += dt * 1.6; if (pf.life <= 0) continue;
+        const k = 1 - pf.life; m4.compose(pf.p, this.camQ, puffS.setScalar(1.2 + k * 5)); steamMesh.setMatrixAt(pn, m4); steamMesh.setColorAt(pn++, fadeC.setRGB(pf.life * .6, 1, 1));
+      }
+      steamMesh.count = pn; steamMesh.visible = pn > 0; steamMesh.instanceMatrix.needsUpdate = true; if (steamMesh.instanceColor) steamMesh.instanceColor.needsUpdate = true;
       billboards.forEach((b, k) => { b.material.color.setScalar(1.15 + .25 * Math.sin(t * 2 + k)); });
     },
   };

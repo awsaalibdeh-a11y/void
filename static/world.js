@@ -72,13 +72,14 @@ export async function createWorld(canvas, COARSE) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .42, .35, .9);
   composer.addPass(bloom); composer.addPass(new OutputPass());
   const grade = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, time: { value: 0 }, blur: { value: 0 }, vig: { value: .32 }, grain: { value: .035 }, sat: { value: 1.08 }, contrast: { value: 1.06 } },
+    uniforms: { tDiffuse: { value: null }, time: { value: 0 }, blur: { value: 0 }, vig: { value: .32 }, grain: { value: .012 }, sat: { value: 1.08 }, contrast: { value: 1.06 }, sharp: { value: .25 } },
     vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-    fragmentShader: `uniform sampler2D tDiffuse; uniform float time, vig, grain, sat, contrast, blur; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float time, vig, grain, sat, contrast, blur, sharp; varying vec2 vUv;
       float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main(){ vec4 c = texture2D(tDiffuse, vUv);
         if (blur > .001) { vec2 d = vUv - .5; vec4 acc = c; for (int i = 1; i < 7; i++) acc += texture2D(tDiffuse, vUv - d * blur * float(i) * .011); c = acc / 7.; }   // speed blur toward the edges
         vec3 col = c.rgb;
+        if (sharp > .001 && blur < .001) { vec2 px = 1. / vec2(textureSize(tDiffuse, 0)); vec3 n = texture2D(tDiffuse, vUv + vec2(px.x, 0.)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.)).rgb + texture2D(tDiffuse, vUv + vec2(0., px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0., px.y)).rgb; col = max(col + (col - n * .25) * sharp, 0.); }   // unsharp mask: crisper edges and road texture
         float l = dot(col, vec3(.2126, .7152, .0722)); col = mix(vec3(l), col, sat); col = (col - .5) * contrast + .5;
         vec2 d = vUv - .5; col *= 1. - vig * smoothstep(.25, .85, dot(d, d) * 2.2);
         col += (h(vUv * 1000. + time) - .5) * grain;

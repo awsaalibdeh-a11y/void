@@ -285,6 +285,7 @@ export function buildCar(model = "hydra") {
     if (k === "gt") { part(new THREE.BoxGeometry(.45, .035, w + .25), carbon, x - .05, y0 + .42, 0, .1); for (const z of [-1, 1]) { part(new THREE.BoxGeometry(.08, .42, .03), carbon, x, y0 + .21, z * w * .3); part(new THREE.BoxGeometry(.5, .2, .02), trim, x - .05, y0 + .42, z * (w + .25) / 2); } }
     if (k === "swan") { part(new THREE.BoxGeometry(.5, .04, w + .3), carbon, x - .1, y0 + .55, 0, .14); for (const z of [-1, 1]) { part(new THREE.BoxGeometry(.06, .6, .03), carbon, x + .05, y0 + .3, z * w * .28, -.35); part(new THREE.BoxGeometry(.55, .24, .02), trim, x - .1, y0 + .55, z * (w + .3) / 2); } }
     if (k === "rally") { part(new THREE.BoxGeometry(.4, .04, w * .95), paint, x + .25, topAt(.12) + .12, 0, .05); for (const z of [-1, 1]) part(new THREE.BoxGeometry(.32, .14, .02), paint, x + .25, topAt(.12) + .06, z * w * .46); }
+    mergeStatic(spoilers, new Set());
   }
   const liveryMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: .3, clearcoat: 1, side: THREE.DoubleSide, clippingPlanes: clip, polygonOffset: true, polygonOffsetFactor: -2 });
   const livery = new THREE.Group(); solid.add(livery);
@@ -310,6 +311,7 @@ export function buildCar(model = "hydra") {
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
       for (const side of [0, LNV / 2]) { const [x, y, z] = pt(Math.round(LNU * .5), side); const d = new THREE.Mesh(new THREE.CircleGeometry(.2, 24), new THREE.MeshBasicMaterial({ map: t, transparent: true, clippingPlanes: clip })); d.position.set(x, y + .02, z + Math.sign(z) * .012); d.rotation.y = z > 0 ? 0 : Math.PI; livery.add(d); }
     }
+    mergeStatic(livery, new Set());
   }
   const flameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x4fa8ff).multiplyScalar(3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const flames = exhausts.map(([x, y, z]) => { const f = new THREE.Mesh(new THREE.ConeGeometry(.07, 1, 12, 1, true).rotateZ(Math.PI / 2).translate(-.5, 0, 0), flameMat); f.position.set(x, y, z); f.visible = false; solid.add(f); return f; });
@@ -352,7 +354,7 @@ export function buildCar(model = "hydra") {
     // power 0..1 is flame size, angle 0 = pointing down, 1 = pointing back, deploy 0..1 brings them out
     setThrust(power, angle, deploy, time) {
       for (const t of thrusters) {
-        t.pivot.scale.setScalar(Math.max(.0001, deploy));
+        t.pivot.scale.setScalar(Math.max(.0001, deploy)); t.pivot.visible = deploy > .005;
         t.pivot.rotation.z = -angle * Math.PI / 2;
         const f = power * (.82 + .18 * Math.sin(time * 41 + t.seed) * Math.sin(time * 23 + t.seed * 3));
         t.fo.scale.set(1 + power * .3, Math.max(.001, f * 2.6), 1 + power * .3);

@@ -462,7 +462,7 @@ function frameLoop(fixed) {
     if (perf.t > 1.5) {
       const avg = perf.t / perf.n, was = perf.pr; fpsNow = Math.round(1 / avg); const fe = document.getElementById("gFps"); if (fe) fe.textContent = fpsNow + " fps";
       if (avg > 1 / 25 && mode === "play" && SET.q !== "low") perf.down = 3;          // very slow: skip straight to a lower level
-      if (avg > 1 / 45 && perf.pr > .6 && perf.down < 3) perf.pr = Math.max(.6, perf.pr - .12);
+      if (avg > 1 / 45 && perf.pr > .75 && perf.down < 3) perf.pr = Math.max(.75, perf.pr - .12);          // below 75% everything turns to mush: drop a quality level instead
       else if (avg > 1 / 40 && mode === "play" && ++perf.down >= 3 && SET.q !== "low") {      // still slow at the lowest resolution: drop a quality level
         perf.down = 0; SET.q = { ultra: "high", high: "medium", medium: "low" }[SET.q]; perf.pr = W.QUALITY[SET.q].pr; applySettings(false); toast(`Graphics set to ${SET.q} to keep it smooth`);
       }
@@ -509,7 +509,7 @@ function frameLoop(fixed) {
       if (d < 3.4 && d > .01 && Math.abs(st.y - at.y) < 2) { st.x += dx / d * (3.4 - d) * .5; st.z += dz / d * (3.4 - d) * .5; st.vel.multiplyScalar(.9); }
     }
   } else { for (const r of remotes.values()) r.root.visible = false; net.tick(dt, null); }     // the host keeps relaying from the menus
-  W.city.update(time, camera.position);
+  W.city.camQ = camera.quaternion; W.city.update(time, camera.position);
   W.follow(S.pos);
   if (mode !== "watch") $("fade").style.opacity = "";
 
@@ -526,7 +526,7 @@ function frameLoop(fixed) {
   if (veh === "boat" && S.speed > 12 && Math.random() < .6) { const back = new THREE.Vector3(-3.6, .1, (Math.random() - .5) * 2).applyQuaternion(S.quat).add(S.pos); const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(back); pf.life = 1; pf.s.visible = true; pf.grow = .5; pf.s.scale.setScalar(.5); pf.s.material.color.set(0xf4fbff); pf.v.set((Math.random() - .5) * 2, .6, (Math.random() - .5) * 2); }
   const night = W.timeOfDay !== "day";
   heads.intensity = night && veh === "car" ? (W.timeOfDay === "night" ? 260 : 120) : 0;
-  W.sky.position.copy(camera.position); W.grade.uniforms.time.value = time % 100;
+  W.sky.position.copy(camera.position); W.grade.uniforms.time.value = time % 100; W.grade.uniforms.sharp.value = renderer.getPixelRatio() < (devicePixelRatio || 1) * .95 ? .45 : .22;
   W.grade.uniforms.blur.value = mode === "play" && motionOK() ? Math.max(0, Math.min(1, (S.speed - 160) / 220)) * .9 + (S.nitro || 0) * .5 : 0;
   atmos.update(dt, time, S, mode === "play" ? game.state : null);
   W.city.poolMat.opacity = W.timeOfDay === "night" ? 1 : W.timeOfDay === "sunset" ? .45 : 0; W.city.poolMat.visible = W.timeOfDay !== "day";
