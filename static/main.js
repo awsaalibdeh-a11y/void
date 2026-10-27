@@ -106,6 +106,7 @@ menuEl.addEventListener("click", e => { const t = e.target.closest(".tile"); if 
 menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.setVehicle(b.dataset.veh));
 document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
 function applySettings(save = true) {
+  if (typeof life !== "undefined" && life.setVoidDetail) life.setVoidDetail(SET.q !== "lite");          // Lite: simple flying VOID cars
   document.body.classList.toggle("big-ui", SET.text === "large");
   for (const seg of menuEl.querySelectorAll(".seg[data-set]")) for (const b of seg.children) b.classList.toggle("on", SET[seg.dataset.set] === b.dataset.v);
   const weak = /Intel|UHD|Iris|Radeon\(TM\) Graphics|Vega|SwiftShader|llvmpipe|Basic Render/i.test(GPU);
@@ -664,7 +665,7 @@ try {
     const c = m.color ? (m.color.getHexString() === paintHex ? new THREE.Color(1, 1, 1) : m.color.clone()) : new THREE.Color(.5, .5, .5), n = g.attributes.position.count, a = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } g.setAttribute("color", new THREE.BufferAttribute(a, 3)); parts.push(g);
   });
-  if (parts.length) { const geo = mergeGeometries(parts); geo.translate(0, -.02, 0); life.setVoidGeo(geo); window.__voidTris = geo.attributes.position.count / 3; }
+  if (parts.length) { const geo = mergeGeometries(parts); geo.translate(0, -.02, 0); life.setVoidGeo(geo); life.setVoidDetail(W.quality !== "lite"); window.__voidTris = geo.attributes.position.count / 3; }
 } catch (e) { console.warn("VOID flyers keep the simple shape", e); }
 setLoad(95);
 renderer.compile(scene, camera);

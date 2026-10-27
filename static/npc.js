@@ -405,7 +405,9 @@ export function createLife(scene, roads, walkways, COARSE) {
     get detail() { return api.detail; }, set detail(v) { api.detail = v; },
     cars, people, meshes, smash, near, models: CAR_MODELS,
     set onHit(f) { api.onHit = f; }, set onCrash(f) { api.onCrash = f; },
-    setVoidGeo(geo) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M) return; geo.setAttribute("aRust", M.body.geometry.attributes.aRust); M.body.geometry = geo; M.lights.geometry = jetGeo; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; },
+    // the flying VOID cars: the real car's shape, or (Lite) the simple low-poly body traffic uses
+    setVoidGeo(geo) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M) return; M.simple = M.simple || { body: M.body.geometry, lights: M.lights.geometry }; geo.setAttribute("aRust", M.simple.body.attributes.aRust); M.full = geo; },
+    setVoidDetail(full) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M || !M.full) return; M.body.geometry = full ? M.full : M.simple.body; M.lights.geometry = full ? jetGeo : M.simple.lights; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; },
     take(c) { c.taken = true; c.parked = false; c.turn = null; },
     park(c, x, z, yaw) { Object.assign(c, { taken: false, parked: true, x, z, yaw, v: 0, y: 0, wreck: null, turn: null, crush: 0 }); },
     geoOf(k) { const m = meshes[KINDS.indexOf(k)]; return m ? { body: m.body.geometry, lights: m.lights.geometry } : null; },
