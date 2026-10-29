@@ -60,11 +60,11 @@ setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a h
 const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
 const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
 const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;      // recent RTX cards start on Ultra
-const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal" }, store.get("void.settings") || {});
+const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal", board: "ion" }, store.get("void.settings") || {});
 const gameOpts = {
   handling: () => SET.handling, buyFood: () => { if (cash < 10) return false; cash -= 10; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
-  onScore: (n, why, pts) => { if (why === "Drift") goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; goals.note(why); earn(pts ?? n); },
+  onScore: (n, why, pts) => { if (why === "Drift") goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; { const gm = /^Grind (\d+) m/.exec(why); if (gm) goals.stats.grind = (goals.stats.grind || 0) + +gm[1]; const sp = /^(\d+)( |$)/.exec(why); if (sp && +sp[1] >= 720) goals.stats.b720 = 1; if (/Kickflip|Heelflip/.test(why) && / \+ /.test(why)) goals.stats.combo = (goals.stats.combo || 0) + 1; } goals.note(why); earn(pts ?? n); },
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
   mapExtra(mx, g, MM) {
@@ -106,6 +106,7 @@ menuEl.addEventListener("click", e => { const t = e.target.closest(".tile"); if 
 menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.setVehicle(b.dataset.veh));
 document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
 function applySettings(save = true) {
+  if (typeof boardMesh !== "undefined") paintBoard();
   if (typeof life !== "undefined" && life.setVoidDetail) life.setVoidDetail(SET.q !== "lite");          // Lite: simple flying VOID cars
   document.body.classList.toggle("big-ui", SET.text === "large");
   for (const seg of menuEl.querySelectorAll(".seg[data-set]")) for (const b of seg.children) b.classList.toggle("on", SET[seg.dataset.set] === b.dataset.v);
@@ -174,8 +175,10 @@ const boardMesh = (() => {
   const under = new THREE.Mesh(new THREE.PlaneGeometry(1.2, .3).rotateX(Math.PI / 2), glow); under.position.y = .005; g.add(under);
   for (const x of [-.4, .4]) { const pod = new THREE.Mesh(new THREE.CylinderGeometry(.11, .09, .1, 12), new THREE.MeshStandardMaterial({ color: 0x2a2c32, metalness: .7, roughness: .3 })); pod.position.set(x, -.03, 0); g.add(pod); const ring = new THREE.Mesh(new THREE.TorusGeometry(.1, .02, 6, 16).rotateX(Math.PI / 2), glow); ring.position.set(x, -.08, 0); g.add(ring); }
   const strip = new THREE.Mesh(new THREE.BoxGeometry(1.32, .015, .02), glow); strip.position.set(0, .085, .19); g.add(strip); const strip2 = strip.clone(); strip2.position.z = -.19; g.add(strip2);
-  g.visible = false; scene.add(g); return g;
+  g.visible = false; scene.add(g); g.userData = { glow, deck: deck.material }; return g;
 })();
+const BOARDS = { ion: [[.3, 2.2, 2.6], 0x15161a], blaze: [[2.6, .9, .2], 0x1a1210], toxic: [[.8, 2.6, .3], 0x111a12], violet: [[1.6, .6, 2.6], 0x15121c], gold: [[2.6, 1.9, .5], 0x2a2418], ghost: [[2.4, 2.4, 2.4], 0xe8e8ea] };
+function paintBoard() { const b = BOARDS[SET.board] || BOARDS.ion; boardMesh.userData.glow.color.setRGB(...b[0]); boardMesh.userData.deck.color.setHex(b[1]); }
 const qSide = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), boardUp = new THREE.Vector3();
 // cars that aren't your VOID car: the one you're driving and the one you left parked, drawn from the traffic shapes
 const rideMesh = () => { const g = new THREE.Group(); g.visible = false; scene.add(g); return { g, key: "" }; };
@@ -335,7 +338,8 @@ applyBuild();
 const UPG = { engine: ["⚙️", "Engine", "More power and top speed"], grip: ["🛞", "Tyres", "Grip in corners, longer drifts"], nitro: ["🔥", "Nitro", "A bigger nitro tank"], armor: ["🛡️", "Armour", "Takes less damage"] };
 const PRICE = [2500, 6000, 15000];
 const upg = Object.assign({ engine: 0, grip: 0, nitro: 0, armor: 0 }, store.get("void.upg") || {});
-let cash = store.get("void.cash") ?? 3000, cashSaveT = 0;
+let cash = store.get("void.cash") ?? 100000, cashSaveT = 0;
+if (!store.get("void.start100k")) { store.set("void.start100k", 1); if (cash < 100000) { cash = 100000; store.set("void.cash", cash); setTimeout(() => toast("You now start with $100,000. Go shopping at VOID Motors!"), 3000); } }
 gameOpts.upg = upg;
 addEventListener("pagehide", () => store.set("void.cash", cash));          // phones kill tabs without warning: save on the way out
 function earn(n) { cash += Math.max(0, Math.round(n)); clearTimeout(cashSaveT); cashSaveT = setTimeout(() => store.set("void.cash", cash), 800); const el = document.getElementById("gCash"); if (el) el.textContent = "$" + cash.toLocaleString(); }
@@ -546,9 +550,11 @@ function frameLoop(fixed) {
   if (veh === "board") {                                       // stand sideways on the board, knees apart, arms out for balance
     boardMesh.position.copy(S.pos); boardMesh.quaternion.copy(S.quat);
     walker.g.position.copy(boardUp.set(0, .1, 0).applyQuaternion(S.quat).add(S.pos)); walker.g.quaternion.copy(S.quat).multiply(qSide);
-    walker.legs[0].rotation.set(-.24, 0, 0); walker.legs[1].rotation.set(.24, 0, 0); walker.arms[0].rotation.set(-.95, 0, Math.sin(time * 2) * .1); walker.arms[1].rotation.set(.95, 0, -Math.sin(time * 2) * .1);
+    const cr = S.crouch || 0; walker.g.position.add(boardUp.set(0, -.22 * cr, 0).applyQuaternion(S.quat)); walker.g.scale.set(1, 1 - .14 * cr, 1);
+    walker.legs[0].rotation.set(-.24 - .2 * cr, 0, .5 * cr); walker.legs[1].rotation.set(.24 + .2 * cr, 0, .5 * cr); walker.arms[0].rotation.set(-.95 + .5 * cr, 0, Math.sin(time * 2) * .1 + 1.1 * cr); walker.arms[1].rotation.set(.95 - .5 * cr, 0, -Math.sin(time * 2) * .1 + 1.1 * cr);
+    if (S.speed > 25 && Math.random() < .5) { const pf = fx.puffs[fx.puffI++ % fx.puffs.length], gc = boardMesh.userData.glow.color; pf.s.position.copy(S.pos).add(boardUp.set((Math.random() - .5) * .3, .02, (Math.random() - .5) * .3)); pf.life = .6; pf.s.visible = true; pf.grow = .15; pf.s.scale.setScalar(.15); pf.s.material.color.setRGB(Math.min(1, gc.r / 2.6), Math.min(1, gc.g / 2.6), Math.min(1, gc.b / 2.6)); pf.v.set(0, .3, 0); }
   }
-  if (veh === "foot") { walker.legs[0].rotation.x = walker.legs[1].rotation.x = walker.arms[0].rotation.x = walker.arms[1].rotation.x = 0; walker.g.position.copy(S.pos); walker.g.rotation.set(0, -gsx.yaw, 0); const sw = Math.sin(S.walk || 0) * Math.min(.7, S.speed / 14) * (S.alt > .3 ? .3 : 1); walker.legs[0].rotation.z = sw; walker.legs[1].rotation.z = -sw; walker.arms[0].rotation.z = -sw * .8; walker.arms[1].rotation.z = sw * .8; }
+  if (veh === "foot") { walker.legs[0].rotation.x = walker.legs[1].rotation.x = walker.arms[0].rotation.x = walker.arms[1].rotation.x = 0; walker.g.scale.set(1, 1, 1); walker.g.position.copy(S.pos); walker.g.rotation.set(0, -gsx.yaw, 0); const sw = Math.sin(S.walk || 0) * Math.min(.7, S.speed / 14) * (S.alt > .3 ? .3 : 1); walker.legs[0].rotation.z = sw; walker.legs[1].rotation.z = -sw; walker.arms[0].rotation.z = -sw * .8; walker.arms[1].rotation.z = sw * .8; }
   vehicles.show(veh === "car" || veh === "foot" || veh === "board" ? null : veh, S.pos, S.quat, S, time, dt);
   if (S.splash) for (let k = 0; k < 6; k++) { const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(S.pos).add(new THREE.Vector3((Math.random() - .5) * 3, .3, (Math.random() - .5) * 3)); pf.life = 1; pf.s.visible = true; pf.grow = .8; pf.s.scale.setScalar(.8); pf.s.material.color.set(0xeaf6ff); pf.v.set((Math.random() - .5) * 6, 4 + Math.random() * 4, (Math.random() - .5) * 6); }
   if (veh === "boat" && S.speed > 12 && Math.random() < .6) { const back = new THREE.Vector3(-3.6, .1, (Math.random() - .5) * 2).applyQuaternion(S.quat).add(S.pos); const pf = fx.puffs[fx.puffI++ % fx.puffs.length]; pf.s.position.copy(back); pf.life = 1; pf.s.visible = true; pf.grow = .5; pf.s.scale.setScalar(.5); pf.s.material.color.set(0xf4fbff); pf.v.set((Math.random() - .5) * 2, .6, (Math.random() - .5) * 2); }

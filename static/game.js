@@ -3,6 +3,7 @@
 // take over when fast (bank to turn, pull up to climb, too slow and it stalls). Land on the park lawn or a
 // skyscraper's helipad. Smash traffic that is slower than you; anything faster that hits you does the damage.
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { clamp, lerp, G, R, LZ, HW, RAMP_X, PAD_R, ZONES, frame, loc, zonesFrom } from "./world.js";
 import { HEAD } from "./interior.js";
 
@@ -97,6 +98,22 @@ export function createGame(W, car, sound, life, opts = {}) {
       for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.BoxGeometry(.3, .08, r.w * 2), stripe); e.position.set(r.len - .2, r.h + .02, 0); m.add(e); const side = new THREE.Mesh(new THREE.BoxGeometry(r.len, .1, .1), stripe); side.position.set(r.len / 2, r.h / 2 + .1, s * r.w); side.rotation.z = Math.atan(r.h / r.len); m.add(side); }
     }
   }
+  const RAILS = [
+    { x: -935, z: 1384, yaw: 0, len: 26, h: .9 }, { x: -935, z: 1396, yaw: 0, len: 26, h: .55 }, { x: -700, z: 1338, yaw: Math.PI / 2, len: 22, h: 1.1 }, { x: -820, z: 1455, yaw: 0, len: 40, h: .8 },
+    { x: -600, z: 1400, yaw: Math.PI / 2, len: 30, h: .7 }, { x: -760, z: 1370, yaw: Math.PI / 4, len: 18, h: 1.3 },
+    { x: 974, z: 1215, yaw: Math.PI / 2, len: 210, h: .9 },                                  // the boardwalk railing
+    { x: 2580, z: 12, yaw: 0, len: 50, h: .8 }, { x: 2580, z: -12, yaw: 0, len: 50, h: .8 },  // by the highway at the foot of the mountains
+  ].map(r => ({ ...r, c: Math.cos(r.yaw), s: Math.sin(r.yaw) }));
+  {
+    const parts = [];
+    for (const r of RAILS) {
+      const bar = new THREE.CylinderGeometry(.06, .06, r.len, 8).rotateZ(Math.PI / 2).translate(r.len / 2, r.h, 0);
+      const g = [bar]; for (let a = 1; a < r.len; a += 3) g.push(new THREE.BoxGeometry(.08, r.h, .08).translate(a, r.h / 2, 0));
+      for (const q of g) { q.rotateY(-r.yaw); q.translate(r.x, 0, r.z); parts.push(q.toNonIndexed()); }
+    }
+    W.scene.add(new THREE.Mesh(mergeGeometries(parts.map(q => { for (const k of Object.keys(q.attributes)) if (k !== "position" && k !== "normal") q.deleteAttribute(k); return q; })), new THREE.MeshStandardMaterial({ color: 0xd8dde4, metalness: .9, roughness: .25 })));
+  }
+  const railNear = (x, z, y) => { for (const r of RAILS) { const dx = x - r.x, dz = z - r.z, a = dx * r.c + dz * r.s, b = -dx * r.s + dz * r.c; if (a > .3 && a < r.len - .3 && Math.abs(b) < .8 && y > r.h + .05 && y < r.h + 1.4) return { r, a }; } return null; };
   const rampAt = (x, z) => {
     for (const r of RAMPS) {
       const dx = x - r.x, dz = z - r.z, c = Math.cos(r.yaw), s = Math.sin(r.yaw), a = dx * c + dz * s, b = -dx * s + dz * c;
@@ -206,44 +223,74 @@ export function createGame(W, car, sound, life, opts = {}) {
     else if (spins || flips) addScore(spins * 400 + flips * 700 + (spins && flips ? 600 : 0), [flips ? `${flips > 1 ? flips + "× " : ""}${g.veh === "board" ? "Kickflip" : "Backflip"}` : "", spins ? `${360 * spins} spin` : ""].filter(Boolean).join(" + "));
     g.trS = g.trF = 0;
   }
+  // scoring a board landing: spins count in halves (180, 360, 540...), flips must come round fully, grabs pay by the second
+  function landBoard() {
+    const half = Math.round(Math.abs(g.trS) / Math.PI), offS = Math.abs(Math.abs(g.trS) - half * Math.PI);
+    const kf = Math.round(Math.abs(g.trF) / (2 * Math.PI)), hf = Math.round(Math.abs(g.trH || 0) / (2 * Math.PI)), offF = Math.abs(Math.abs(g.trF) - kf * 2 * Math.PI), offH = Math.abs(Math.abs(g.trH || 0) - hf * 2 * Math.PI);
+    const tried = Math.abs(g.trS) > 1 || Math.abs(g.trF) > 1 || Math.abs(g.trH || 0) > 1;
+    if (tried && (offS > .55 || offF > .75 || offH > .75)) { hurt(8, "Bailed"); say("Bailed! Land it straight (or fully backwards)", 2); g.shake = 1; sound.crash(); g.combo = 1; g.comboT = 0; }
+    else {
+      const grab = g.grabT > .3 ? g.grabT : 0, names = [];
+      if (half) names.push(`${half * 180}`); if (kf) names.push(`${kf > 1 ? kf + "× " : ""}Kickflip`); if (hf) names.push(`${hf > 1 ? hf + "× " : ""}Heelflip`); if (grab) names.push(`Grab ${grab.toFixed(1)} s`);
+      const pts = half * 250 + kf * 600 + hf * 650 + Math.round(grab * 300) + (names.length > 1 ? 400 * (names.length - 1) : 0);
+      if (pts > 0) addScore(pts, names.join(" + "));
+    }
+    g.trS = g.trF = g.trH = 0; g.grabT = 0;
+  }
+  // the hoverboard: carve, pump downhill, charge an ollie (hold Space, let go), double-jump in the air, flip, spin, grab, grind rails
   function board(dt, turn, gas, brake) {
-    const gr = groundAt(g.x, g.z, g.y + .6), gh = gr.water ? city.WATER_Y + .05 : Math.max(0, gr.h), target = gh + .42;
-    const fx = Math.cos(g.yaw), fz = Math.sin(g.yaw), sx = -fz, sz = fx, ground = g.y <= target + .08 && (g.vy || 0) <= .5;
+    const fx = Math.cos(g.yaw), fz = Math.sin(g.yaw), sx = -fz, sz = fx;
     let u = g.vel.x * fx + g.vel.z * fz, w = g.vel.x * sx + g.vel.z * sz;
-    const top = g.nitroOn > .3 ? 27 : 17;
+    if (g.grind) {                                                            // locked to a rail: slide, sparks, cash by the metre
+      const G = g.grind, R0 = G.r; G.v = Math.max(6, G.v - .35 * dt); G.a += G.dir * G.v * dt; G.m += G.v * dt;
+      g.x = R0.x + R0.c * G.a; g.z = R0.z + R0.s * G.a; g.y = R0.h + .45; g.vy = 0; g.yaw = R0.yaw + (G.dir < 0 ? Math.PI : 0);
+      g.vel.set(R0.c * G.dir * G.v, 0, R0.s * G.dir * G.v); g.sparks = 1; g.pitch = 0; g.roll = Math.sin(performance.now() / 70) * .05;
+      const jump = held("up") && !g.jumpHeld;
+      if (G.a < .2 || G.a > R0.len - .2 || jump) { g.vy = jump ? 6.5 : 2.5; g.grind = null; g.airT = 0; g.dbl = true; addScore(Math.round(G.m * 45) + 100, `Grind ${Math.round(G.m)} m`); sound.whoosh(); }
+      g.jumpHeld = held("up"); return;
+    }
+    const gr = groundAt(g.x, g.z, g.y + .6), gh = gr.water ? city.WATER_Y + .05 : Math.max(0, gr.h), target = gh + .42, ground = g.y <= target + .08 && (g.vy || 0) <= .5;
+    const boost = g.nitroOn > .3 && ground, top = boost ? 31 : 19;
     if (ground) {
-      g.yaw += turn * (2.8 / (1 + Math.abs(u) / 13)) * dt * Math.sign(u || 1);
-      u += (gas ? 10 * (1 - clamp(u / top) ** 2) : 0) * dt - (brake ? (u > .5 ? 14 : 5) : 0) * dt + g.nitroOn * 6 * dt;
-      u = Math.max(-6, u - Math.sign(u) * (.4 + .002 * u * u) * dt); w *= Math.exp(-7 * dt);
-      if (held("up") && !g.jumpHeld) { g.vy = 7; sound.whoosh(); g.airT = 0; }
-      if (gr.terrain && Math.abs(u) > 1) u -= 9.81 * Math.sin(Math.atan(slopes(g.x, g.z, g.yaw)[0])) * dt * .6;
-    } else {                                                                 // in the air: A/D spins, Drift kickflips
-      g.trS += turn * 8 * dt; if (held("drift")) g.trF += 7.5 * dt; g.airT += dt;
+      g.yaw += turn * (3 / (1 + Math.abs(u) / 14)) * dt * Math.sign(u || 1);
+      u += (gas ? 11 * (1 - clamp(u / top) ** 2) : 0) * dt - (brake ? (u > .5 ? 15 : 5) : 0) * dt + g.nitroOn * 7 * dt;
+      u = Math.max(-6, u - Math.sign(u) * (.3 + .0016 * u * u) * dt); w *= Math.exp(-7.5 * dt);
+      if (gr.terrain && Math.abs(u) > .5) u -= 9.81 * Math.sin(Math.atan(slopes(g.x, g.z, g.yaw)[0])) * dt * .95;     // downhill pulls, uphill costs
+      if (held("up")) g.charge = Math.min(.6, (g.charge || 0) + dt);                                                        // crouch to charge...
+      else if (g.charge > 0) { g.vy = 6 + g.charge * 7.5; g.charge = 0; g.airT = 0; g.dbl = true; sound.whoosh(); }      // ...and pop
+      g.grabT = 0;
+    } else {
+      g.trS += turn * 8.5 * dt; if (held("drift")) g.trF += 9.5 * dt; if (held("down")) g.trH = (g.trH || 0) + 9.5 * dt; if (held("nitro")) g.grabT = (g.grabT || 0) + dt;
+      g.airT += dt; g.charge = 0;
+      if (held("up") && !g.jumpHeld && g.dbl) { g.dbl = false; g.vy = Math.max(g.vy, 0) + 5.5; u += 3; sound.whoosh(); g.shake = .3; }   // double jump: one thruster burst
+      if (g.vy <= 1.5) { const rn = railNear(g.x, g.z, g.y); if (rn) { const along = fx * rn.r.c + fz * rn.r.s; if (Math.abs(along) > .5) {
+        landBoard(); g.grind = { r: rn.r, a: rn.a, dir: Math.sign(along), v: Math.max(7, Math.abs(u) * Math.abs(along)), m: 0 }; sound.thud && sound.thud(.45); g.jumpHeld = held("up"); return; } } }
     }
     g.jumpHeld = held("up");
     g.vel.x = fx * u + sx * w; g.vel.z = fz * u + sz * w;
     let nx = g.x + g.vel.x * dt, nz = g.z + g.vel.z * dt;
     const hit = hitBox(nx, nz, g.y + .9, .45);
-    if (hit) { const vn = g.vel.x * hit.nx + g.vel.z * hit.nz; if (vn < 0) { g.vel.x -= 1.4 * vn * hit.nx; g.vel.z -= 1.4 * vn * hit.nz; if (-vn > 8) { hurt((-vn - 8) * 2, "Wiped out"); sound.crash(); } else if (-vn > 2) sound.thud && sound.thud(-vn / 10); } nx = g.x + hit.nx * hit.d * .5; nz = g.z + hit.nz * hit.d * .5; }
+    if (hit) { const vn = g.vel.x * hit.nx + g.vel.z * hit.nz; if (vn < 0) { g.vel.x -= 1.4 * vn * hit.nx; g.vel.z -= 1.4 * vn * hit.nz; if (-vn > 9) { hurt((-vn - 9) * 2, "Wiped out"); sound.crash(); } else if (-vn > 2) sound.thud && sound.thud(-vn / 10); } nx = g.x + hit.nx * hit.d * .5; nz = g.z + hit.nz * hit.d * .5; }
     g.x = nx; g.z = nz;
     g.vy = (g.vy || 0) - 15 * dt; g.y += g.vy * dt;
     const gr2 = groundAt(g.x, g.z, g.y + .6), t2 = (gr2.water ? city.WATER_Y + .05 : Math.max(0, gr2.h)) + .42;
-    if (g.y <= t2) {                                                         // the hover cushion: springy, never touches
-      if (g.vy < -3) { landTricks(); if (g.airT > .7) addScore(Math.round(g.airT * 60), `Air ${g.airT.toFixed(1)} s`, true); }
-      g.y += (t2 - g.y) * clamp(dt * 14); if (g.y < t2 - .3) g.y = t2 - .3; g.vy = Math.max(0, g.vy); g.airT = 0;
+    const tv = clamp((t2 - (g.prevT ?? t2)) / dt, -20, 14); g.prevT = t2;                 // how fast the ground under us is rising (ramps launch you)
+    if (g.y <= t2) {                                                                       // the hover cushion: springy, never touches
+      if (g.vy < -3) { landBoard(); if (g.airT > .7) addScore(Math.round(g.airT * 70), `Air ${g.airT.toFixed(1)} s`, true); g.spV = (g.spV || 0) - .3; }
+      g.y += (t2 - g.y) * clamp(dt * 14); if (g.y < t2 - .3) g.y = t2 - .3; g.vy = Math.max(0, g.vy, tv * .95); g.airT = 0;
     }
     const sl = gr2.terrain ? slopes(g.x, g.z, g.yaw) : [0, 0];
-    g.pitch = lerp(g.pitch, Math.atan(sl[0]), clamp(dt * 8)); g.roll = lerp(g.roll, -turn * clamp(Math.abs(u) / 14) * .35 - Math.atan(sl[1]), clamp(dt * 6));
+    g.pitch = lerp(g.pitch, Math.atan(sl[0]), clamp(dt * 8)); g.roll = lerp(g.roll, -turn * clamp(Math.abs(u) / 14) * .4 - Math.atan(sl[1]), clamp(dt * 6));
     if (!gr2.water && g.y < 2 + gh) g.last = { x: g.x, z: g.z, yaw: g.yaw, y: gr2.terrain ? gh : 0 };
   }
   function boardToggle() {
     if (!g || g.wreck > 0) return;
-    if (g.veh === "board") { Object.assign(g, { veh: "foot", trS: 0, trF: 0, pitch: 0, roll: 0 }); g.vel.set(0, 0, 0); say("Board away", 1.2); return; }
+    if (g.veh === "board") { Object.assign(g, { veh: "foot", trS: 0, trF: 0, trH: 0, grind: null, pitch: 0, roll: 0 }); g.vel.set(0, 0, 0); say("Board away", 1.2); return; }
     if (g.veh === "car" && (g.mode !== "drive" || Math.hypot(g.vel.x, g.vel.z) > 3)) return say("Stop first, then hop on the hoverboard (Y)", 2);
     if (g.veh === "car") { if (g.ride) { if (g.ride.c) life.park(g.ride.c, g.x, g.z, g.yaw); else g.ridePark = { ride: g.ride, x: g.x, z: g.z, yaw: g.yaw }; g.ride = null; } else g.heroPark = { x: g.x, z: g.z, yaw: g.yaw }; const sx = Math.sin(g.yaw), cx = Math.cos(g.yaw); g.x += sx * 2.6; g.z -= cx * 2.6; }
     else if (g.veh !== "foot") { const gh = Math.max(0, groundAt(g.x, g.z, g.y).h); g.y = gh; }
-    Object.assign(g, { veh: "board", mode: "drive", vy: 0, trS: 0, trF: 0, wings: 0, hover: false }); g.vel.y = 0; rig.yaw = null;
-    say("🛹 Hoverboard: W go · A/D carve · Space jump · in the air A/D spin, X kickflip · Shift boost · E or Y to step off", 4); sound.whoosh();
+    Object.assign(g, { veh: "board", mode: "drive", vy: 0, trS: 0, trF: 0, trH: 0, grabT: 0, charge: 0, grind: null, wings: 0, hover: false }); g.vel.y = 0; rig.yaw = null;
+    say("🛹 Hold Space and let go to ollie (again in the air: double jump) · air: A/D spin, X kickflip, Q heelflip, Shift grab · land on rails to grind · Shift boost · E or Y off", 6); sound.whoosh();
   }
   function toggleFly() {
     if (!g || g.wreck > 0 || !g.started) return;
@@ -664,7 +711,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         const s0 = new THREE.Vector3().crossVectors(f, UP).normalize(), u0 = new THREE.Vector3().crossVectors(s0, f);
         fr.f.copy(f); fr.s.copy(s0.applyAxisAngle(f, g.roll)); fr.u.copy(u0.applyAxisAngle(f, g.roll));
         basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis);
-        if (g.trS || g.trF) q.multiply(trickQ.setFromEuler(g.veh === "board" ? trickE.set(g.trF, -g.trS, 0) : trickE.set(0, -g.trS, g.trF)));
+        if (g.trS || g.trF || g.trH) q.multiply(trickQ.setFromEuler(g.veh === "board" ? trickE.set(g.trF - (g.trH || 0), -g.trS, 0) : trickE.set(0, -g.trS, g.trF)));
       }
       fr.p.set(g.x, g.y, g.z);
       car.group.position.copy(fr.p); car.group.quaternion.copy(q); car.group.updateMatrixWorld(true);
@@ -729,7 +776,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         pos: fr.p.clone(), quat: q, fr, speed, g: g.gForce, alt: Math.max(0, g.y), vs: air ? g.vel.y : 0, player: { x: g.x, y: g.y, z: g.z, speed: speed / 3.6, vx: g.vel.x, vz: g.vel.z, foot: g.veh === "foot" || g.veh === "board" },
         thrust: { power: air && g.veh === "car" ? g.thr : 0, angle: g.ang, deploy: air && g.veh === "car" && !(g.jump && !g.hover && !g.landing && g.thr < .05) ? 1 : 0 }, wings: g.veh === "car" ? g.wings : 0, air, cam,
         inside: view === "seat", screenOn: view === "seat", mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : g.hover ? "HOVER" : "THRUST",
-        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" || g.veh === "board" ? 0 : !air ? 1 : .15, walk: g.walk || 0, ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, boat: g.boat, zones, reveal: 1,
+        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" || g.veh === "board" ? 0 : !air ? 1 : .15, walk: g.walk || 0, crouch: g.veh === "board" ? Math.max((g.charge || 0) / .6, g.grabT > 0 ? 1 : 0) : 0, grinding: !!g.grind, ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, boat: g.boat, zones, reveal: 1,
         splash: g.splashT > 0 ? (g.splashT -= dt, 1) : 0, nitro: g.nitroOn, hp: g.hp, veh: g.veh || "car", fuel: g.fuel, thr: g.thr, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
       };
     },

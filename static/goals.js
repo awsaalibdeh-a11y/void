@@ -15,10 +15,13 @@ export const GOALS = [
   { id: "coins", icon: "🪙", name: "Collector", text: "Find 20 hidden coins", stat: "coins", need: 20 },
   { id: "taxi", icon: "🚕", name: "Cabbie", text: "Complete 5 taxi fares", stat: "fares", need: 5 },
   { id: "tuner", icon: "🔧", name: "Tuner", text: "Buy 4 garage upgrades", stat: "upg", need: 4 },
+  { id: "grind", icon: "🛹", name: "Rail slider", text: "Grind 100 m of rails on the hoverboard", stat: "grind", need: 100 },
+  { id: "b720", icon: "🌀", name: "Sky skater", text: "Land a 720 on the hoverboard", stat: "b720", need: 1 },
+  { id: "bcombo", icon: "🔥", name: "Combo king", text: "Land 5 flip combos on the hoverboard", stat: "combo", need: 5 },
   { id: "brooklyn", icon: "🌉", name: "Bridge and tunnel", text: "Cross the bridge to Brooklyn", stat: "brooklyn", need: 1 },
 ];
 export function createGoals(onDone) {
-  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0, coins: 0, fares: 0, upg: 0, steals: 0, meds: 0 }, store.get("void.stats") || {});
+  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0, coins: 0, fares: 0, upg: 0, steals: 0, meds: 0, grind: 0, b720: 0, combo: 0 }, store.get("void.stats") || {});
   const done = new Set(store.get("void.goals") || []);
   let saveT = 0, lastSmash = null, lastRings = null, lastFuel = null, pads = new Set();
   function check() { for (const g of GOALS) if (!done.has(g.id) && S[g.stat] >= g.need) { done.add(g.id); store.set("void.goals", [...done]); onDone(g); } }
