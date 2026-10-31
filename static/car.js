@@ -355,7 +355,7 @@ export function buildCar(model = "hydra") {
     const pr = new THREE.Mesh(new THREE.PlaneGeometry(.52, .13), plateM); pr.position.set(X0 - .005, curve(BS.bot, .03) + .22, 0); pr.rotation.y = -Math.PI / 2; solid.add(pr);
   }
   return {
-    group: car, wheels, clip, materials: { carbon, front }, model, name: M.name,
+    group: car, wheels, clip, glowLight, materials: { carbon, front }, model, name: M.name,
     setSpoiler, setLivery,
     setTint(k) { const T = { light: [0x1a2a3a, .32, .1], dark: [0x0a0d12, .6, .1], limo: [0x030405, .9, .1], mirror: [0x9aa4b0, .88, .95] }[k] || [0x0a0d12, .6, .1]; glass.color.setHex(T[0]); glass.opacity = T[1]; glass.metalness = T[2]; },
     setFlameColor(hex) { flameMat.color.set(hex).multiplyScalar(3); },

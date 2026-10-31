@@ -41,13 +41,13 @@ export function createPolice(scene, api, sound, life) {
   const D = makeDriver(api), P = KINDS.find(k => k.id === "police"), geo = vehicle(P);
   const bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .3, metalness: .5 }), lightMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2.2, 2.2, 2.2) });
   const red = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .1, .1).multiplyScalar(4), toneMapped: false }), blue = new THREE.MeshBasicMaterial({ color: new THREE.Color(.15, .3, 1).multiplyScalar(4), toneMapped: false });
-  const cops = [];
+  const cops = [], copGlow = new THREE.PointLight(0xff2020, 0, 30, 2); scene.add(copGlow);       // one flashing light, on the nearest cruiser
   for (let k = 0; k < 8; k++) {
     const g = new THREE.Group(), body = new THREE.Mesh(geo.body, bodyMat), lights = new THREE.Mesh(geo.lights, lightMat);
     const r = new THREE.Mesh(new THREE.BoxGeometry(.32, .18, .5), red), b = new THREE.Mesh(new THREE.BoxGeometry(.32, .18, .5), blue);
     r.position.set(-.2, 1.82, .32); b.position.set(-.2, 1.82, -.32);
-    const glow = new THREE.PointLight(0xff2020, 0, 26, 2); glow.position.set(0, 2.4, 0);
-    body.castShadow = true; g.add(body, lights, r, b, glow); g.visible = false; scene.add(g);
+    const glow = { color: new THREE.Color(), intensity: 0 };                 // (the real light is shared: see copGlow)
+    body.castShadow = true; g.add(body, lights, r, b); g.visible = false; scene.add(g);
     cops.push({ g, r, b, glow, on: false, x: 0, z: 0, yaw: 0, v: 0, wreck: 0, bump: 0, y: 0, rz: 0 });
   }
   // the helicopter: body, tail, two rotors and a searchlight
@@ -62,7 +62,7 @@ export function createPolice(scene, api, sound, life) {
     heli.tailRotor = new THREE.Mesh(new THREE.BoxGeometry(.06, 2, .2), m); heli.tailRotor.position.set(-6.4, .5, .3); heli.add(heli.tailRotor);
     const beam = new THREE.Mesh(new THREE.ConeGeometry(9, 60, 24, 1, true).translate(0, -30, 0), new THREE.MeshBasicMaterial({ color: 0xdfe8ff, transparent: true, opacity: .08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     heli.beam = beam; heli.add(beam);
-    heli.spot = new THREE.SpotLight(0xffffff, 0, 160, .35, .5, 1.2); heli.add(heli.spot, heli.spot.target);
+    heli.spot = new THREE.SpotLight(0xffffff, 0, 160, .35, .5, 1.2); scene.add(heli.spot, heli.spot.target);       // in the scene, not the helicopter: it never vanishes
     heli.blink = new THREE.Mesh(new THREE.SphereGeometry(.2, 8, 6), red); heli.blink.position.set(-6.3, 1.2, 0); heli.add(heli.blink);
     heli.visible = false; scene.add(heli);
   }
@@ -99,7 +99,8 @@ export function createPolice(scene, api, sound, life) {
       if (kind === "ped") addHeat(.6, "Hit and run");
     },
     update(dt, time) {
-      const p = api.state; if (!p || !p.started) return;
+      const p = api.state; if (!p || !p.started) { copGlow.intensity = 0; return; }
+      let glowD = 1e9;
       if (p.wreck > 0) { if (stars) clear(); return; }
       const ps = Math.hypot(p.vel.x, p.vel.z), air = p.mode === "air" && p.y > 6;
       // speeding past a traffic cop
@@ -113,7 +114,7 @@ export function createPolice(scene, api, sound, life) {
       for (const c of cops) {
         if (!c.on) continue;
         const flash = Math.sin(time * 18 + c.x) > 0;
-        c.r.visible = flash; c.b.visible = !flash; c.glow.color.setHex(flash ? 0xff2020 : 0x2040ff); c.glow.intensity = 30;
+        c.r.visible = flash; c.b.visible = !flash; c.glow.color.setHex(flash ? 0xff2020 : 0x2040ff); c.glow.intensity = 30; { const d = Math.hypot(c.x - p.x, c.z - p.z); if (d < glowD) { glowD = d; copGlow.position.set(c.x, (c.y || 0) + 2.4, c.z); copGlow.color.setHex(flash ? 0xff2020 : 0x2040ff); } }
         if (c.wreck > 0) {
           c.wreck -= dt; c.v *= Math.pow(.2, dt); c.x += Math.cos(c.yaw) * c.v * dt; c.z += Math.sin(c.yaw) * c.v * dt; c.rz = Math.min(Math.PI * .9, c.rz + dt * 6);
           c.glow.intensity = 0; c.r.visible = c.b.visible = false;
@@ -138,6 +139,7 @@ export function createPolice(scene, api, sound, life) {
         }
         c.g.position.set(c.x, api.terrainH ? api.terrainH(c.x, c.z) : 0, c.z); c.g.rotation.set(c.rz, -c.yaw, 0, "YXZ");
       }
+      copGlow.intensity = glowD < 200 ? 30 : 0;
       // the helicopter from three stars
       if (stars >= 3) {
         if (!H.on) { H.on = true; H.x = p.x - 300; H.z = p.z - 300; H.y = 120; heli.visible = true; api.say("Police helicopter overhead", 2.5); }
@@ -145,9 +147,9 @@ export function createPolice(scene, api, sound, life) {
         H.x += dx / (d || 1) * sp * dt; H.z += dz / (d || 1) * sp * dt; H.y += (ty - H.y) * Math.min(1, dt * .8); H.yaw = Math.atan2(dz, dx);
         heli.position.set(H.x, H.y, H.z); heli.rotation.set(0, -H.yaw, Math.min(.25, sp / 250));
         heli.rotor.rotation.y += dt * 40; heli.tailRotor.rotation.x += dt * 50; heli.blink.visible = Math.sin(time * 6) > 0;
-        heli.beam.lookAt(p.x, p.y, p.z); heli.beam.rotateX(-Math.PI / 2); heli.spot.intensity = d < 160 ? 900 : 0; heli.spot.target.position.set(p.x - H.x, p.y - H.y, p.z - H.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), H.yaw);
+        heli.beam.lookAt(p.x, p.y, p.z); heli.beam.rotateX(-Math.PI / 2); heli.spot.intensity = d < 160 ? 900 : 0; heli.spot.position.set(H.x, H.y - 1.5, H.z); heli.spot.target.position.set(p.x, p.y, p.z); heli.spot.target.updateMatrixWorld();
         if (d < 120) nearest = Math.min(nearest, d * .5);
-      } else if (H.on) { H.on = false; heli.visible = false; }
+      } else if (H.on) { H.on = false; heli.visible = false; heli.spot.intensity = 0; }
       // busted: stopped with a cruiser right beside you
       if (close && ps < 4 && !air) { bust += dt; if (bust > 3) { const lost = Math.round(p.score * .15); p.score -= lost; api.busted(`BUSTED! The police fined you ${lost} points`); clear(); return; } } else bust = Math.max(0, bust - dt * 2);
       // losing them

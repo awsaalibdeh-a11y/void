@@ -252,7 +252,7 @@ export function personGeo() {
   };
 }
 
-export function createLife(scene, roads, walkways, COARSE) {
+export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
   let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const { ax, sz, avW, stW, NX, NZ, X0, Z0, AV, ST, lanes } = GRID;
   const laneOffs = (axis, road) => axis === 0 ? (road === 10 ? lanes.bv : lanes.st) : lanes.av;
@@ -262,7 +262,7 @@ export function createLife(scene, roads, walkways, COARSE) {
   const cross = (axis, k) => axis === 0 ? ax(k) : sz(k);               // the coordinate of the k-th crossing road along this axis
   const crossW = (axis, k) => axis === 0 ? avW(k) : stW(k);
   const roadC = (axis, road) => axis === 0 ? sz(road) : ax(road);
-  const LOWMEM = (navigator.deviceMemory || 8) <= 4, N = COARSE ? (LOWMEM ? 360 : 600) : 1250, NP = COARSE ? (LOWMEM ? 600 : 1100) : 2200;
+  const LOWMEM = (navigator.deviceMemory || 8) <= 4, N = Math.round((COARSE ? (LOWMEM ? 360 : 600) : 1250) * DENS), NP = Math.round((COARSE ? (LOWMEM ? 600 : 1100) : 2200) * DENS);
 
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });

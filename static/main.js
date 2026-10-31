@@ -3,6 +3,9 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
+// every material draws in one pass. three.js draws see-through double-sided ones twice (back faces, then front) and
+// rebuilds the material's whole shader setup both times, every frame: two dozen beacons, clouds and glass made 70 KB of garbage a frame
+Object.defineProperty(THREE.Material.prototype, "forceSinglePass", { get: () => true, set() {} });
 const V = new URL(import.meta.url).search;
 const $ = id => document.getElementById(id);
 const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); };
@@ -27,11 +30,12 @@ setLoad(55);
 const carRoot = new THREE.Group(); scene.add(carRoot);
 const car = { group: carRoot, wheels: [] };
 const carMats = new Set();
-let inner = null;
+let inner = null, glowL = null;
 function useModel(id, force) {
   if (inner && inner.model === id && !force) return;
   if (inner) carRoot.remove(inner.group);
   inner = buildCar(id); carRoot.add(inner.group);
+  if (glowL) scene.remove(glowL); glowL = inner.glowLight || null; if (glowL) scene.add(glowL);     // the thruster glow lives in the scene too
   for (const k of Object.keys(inner)) if (typeof inner[k] === "function") car[k] = inner[k];
   Object.assign(car, { wheels: inner.wheels, clip: car.clip || inner.clip, materials: inner.materials, model: id, name: inner.name });
   carMats.clear();
@@ -49,7 +53,8 @@ setLoad(80);
 const interior = addInterior(car, renderer);
 const sound = new Sound();
 const watch = createWatch(W, car, interior);
-const life = createLife(scene, W.roads, W.walkways, COARSE || LITE);
+const DENSITY = { few: .55, normal: 1, busy: 1.3 }[(store.get("void.settings") || {}).crowd || (LITE ? "few" : "normal")] || 1;
+const life = createLife(scene, W.roads, W.walkways, COARSE || LITE, DENSITY);
 const TIMES = ["night", "sunset", "day"];
 function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % 3]; W.setTime(k); store.set("void.time", k); toast({ night: "Night in the city", sunset: "Golden hour", day: "Daytime" }[k]); cubeN = 0; }
 let police, races, nav;
@@ -60,7 +65,7 @@ setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a h
 const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
 const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
 const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;      // recent RTX cards start on Ultra
-const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal", board: "ion" }, store.get("void.settings") || {});
+const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal", board: "ion", crowd: LITE ? "few" : "normal", fps: "off" }, store.get("void.settings") || {});
 const gameOpts = {
   handling: () => SET.handling, buyFood: () => { if (cash < 10) return false; cash -= 10; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
@@ -106,6 +111,7 @@ menuEl.addEventListener("click", e => { const t = e.target.closest(".tile"); if 
 menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.setVehicle(b.dataset.veh));
 document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
 function applySettings(save = true) {
+  document.body.classList.toggle("show-fps", SET.fps === "on");
   if (typeof boardMesh !== "undefined") paintBoard();
   if (typeof life !== "undefined" && life.setVoidDetail) life.setVoidDetail(SET.q !== "lite");          // Lite: simple flying VOID cars
   document.body.classList.toggle("big-ui", SET.text === "large");
@@ -119,7 +125,7 @@ function applySettings(save = true) {
   const cap = W.setQuality(SET.q); perf.max = cap; perf.pr = Math.min(perf.pr, cap); if (renderer.getPixelRatio() > cap) { renderer.setPixelRatio(cap); composer.setPixelRatio(cap); } lastW = 0; resize();
   if (save) store.set("void.settings", SET);
 }
-menuEl.querySelectorAll(".seg[data-set]").forEach(seg => seg.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); SET[seg.dataset.set] = b.dataset.v; if (seg.dataset.set === "q") { perf.pr = W.QUALITY[b.dataset.v].pr; perf.down = 0; } applySettings();
+menuEl.querySelectorAll(".seg[data-set]").forEach(seg => seg.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); SET[seg.dataset.set] = b.dataset.v; if (seg.dataset.set === "crowd") toast("Traffic & crowds change after a reload (F5)"); if (seg.dataset.set === "q") { perf.pr = W.QUALITY[b.dataset.v].pr; perf.down = 0; } applySettings();
 atmos.setWeather(SET.weather);
 if (/Intel|UHD|Iris/i.test(GPU) && !COARSE && !store.get("void.gpuWarned")) { store.set("void.gpuWarned", 1); setTimeout(() => toast("Running on built-in graphics: see Menu → Settings to switch to your RTX"), 4000); } }));
 document.getElementById("gSens").addEventListener("input", e => { SET.sens = +e.target.value; applySettings(); });
@@ -133,7 +139,7 @@ document.getElementById("gSens").addEventListener("input", e => { SET.sens = +e.
   st.addEventListener("pointerup", end); st.addEventListener("pointercancel", end);
 }
 // headlights that light the road at night
-const heads = new THREE.SpotLight(0xfff1d6, 0, 70, .55, .6, 1.2); heads.position.set(2.2, .7, 0); heads.target.position.set(18, -1.5, 0); carRoot.add(heads, heads.target);
+const heads = new THREE.SpotLight(0xfff1d6, 0, 70, .55, .6, 1.2); heads.position.set(2.2, .7, 0); heads.target.position.set(18, -1.5, 0); scene.add(heads, heads.target);           // in the scene (it follows the car each frame), so it never disappears with the car
 police = createPolice(scene, game.api, sound, life);
 races = createRaces(scene, game.api, sound, W.canvasTex, net);
 nav = createNav(scene, game.api, W, ZONES, races.starts, () => clock.elapsedTime);
@@ -486,7 +492,7 @@ function frameLoop(fixed) {
   if (!fixed && raw < .5) {
     perf.t += raw; perf.n++;
     if (perf.t > 1.5) {
-      const avg = perf.t / perf.n, was = perf.pr; fpsNow = Math.round(1 / avg); const fe = document.getElementById("gFps"); if (fe) fe.textContent = fpsNow + " fps";
+      const avg = perf.t / perf.n, was = perf.pr; fpsNow = Math.round(1 / avg); const fe = document.getElementById("gFps"); if (fe) fe.textContent = fpsNow + " fps"; const hf = document.getElementById("gFpsHud"); if (hf) { hf.textContent = fpsNow + " fps"; hf.className = "fps-hud " + (fpsNow >= 50 ? "ok" : fpsNow >= 30 ? "mid" : "low"); }
       if (avg > 1 / 25 && mode === "play" && SET.q !== "lite") perf.down = 3;          // very slow: skip straight to a lower level
       if (avg > 1 / 45 && perf.pr > .75 && SET.q !== "lite" && perf.down < 3) perf.pr = Math.max(.75, perf.pr - .12);          // below 75% everything turns to mush: drop a quality level instead
       else if (avg > 1 / 40 && mode === "play" && ++perf.down >= 3 && SET.q !== "lite") {      // still slow at the lowest resolution: drop a quality level
@@ -593,6 +599,9 @@ function frameLoop(fixed) {
   const roll = S.speed / 3.6 * dt / .37;
   if (heroDriven) for (const wh of car.wheels) wh.rotation.z -= S.air ? roll * .15 : roll;
   car.group.updateMatrixWorld(true);
+  heads.position.set(2.2, .7, 0).applyMatrix4(carRoot.matrixWorld); heads.target.position.set(18, -1.5, 0).applyMatrix4(carRoot.matrixWorld); heads.target.updateMatrixWorld();
+  if (glowL) { glowL.position.set(0, -.4, 0).applyMatrix4(carRoot.matrixWorld); if (!carRoot.visible) glowL.intensity = 0; }
+  if (!carRoot.visible) heads.intensity = 0;
 
   // shadow, underglow, exhaust, speed lines
   const fr = S.fr, ground = clamp(1 - S.pos.y / 3) * (fr.u.y > .8 ? 1 : 0);
@@ -678,6 +687,15 @@ try {
 } catch (e) { console.warn("VOID flyers keep the simple shape", e); }
 setLoad(95);
 renderer.compile(scene, camera);
+// warm-up: draw every mesh once into a tiny target so its buffers and textures are on the graphics card before you play.
+// Otherwise each new part of the city uploads the first time it comes into view, and that is a stutter.
+try {
+  const saved = [], parents = [];
+  scene.traverse(o => { if (o === scene) return; if (o.isMesh || o.isPoints || o.isLine || o.isSprite) { saved.push([o, o.visible, o.frustumCulled, o.layers.mask]); o.visible = true; o.frustumCulled = false; o.layers.enableAll(); } else if (!o.isLight) { parents.push([o, o.visible]); o.visible = true; } });
+  const rt = new THREE.WebGLRenderTarget(8, 8), sh = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+  renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null); rt.dispose(); renderer.shadowMap.autoUpdate = sh;
+  for (const [o, v, f, m] of saved) { o.visible = v; o.frustumCulled = f; o.layers.mask = m; } for (const [o, v] of parents) o.visible = v;
+} catch (e) { console.warn("warm-up skipped", e); }
 let raf;
 let frameErr = 0;
 const loop = () => { raf = requestAnimationFrame(loop); try { frameLoop(); } catch (e) { if (frameErr++ < 3) console.error(e); } };   // one bad frame never stops the game

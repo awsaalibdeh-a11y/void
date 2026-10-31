@@ -734,7 +734,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const tuftGeo = mergeGeometries([new THREE.PlaneGeometry(1.1, .6).translate(0, .3, 0), new THREE.PlaneGeometry(1.1, .6).translate(0, .3, 0).rotateY(Math.PI / 2)]);
   const NTUFT = COARSE ? 0 : 3200, tufts = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ map: bladeTex, alphaTest: .45, side: THREE.DoubleSide, roughness: .9 }), Math.max(1, NTUFT));
   tufts.frustumCulled = false; tufts.count = 0; tufts.setColorAt(0, new THREE.Color(1, 1, 1)); scene.add(tufts);
-  let tuftAt = null;
+  let tuftAt = null; const tuftC = new THREE.Color();
   const grassy = (x, z) => {
     if (inPark(x, z)) return Math.hypot((x - lake.x) / (lake.rx + 6), (z - lake.z) / (lake.rz + 6)) > 1 ? .08 : -1;
     if (x > MT.x0 && x < MT.x1 && z > MT.z0 && z < MT.z1 && terrain) { const h = terrain.height(x, z); return h > .3 && h < 165 ? h : -1; }
@@ -748,7 +748,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
       const hsh = Math.sin(gx * 127.1 + gz * 311.7) * 43758.5453, f = hsh - Math.floor(hsh), x = (gx + f) * S, z = (gz + (f * 7.3 % 1)) * S;
       if ((x - cam.x) ** 2 + (z - cam.z) ** 2 > R * R || f < .25) continue;
       const y = grassy(x, z); if (y < 0) continue;
-      m4.compose(v.set(x, y, z), q0.setFromAxisAngle(Y, f * 6.28), sc.set(.7 + f * .7, .7 + f * .8, .7 + f * .7)); tufts.setMatrixAt(k, m4); tufts.setColorAt(k++, new THREE.Color().setHSL(.24 + f * .06, .55, .32 + f * .14));
+      m4.compose(v.set(x, y, z), q0.setFromAxisAngle(Y, f * 6.28), sc.set(.7 + f * .7, .7 + f * .8, .7 + f * .7)); tufts.setMatrixAt(k, m4); tufts.setColorAt(k++, tuftC.setHSL(.24 + f * .06, .55, .32 + f * .14));
     }
     tufts.count = k; tufts.instanceMatrix.needsUpdate = true; if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
   }

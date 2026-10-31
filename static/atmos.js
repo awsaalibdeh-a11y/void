@@ -31,7 +31,7 @@ export function createAtmos(W, sound, COARSE) {
   clouds.frustumCulled = false; clouds.renderOrder = -1; scene.add(clouds);
 
   // ---- sun lens flare ----
-  const flareLight = new THREE.PointLight(0xffffff, 0, 1); scene.add(flareLight);
+  const flareLight = new THREE.Object3D(); scene.add(flareLight);         // not a light: hiding a real light changes the light count and rebuilds every material
   const lf = new Lensflare();
   lf.addElement(new LensflareElement(radial([[0, "rgba(255,250,235,1)"], [.2, "rgba(255,230,180,.6)"], [1, "rgba(255,200,120,0)"]]), 380, 0));
   const ring = radial([[0, "rgba(255,255,255,0)"], [.6, "rgba(255,255,255,0)"], [.7, "rgba(180,220,255,.35)"], [1, "rgba(255,255,255,0)"]]), dot = radial([[0, "rgba(255,220,180,.5)"], [1, "rgba(255,220,180,0)"]]);

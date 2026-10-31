@@ -99,6 +99,7 @@
 
 <!-- Play -->
 <div id="playUI" class="mode">
+  <div class="fps-hud" id="gFpsHud">– fps</div>
   <div class="hud-tl">
     <div class="g-score"><span>Cash this run</span><b id="gScore">$0</b><em id="gCombo"></em></div>
     <div class="g-bars"><div class="bar hp" id="gHp"><i></i><span>Health</span></div><div class="bar nos" id="gNos"><i></i><span>Nitro</span></div><div class="bar fuel" id="gFuel"><i></i><span>Fuel</span></div></div>
@@ -159,6 +160,8 @@
         <label class="set">Handling<span class="seg" data-set="handling"><button data-v="arcade">Arcade</button><button data-v="realistic">Realistic</button></span></label>
         <label class="set">Screen shake and speed blur<span class="seg" data-set="motion"><button data-v="on">On</button><button data-v="off">Off</button></span></label>
         <label class="set">Hoverboard<span class="seg" data-set="board"><button data-v="ion">Ion</button><button data-v="blaze">Blaze</button><button data-v="toxic">Toxic</button><button data-v="violet">Violet</button><button data-v="gold">Gold</button><button data-v="ghost">Ghost</button></span></label>
+        <label class="set">Traffic &amp; crowds<span class="seg" data-set="crowd"><button data-v="few">Few</button><button data-v="normal">Normal</button><button data-v="busy">Busy</button></span></label>
+        <label class="set">Show FPS<span class="seg" data-set="fps"><button data-v="off">Off</button><button data-v="on">On</button></span></label>
         <label class="set">Text size<span class="seg" data-set="text"><button data-v="normal">Normal</button><button data-v="large">Large</button></span></label>
         <label class="set">Touch steering<span class="seg" data-set="steer"><button data-v="stick">Joystick</button><button data-v="buttons">Buttons</button></span></label>
         <div class="set save-row">Secret code<span><input id="gCode" maxlength="16" placeholder="type a code" autocomplete="off"><button class="pill" id="gCodeGo">Enter</button></span></div>

@@ -449,3 +449,7 @@ body[data-mode="play"] .hub-chip { display: none !important; }
 .deal-go { justify-self: start; } .deal-go:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 820px) { .deal-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; } .deal-info { max-height: 42vh; } .g-deal { inset: 8px; } }
 body.big-ui .g-hint, body.big-ui .g-job, body.big-ui .g-tut, body.big-ui .g-gps { font-size: 17px; } body.big-ui .g-menu { font-size: 16px; } body.big-ui .tile { font-size: 14px; } body.big-ui .goal small, body.big-ui .small { font-size: 14px; }
+
+/* fps counter (Settings → Show FPS) */
+.fps-hud { display: none; position: absolute; left: 50%; bottom: calc(10px + var(--bot, 0px)); transform: translateX(-50%); padding: 3px 10px; border-radius: 999px; background: rgba(0,0,0,.6); font: 700 12px var(--body); color: #9dffb0; pointer-events: none; z-index: 5; }
+body.show-fps .fps-hud { display: block; } .fps-hud.mid { color: #ffd23d; } .fps-hud.low { color: #ff6b6b; }
