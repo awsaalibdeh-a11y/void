@@ -8,7 +8,8 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 Object.defineProperty(THREE.Material.prototype, "forceSinglePass", { get: () => true, set() {} });
 const V = new URL(import.meta.url).search;
 const $ = id => document.getElementById(id);
-const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); };
+const LT = window.__loadTimes = [], lt = k => LT.push([k, Math.round(performance.now())]);       // where the loading time goes (window.__loadTimes)
+const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); lt(p); };
 setLoad(15);
 const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife, personGeo }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
@@ -54,11 +55,11 @@ const interior = addInterior(car, renderer);
 const sound = new Sound();
 const watch = createWatch(W, car, interior);
 const DENSITY = { few: .55, normal: 1, busy: 1.3 }[(store.get("void.settings") || {}).crowd || (LITE ? "few" : "normal")] || 1;
-const life = createLife(scene, W.roads, W.walkways, COARSE || LITE, DENSITY);
+const life = createLife(scene, W.roads, W.walkways, COARSE || LITE, DENSITY); lt("life");
 const TIMES = ["night", "sunset", "day"];
 function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % 3]; W.setTime(k); store.set("void.time", k); toast({ night: "Night in the city", sunset: "Golden hour", day: "Daytime" }[k]); cubeN = 0; }
 let police, races, nav;
-const net = createNet();
+const net = createNet(); lt("net");
 setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
 // settings: graphics quality, look speed, auto gas, touch steering (kept on this device)
 // a strong graphics card starts on High; everything else starts on Medium (it can be raised in the Menu)
@@ -81,9 +82,9 @@ const gameOpts = {
     mx.font = "bold 12px sans-serif"; mx.textAlign = "center"; for (const st of W.city.stations) { const [a, b] = P(st.x, st.z); if (Math.abs(a) < 90 && Math.abs(b) < 90) { mx.save(); mx.translate(a, b); mx.rotate(g.yaw + Math.PI / 2); mx.fillText("⛽", 0, 4); mx.restore(); } }
   },
 };
-const game = createGame(W, car, sound, life, gameOpts);
-const vehicles = createVehicles(scene, game.api, W); gameOpts.vehicles = vehicles;
-const atmos = createAtmos(W, sound, COARSE);
+const game = createGame(W, car, sound, life, gameOpts); lt("game");
+const vehicles = createVehicles(scene, game.api, W); gameOpts.vehicles = vehicles; lt("vehicles");
+const atmos = createAtmos(W, sound, COARSE); lt("atmos");
 // trophies: a banner slides in at the top when a challenge is done
 const goals = createGoals(gl => { const t = document.getElementById("gTrophy"); t.innerHTML = `<b>${gl.icon}</b><div><span>Challenge complete</span>${gl.name}<em>+1000</em></div>`; t.classList.remove("on"); void t.offsetWidth; t.classList.add("on"); if (game.state) { game.state.score += 1000; } sound.win(); renderGoals(); });
 function renderGoals() {
@@ -140,10 +141,18 @@ document.getElementById("gSens").addEventListener("input", e => { SET.sens = +e.
 }
 // headlights that light the road at night
 const heads = new THREE.SpotLight(0xfff1d6, 0, 70, .55, .6, 1.2); heads.position.set(2.2, .7, 0); heads.target.position.set(18, -1.5, 0); scene.add(heads, heads.target);           // in the scene (it follows the car each frame), so it never disappears with the car
-police = createPolice(scene, game.api, sound, life);
-races = createRaces(scene, game.api, sound, W.canvasTex, net);
-nav = createNav(scene, game.api, W, ZONES, races.starts, () => clock.elapsedTime);
-const extras = createExtras(W, game.api, nav, sound);
+police = createPolice(scene, game.api, sound, life); lt("police");
+races = createRaces(scene, game.api, sound, W.canvasTex, net); lt("races");
+nav = createNav(scene, game.api, W, ZONES, races.starts, () => clock.elapsedTime); lt("nav");
+// every light now exists (they are part of each shader), so build all the shaders on the graphics driver's own threads
+// while the rest loads; the first city render would otherwise compile them one at a time (about 3 s)
+function precompile() {
+  const rt0 = renderer.getRenderTarget(); renderer.setRenderTarget(composer.renderTarget1);         // the game always draws into the composer's target
+  let p = null; try { p = renderer.compileAsync(scene, camera); } catch (e) { console.warn("precompile", e); }
+  renderer.setRenderTarget(rt0); return Promise.race([p || Promise.resolve(), new Promise(r => setTimeout(r, 8000))]);
+}
+const shadersReady = precompile();
+const extras = createExtras(W, game.api, nav, sound); lt("extras");
 document.getElementById("gTaxi").onclick = () => extras.toggle();
 // people knocked over: a thud, a shake, and the police notice; they bounce off walls instead of flying through them
 life.onHit = sp => { sound.thud && sound.thud(Math.min(1, sp / 22)); if (game.state) game.state.shake = Math.min(1, (game.state.shake || 0) + .25); police && police.event("ped"); };
@@ -231,7 +240,7 @@ function dailyProg(k) { const [stat, need] = DAILY[k]; return Math.min(1, ((goal
 function dailyCheck() { for (const k of daily.picks) if (!daily.done.includes(k) && dailyProg(k) >= 1) { daily.done.push(k); store.set("void.daily", daily); cash += 2500; earn(0); toast(`Daily challenge done: ${DAILY[k][2]} · +$2,500`); sound.win(); } }
 function renderDaily() { document.getElementById("gDaily").innerHTML = daily.picks.map(k => { const v = dailyProg(k), ok = daily.done.includes(k); return `<div class="goal${ok ? " ok" : ""}"><b>${DAILY[k][2].split(" ")[0]}</b><div><span>${DAILY[k][2].split(" ").slice(1).join(" ")}</span><small>$2,500</small><i style="--v:${v}"></i></div>${ok ? "✅" : `<em>${Math.floor(v * 100)}%</em>`}</div>`; }).join(""); }
 // contracts: hybrid drive + fly jobs and pursuits with medals
-const contracts = createContracts(W, game.api, nav, sound, police);
+const contracts = createContracts(W, game.api, nav, sound, police); lt("contracts");
 function renderContracts() { document.getElementById("gContracts").innerHTML = contracts.CONTRACTS.map(c => `<button class="tile con" data-con="${c.id}"><b>${c.icon}</b>${c.name}<small>${c.text}</small><i>${["Not done", "🥉 Bronze", "🥈 Silver", "🥇 Gold"][contracts.best[c.id] || 0]}</i></button>`).join("") + (contracts.active ? `<button class="tile con" id="gConStop"><b>✕</b>Cancel contract</button>` : ""); }
 document.getElementById("gContracts").addEventListener("click", e => { const b = e.target.closest("[data-con]"); if (b) { if (extras.job.on) extras.toggle(false); contracts.start(b.dataset.con); } else if (e.target.closest("#gConStop")) contracts.cancel(); });
 // backups: every void.* key in one code, so progress survives a new browser or device
@@ -288,7 +297,8 @@ function renderPlayers() { document.getElementById("gPlayers").innerHTML = net.o
   $("gEmotes").innerHTML = EMOTES.map((e, k) => `<button class="pill" data-e="${k}">${e}</button>`).join("");
   $("gEmotes").onclick = ev => { const b = ev.target.closest("[data-e]"); if (!b || !net.online()) return; net.send({ t: "emote", e: +b.dataset.e }); feed(`You: ${EMOTES[+b.dataset.e]}`); };
 }
-W.setTime(store.get("void.time") || "night");
+await shadersReady; lt("shaders");
+W.setTime(store.get("void.time") || "night"); lt("setTime");
 // fill the car's reflection cube once before the first frame, so the paint never samples an empty one
 
 $("osmCredit").textContent = W.credit;
@@ -339,7 +349,7 @@ $("share").onclick = async () => {
   const url = location.origin + location.pathname + "#b=" + Object.keys(DEFAULT).map(k => build[k]).join(".");
   try { await navigator.clipboard.writeText(url); toast("Link to your build copied"); } catch { prompt("Copy your build link", url); }
 };
-applyBuild();
+applyBuild(); lt("applyBuild");
 // ---------- performance upgrades: every point you score is also cash, spent here (kept on this device) ----------
 const UPG = { engine: ["⚙️", "Engine", "More power and top speed"], grip: ["🛞", "Tyres", "Grip in corners, longer drifts"], nitro: ["🔥", "Nitro", "A bigger nitro tank"], armor: ["🛡️", "Armour", "Takes less damage"] };
 const PRICE = [2500, 6000, 15000];
@@ -428,7 +438,7 @@ function resize() {
 }
 addEventListener("resize", resize); addEventListener("orientationchange", () => setTimeout(resize, 200));
 if (window.visualViewport) visualViewport.addEventListener("resize", resize);
-resize();
+resize(); lt("resize");
 const fovFor = f => { const a = camera.aspect; if (a >= 1.5) return f; const h = 2 * Math.atan(Math.tan(f * Math.PI / 360) * 1.5); return Math.min(88, 2 * Math.atan(Math.tan(h / 2) / a) * 180 / Math.PI); };
 
 // ---------- the showroom pose (home and build) ----------
@@ -484,7 +494,7 @@ function cullSmall(time, det) {
   }
 }
 const perf = { t: 0, n: 0, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio(), down: 0 };
-applySettings();
+applySettings(); lt("applySettings");
 let lastHud = 0, prevGear = 1, feedFlip = 0;
 function frameLoop(fixed) {
   const raw = fixed ? 0 : clock.getDelta(), dt = fixed || Math.min(.05, raw), time = clock.elapsedTime;
@@ -672,6 +682,7 @@ function frameLoop(fixed) {
   composer.render();
 }
 
+lt("pre-flyers");
 // the flying VOID cars in traffic wear your car's real shape: everything visible on it, baked into one mesh (paint left white so each one gets its own colour)
 try {
   carRoot.updateMatrixWorld(true);
@@ -686,7 +697,7 @@ try {
   if (parts.length) { const geo = mergeGeometries(parts); geo.translate(0, -.02, 0); life.setVoidGeo(geo); life.setVoidDetail(W.quality !== "lite"); window.__voidTris = geo.attributes.position.count / 3; }
 } catch (e) { console.warn("VOID flyers keep the simple shape", e); }
 setLoad(95);
-renderer.compile(scene, camera);
+await precompile(); lt("compile");
 // warm-up: draw every mesh once into a tiny target so its buffers and textures are on the graphics card before you play.
 // Otherwise each new part of the city uploads the first time it comes into view, and that is a stutter.
 try {
@@ -696,6 +707,7 @@ try {
   renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null); rt.dispose(); renderer.shadowMap.autoUpdate = sh;
   for (const [o, v, f, m] of saved) { o.visible = v; o.frustumCulled = f; o.layers.mask = m; } for (const [o, v] of parents) o.visible = v;
 } catch (e) { console.warn("warm-up skipped", e); }
+lt("warm-up");
 let raf;
 let frameErr = 0;
 const loop = () => { raf = requestAnimationFrame(loop); try { frameLoop(); } catch (e) { if (frameErr++ < 3) console.error(e); } };   // one bad frame never stops the game

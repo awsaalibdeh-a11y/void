@@ -632,15 +632,18 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const TILE = 640, tileOf = (x, z) => Math.floor(x / TILE) * 1000 + Math.floor(z / TILE);
   const byMat = new Map();
   for (const o of B.values()) { if (!o.pos.length) continue; if (!byMat.has(o.m)) byMat.set(o.m, []); byMat.get(o.m).push(o); }
+  const triTile = (p, t) => tileOf((p[t] + p[t + 3] + p[t + 6]) / 3, (p[t + 2] + p[t + 5] + p[t + 8]) / 3);
   for (const [mtl, list] of byMat) {
+    // count each tile's triangles first, then fill typed arrays of exactly that size (growing plain arrays was most of the load time here)
     const tiles = new Map();
+    for (const o of list) for (let t = 0; t < o.pos.length; t += 9) { const k = triTile(o.pos, t), a = tiles.get(k); if (a) a.n++; else tiles.set(k, { n: 1 }); }
+    for (const a of tiles.values()) { a.pos = new Float32Array(a.n * 9); a.uv = new Float32Array(a.n * 6); a.tile = new Float32Array(a.n * 3); a.i = 0; }
     for (const o of list) for (let t = 0, u = 0; t < o.pos.length; t += 9, u += 6) {
-      const k = tileOf((o.pos[t] + o.pos[t + 3] + o.pos[t + 6]) / 3, (o.pos[t + 2] + o.pos[t + 5] + o.pos[t + 8]) / 3);
-      let a = tiles.get(k); if (!a) tiles.set(k, a = { pos: [], uv: [], tile: [] });
-      for (let i = 0; i < 9; i++) a.pos.push(o.pos[t + i]); for (let i = 0; i < 6; i++) a.uv.push(o.uv[u + i]); a.tile.push(o.tile, o.tile, o.tile);
+      const a = tiles.get(triTile(o.pos, t)), i = a.i++;
+      for (let j = 0; j < 9; j++) a.pos[i * 9 + j] = o.pos[t + j]; for (let j = 0; j < 6; j++) a.uv[i * 6 + j] = o.uv[u + j]; a.tile[i * 3] = a.tile[i * 3 + 1] = a.tile[i * 3 + 2] = o.tile;
     }
     for (const a of tiles.values()) {
-      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(a.pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(a.uv, 2)); g.setAttribute("aTile", new THREE.Float32BufferAttribute(a.tile, 1)); g.computeVertexNormals();
+      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(a.pos, 3)); g.setAttribute("uv", new THREE.BufferAttribute(a.uv, 2)); g.setAttribute("aTile", new THREE.BufferAttribute(a.tile, 1)); g.computeVertexNormals();
       const m = new THREE.Mesh(g, mtl); m.userData.solid = true; scene.add(m);
     }
   }
