@@ -1,7 +1,8 @@
 // Taxi jobs and hidden coins.
 //  Taxi: press J (or Menu → Taxi job). Passengers wave from the kerb near you; stop next to one and they hop in,
 //  the GPS shows where they're going, and the fare drops the longer you take. Back-to-back fares build a streak.
-//  Coins: 40 spinning VOID coins hidden on rooftops, piers, the bridge towers and round the park; found ones stay found.
+//  Coins: 80 spinning VOID coins: rooftops, piers, the bridge towers, the park, and since the city doubled the south
+//  supertalls, the Ferris wheel, the El, the stunt park, Brooklyn, the highway and up the mountain trail; found ones stay found.
 import * as THREE from "three";
 import { GRID } from "./city.js";
 
@@ -42,7 +43,8 @@ export function createExtras(W, api, nav, sound) {
   addEventListener("keydown", e => { if (e.code === "KeyJ" && api.active() && !e.repeat) toggle(); });
 
   // ---- coins ----
-  const COINS = [], got = new Set(store.get("void.coins") || []);
+  const COINS = [], got = new Set(store.get("void.coins") || []); let coinMesh, glowMesh;
+  const cm = new THREE.Matrix4(), cq = new THREE.Quaternion(), cv = new THREE.Vector3(), cs = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
   {
     const spots = [];
     for (const h of W.city.helipads.slice(0, 8)) spots.push([h.x + 4, h.y + 1.5, h.z]);
@@ -50,15 +52,29 @@ export function createExtras(W, api, nav, sound) {
     for (const b of roofs) spots.push([b.x, b.h + 1.5, b.z]);
     for (const [x, y, z] of [[1210, 112, 15], [1570, 112, -15], [-1080, 1.5, -700 + 140 * 2], [-1080, 1.5, -700 + 140 * 7], [W.city.lake.x, 1.5, W.city.lake.z + W.city.lake.rz + 8], [W.city.lawn.x, 1.5, W.city.lawn.z], [-2600, 1.5, 0], [1900, 1.5, 0], [134, 6, 4.2], [16, 18.5, 2]]) spots.push([x, y, z]);
     while (spots.length < 40) { const s = kerb(rnd() * 1800 - 900, rnd() * 1300 - 650, 0, 40); if (s) spots.push([s[0], 1.5, s[1]]); }
+    spots.length = 40;
+    // the new half of the map: the tallest south roofs, the top of the Ferris wheel, the El platforms, over the stunt park ramps,
+    // the gas station canopies down south, the highway, Brooklyn's streets, up the mountain trail and the summit
+    const C = W.city, M = C.mountains;
+    for (const h of C.helipads.filter(h => h.z > 900).sort((a, b) => b.y - a.y).slice(0, 8)) spots.push([h.x - 4, h.y + 1.5, h.z]);
+    if (C.wheel) spots.push([C.wheel.x, C.wheel.y + C.wheel.R + 3, C.wheel.z]);
+    if (C.el) for (const z of C.el.stations) spots.push([C.el.x, C.el.top + 1.6, z]);
+    spots.push([-680, 11, 1440], [-620, 7, 1350], [-760, 5, 1405]);
+    for (const s of C.stations) if (s.z > 900) spots.push([s.x, 7.6, s.z]);
+    spots.push([2150, 1.5, 0], [2420, 1.5, 0]);
+    for (let n = 0, t = 0; n < 4 && t < 200; t++) { const x = 1760 + rnd() * 700, z = rnd() * 1000 - 500; if (!api.hitBox(x, z, .5, 1.2) && !api.isWater(x, z) && Math.abs(z) > 14) { spots.push([x, 1.5, z]); n++; } }
+    if (M) { for (let k = 2; k < M.trail.length; k += 2) { const [x, y, z] = M.trail[k]; spots.push([x, y + 1.6, z]); } spots.push([M.peak[0], M.peak[1] + 2, M.peak[2]]); }
+    for (let t = 0; spots.length < 80 && t < 400; t++) { const s = kerb(rnd() * 1800 - 900, 900 + rnd() * 1150, 0, 40); if (s) spots.push([s[0], 1.5, s[1]]); }
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc23d, metalness: 1, roughness: .2, emissive: 0x6a4a00, emissiveIntensity: .6 });
     const geo = new THREE.CylinderGeometry(.8, .8, .14, 28).rotateX(Math.PI / 2);
     const vTex = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d"); g.fillStyle = "#ffc23d"; g.fillRect(0, 0, 64, 64); g.fillStyle = "#7a5200"; g.font = "900 44px sans-serif"; g.textAlign = "center"; g.fillText("V", 32, 48); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
     const face = new THREE.MeshStandardMaterial({ map: vTex, metalness: .8, roughness: .3, emissive: 0x6a4a00, emissiveIntensity: .5 });
-    spots.slice(0, 40).forEach(([x, y, z], k) => {
-      const m = new THREE.Mesh(geo, [gold, face, face]); m.position.set(x, y, z); scene.add(m);
-      const glow = new THREE.Mesh(new THREE.SphereGeometry(1.6, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc23d).multiplyScalar(1.4), transparent: true, opacity: .12, depthWrite: false, toneMapped: false })); m.add(glow);
-      COINS.push({ id: k, m, x, y, z }); if (got.has(k)) m.visible = false;
-    });
+    const all = spots.slice(0, 80);
+    coinMesh = new THREE.InstancedMesh(geo, [gold, face, face], all.length);
+    glowMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc23d).multiplyScalar(1.4), transparent: true, opacity: .12, depthWrite: false, toneMapped: false }), all.length);
+    for (const im of [coinMesh, glowMesh]) { im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(im); }
+    all.forEach(([x, y, z], k) => COINS.push({ id: k, x, y, z, on: !got.has(k) }));
+    for (const c of COINS) { cm.compose(cv.set(c.x, c.y, c.z), cq.identity(), cs.setScalar(c.on ? 1 : 0)); coinMesh.setMatrixAt(c.id, cm); glowMesh.setMatrixAt(c.id, cm); }
   }
 
   // ---- boost pads: glowing chevrons on the avenues that kick you forward ----
@@ -78,7 +94,9 @@ export function createExtras(W, api, nav, sound) {
   const TRAPS = [], best = store.get("void.traps") || {};
   {
     const flashM = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 1, 1).multiplyScalar(4), toneMapped: false, transparent: true, opacity: 0 }), pole = new THREE.MeshStandardMaterial({ color: 0x2a2b30, metalness: .5, roughness: .4 }), boxM = new THREE.MeshStandardMaterial({ color: 0xf7c414, roughness: .5 });
-    const spots = [[GRID.ax(9), GRID.sz(3), "Midtown"], [GRID.ax(3), GRID.sz(15), "Park Ave"], [GRID.ax(11), GRID.sz(17), "Downtown"], [600, 0, "Broadway"], [GRID.ax(1), GRID.sz(6), "West Side"], [1400, 18, "Bridge"]];
+    const spots = [[GRID.ax(9), GRID.sz(3), "Midtown"], [GRID.ax(3), GRID.sz(15), "Park Ave"], [GRID.ax(11), GRID.sz(17), "Downtown"], [600, 0, "Broadway"], [GRID.ax(1), GRID.sz(6), "West Side"], [1400, 18, "Bridge"],
+      [1880, 0, "Highway West"], [2380, 0, "Highway East"], [GRID.ax(5), GRID.sz(27), "South Ave"], [GRID.ax(10), GRID.sz(32), "Harbor"], [GRID.ax(2), GRID.sz(37), "Bay Ridge"], [GRID.ax(7), GRID.sz(22), "Midtown South"], [480, GRID.sz(20), "Under the El"]];
+    if (W.city.mountains) { const [x, , z] = W.city.mountains.trail[1]; spots.push([x, z, "Hill Climb"]); }
     spots.forEach(([x, z, name]) => {
       const g = new THREE.Group(); g.position.set(x + 11, 0, z + 9); scene.add(g);
       g.add(new THREE.Mesh(new THREE.CylinderGeometry(.12, .15, 5, 8).translate(0, 2.5, 0), pole)); const b = new THREE.Mesh(new THREE.BoxGeometry(.8, .5, .5), boxM); b.position.y = 5; g.add(b);
@@ -105,6 +123,7 @@ export function createExtras(W, api, nav, sound) {
 
   return {
     toggle, pads: PADS, get job() { return J; }, coins: () => ({ got: got.size, total: COINS.length }),
+    fastCams: () => TRAPS.filter(t => (best[t.name] || 0) >= 250).length,
     sky(dt, time) {
       skyT += dt;
       const a = (skyT * .012) % (Math.PI * 2); plane.position.set(Math.cos(a) * 2600, 620, Math.sin(a) * 1600); plane.rotation.y = -Math.atan2(Math.cos(a) * 1600, -Math.sin(a) * 2600);
@@ -124,7 +143,7 @@ export function createExtras(W, api, nav, sound) {
         if (Math.hypot(p.x - t.x, p.z - t.z) < 14) {
           const kmh = Math.round(Math.hypot(p.vel.x, p.vel.z) * 3.6); if (kmh < 60) continue;
           t.cool = 4; t.f.material.opacity = 1;
-          if (kmh > (best[t.name] || 0)) { best[t.name] = kmh; store.set("void.traps", best); api.addScore(Math.round(kmh * 2), `📸 ${t.name} speed camera: ${kmh} km/h (new best)`); }
+          if (kmh > (best[t.name] || 0)) { best[t.name] = kmh; store.set("void.traps", best); api.addScore(Math.round(kmh * 2), `📸 ${t.name} speed camera: ${kmh} km/h (new best, ${TRAPS.filter(c => best[c.name]).length}/${TRAPS.length} cameras)`); }
           else api.say(`📸 ${t.name}: ${kmh} km/h (best ${best[t.name]})`, 2.5);
         }
       }
@@ -133,14 +152,17 @@ export function createExtras(W, api, nav, sound) {
       const p = api.state; if (!p || !p.started) return;
       this.boosts(dt);
       // coins
+      let near = 1e9;
       for (const c of COINS) {
-        if (!c.m.visible) continue;
-        c.m.rotation.y += dt * 2.4; c.m.position.y = c.y + Math.sin(time * 2 + c.id) * .2;
-        if (Math.abs(p.x - c.x) < 3 && Math.abs(p.z - c.z) < 3 && Math.abs(p.y + .6 - c.y) < 3.5) {
-          c.m.visible = false; got.add(c.id); store.set("void.coins", [...got]); api.addScore(250, `🪙 Coin ${got.size}/${COINS.length}`); sound.win();
+        if (c.on && Math.abs(p.x - c.x) < 3 && Math.abs(p.z - c.z) < 3 && Math.abs(p.y + .6 - c.y) < 3.5) {
+          c.on = false; got.add(c.id); store.set("void.coins", [...got]); api.addScore(250, `🪙 Coin ${got.size}/${COINS.length}`); sound.win();
         }
+        if (c.on) { near = Math.min(near, Math.hypot(p.x - c.x, p.z - c.z, (p.y - c.y) * .5)); cv.set(c.x, c.y + Math.sin(time * 2 + c.id) * .2, c.z); cq.setFromAxisAngle(Y, time * 2.4 + c.id); cs.set(1, 1, 1); }
+        else cs.set(0, 0, 0);                                   // found: shrunk to nothing
+        cm.compose(cv, cq, cs); coinMesh.setMatrixAt(c.id, cm); glowMesh.setMatrixAt(c.id, cm);
       }
-      $("gCoins").textContent = `🪙 ${got.size}/${COINS.length}`;
+      coinMesh.instanceMatrix.needsUpdate = glowMesh.instanceMatrix.needsUpdate = true;
+      $("gCoins").textContent = `🪙 ${got.size}/${COINS.length}` + (near < 150 ? ` · one ${Math.round(near)} m away` : "");
       if (!J.on) return;
       const sp = Math.hypot(p.vel.x, p.vel.z);
       // waving passengers; the nearest one gets in when you stop beside it
