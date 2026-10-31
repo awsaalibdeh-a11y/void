@@ -1,4 +1,4 @@
-// Play: free roam in VOID City. Drive anywhere (grip, drift with the handbrake, nitro), hit the loop, the ramps
+// Play: free roam in New Legion. Drive anywhere (grip, drift with the handbrake, nitro), hit the loop, the ramps
 // and the sky rings, press Fly to lift off: the thrusters hold you up when slow, the wings and real lift and drag
 // take over when fast (bank to turn, pull up to climb, too slow and it stalls). Land on the park lawn or a
 // skyscraper's helipad. Smash traffic that is slower than you; anything faster that hits you does the damage.

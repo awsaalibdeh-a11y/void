@@ -25,7 +25,7 @@ class Page(unittest.TestCase):
         self.assertEqual(self.c.get("/healthz").get_json(), {"ok": True})
 
     def test_credit_dream_card_and_not_affiliated_note(self):
-        self.assertIn("Made by Awsaa", self.html)
+        self.assertIn("Made by Legion", self.html)
         self.assertIn("dream car", self.html)
         self.assertIn("Hydra LTE242", self.html)
         self.assertIn("isn&rsquo;t made by or linked to McLaren", self.html)

@@ -1,4 +1,4 @@
-// VOID City: a New York-style grid, built entirely in code. Straight avenues (north-south) and streets
+// New Legion: a New York-style grid, built entirely in code. Straight avenues (north-south) and streets
 // (east-west) with lane lines and crosswalks, glass skyscrapers with setbacks, spires and rooftop helipads,
 // art-deco stone towers, brick brownstone rows with stoops, brick walk-ups with fire escapes and wooden
 // water towers, ground-floor shops (burgers, pizza, delis, bagels...), subway entrances, a big central park

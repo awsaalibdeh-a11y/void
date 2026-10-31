@@ -1,4 +1,4 @@
-// Street races round VOID City: drive into a start marker and press Enter (or tap Race). Gates on the real streets,
+// Street races round New Legion: drive into a start marker and press Enter (or tap Race). Gates on the real streets,
 // three AI rivals in sports cars (solo), or everybody in your online room. A countdown, a timer, live positions,
 // best times kept on this device. The Sky Rings race is a flying time trial through gates in the air.
 // Ghosts: your best run on every route is recorded and races beside you next time, with a split at every gate.

@@ -1,6 +1,6 @@
 # VOID
 
-A free browser driving and flying game set in VOID City, a New York-style city built in code with three.js. Made by Awsaa.
+A free browser driving and flying game set in New Legion, a New York-style city built in code with three.js. Made by Legion.
 
 **Play:** https://death242-void.static.hf.space
 

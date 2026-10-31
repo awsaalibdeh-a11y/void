@@ -1,4 +1,4 @@
-// Life in the streets of VOID City: thousands of cars, cabs, buses, trucks and police cruisers that drive
+// Life in the streets of New Legion: thousands of cars, cabs, buses, trucks and police cruisers that drive
 // in their lanes, stop at red lights, follow the car in front and turn at the corners, and thousands of
 // people walking round the blocks. Ram a car faster than it is going and it breaks apart and flies;
 // let something faster hit you and you take the damage. People always leap out of the way.

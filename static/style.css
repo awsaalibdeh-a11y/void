@@ -214,7 +214,7 @@ body.garage[data-mode="play"] #playUI > *:not(.g-card) { opacity: .25; pointer-e
 }
 @media (prefers-reduced-motion: reduce) { #grain, .ld-word span { animation: none; } }
 
-/* VOID City HUD: health and nitro, combo, hurt flash, photo mode */
+/* New Legion HUD: health and nitro, combo, hurt flash, photo mode */
 .g-score em { font: 800 15px var(--wide); color: #ffd23d; font-style: normal; min-height: 18px; }
 .g-bars { position: absolute; left: var(--pad); top: calc(128px + var(--top)); display: grid; gap: 6px; width: 160px; }
 .g-btns { max-width: min(560px, 58vw); }
