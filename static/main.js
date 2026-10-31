@@ -576,6 +576,7 @@ function frameLoop(fixed) {
   car.setReveal(S.reveal);
   car.setThrust(S.thrust.power, S.thrust.angle, S.thrust.deploy, time);
   car.setFlame(S.nitro || 0, time);
+  if (car.setBrakes) { const bk = mode === "play" && heroDriven ? (S.braking || 0) : 0; car.setBrakes(bk, bk > .3 && S.speed > 90 ? 1 : 0); car.setAero(mode === "play" && heroDriven ? S.speed : 0, bk, dt); }
   // damage: dent the model where it was hit; a destroyed car is left where it crashed and a fresh one is built for you
   const gs = mode === "play" ? game.state : null;
   if (gs && gs.impacts && gs.impacts.length && car.damage) { carRoot.updateMatrixWorld(true); for (const im of gs.impacts.splice(0)) car.damage(carRoot.worldToLocal(new THREE.Vector3(im.x, im.y, im.z)), im.p); }

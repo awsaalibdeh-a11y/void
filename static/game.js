@@ -414,6 +414,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     if (g.veh === "foot") { walk(dt, turn, clamp(gas - brake, -1, 1)); return; }
     if (g.veh === "board") { board(dt, turn, gas, brake); return; }
     if (opts.autoGas && opts.autoGas() && !brake && g.mode === "drive") gas = 1;
+    g.brakeIn = brake;
     const touched = turn !== 0 || gas > 0 || brake > 0 || held("up") || held("down");
     const ap = opts.autopilot ? opts.autopilot(g, dt, touched && g.apT > .5) : null;
     g.apT = ap ? (g.apT || 0) + dt : 0;
@@ -776,7 +777,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         pos: fr.p.clone(), quat: q, fr, speed, g: g.gForce, alt: Math.max(0, g.y), vs: air ? g.vel.y : 0, player: { x: g.x, y: g.y, z: g.z, speed: speed / 3.6, vx: g.vel.x, vz: g.vel.z, foot: g.veh === "foot" || g.veh === "board" },
         thrust: { power: air && g.veh === "car" ? g.thr : 0, angle: g.ang, deploy: air && g.veh === "car" && !(g.jump && !g.hover && !g.landing && g.thr < .05) ? 1 : 0 }, wings: g.veh === "car" ? g.wings : 0, air, cam,
         inside: view === "seat", screenOn: view === "seat", mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : g.hover ? "HOVER" : "THRUST",
-        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" || g.veh === "board" ? 0 : !air ? 1 : .15, walk: g.walk || 0, crouch: g.veh === "board" ? Math.max((g.charge || 0) / .6, g.grabT > 0 ? 1 : 0) : 0, grinding: !!g.grind, ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, boat: g.boat, zones, reveal: 1,
+        rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" || g.veh === "board" ? 0 : !air ? 1 : .15, walk: g.walk || 0, crouch: g.veh === "board" ? Math.max((g.charge || 0) / .6, g.grabT > 0 ? 1 : 0) : 0, grinding: !!g.grind, braking: g.ap ? (g.ap.brake || 0) : (g.brakeIn || 0), ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, boat: g.boat, zones, reveal: 1,
         splash: g.splashT > 0 ? (g.splashT -= dt, 1) : 0, nitro: g.nitroOn, hp: g.hp, veh: g.veh || "car", fuel: g.fuel, thr: g.thr, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
       };
     },

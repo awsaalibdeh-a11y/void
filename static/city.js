@@ -50,7 +50,13 @@ export async function buildCity(scene, canvasTex, COARSE) {
     for (let i = 0; i < 6; i++) { g.fillStyle = `rgba(${rnd() < .5 ? "0,0,0" : "70,70,74"},${.06 + rnd() * .08})`; g.fillRect(rnd() * w, rnd() * h, 60 + rnd() * 160, 40 + rnd() * 120); }
     for (let i = 0; i < 26000; i++) { const c = 20 + rnd() * 70 | 0; g.fillStyle = `rgba(${c},${c},${c + 4},${.3 + rnd() * .6})`; const sz = rnd() < .15 ? 2 : 1; g.fillRect(rnd() * w | 0, rnd() * h | 0, sz, sz); }
   }, [1, 1]);
-  const walkTex = canvasTex(128, 128, (g, w, h) => { g.fillStyle = "#9c9a95"; g.fillRect(0, 0, w, h); noise(g, w, h, 900, .06); g.fillStyle = "rgba(60,60,60,.35)"; g.fillRect(0, 0, w, 2); g.fillRect(0, 0, 2, h); g.fillRect(0, h / 2, w, 1); g.fillRect(w / 2, 0, 1, h); }, [1, 1]);
+  const walkTex = canvasTex(256, 256, (g, w, h) => {                          // 4 m of pavement: slabs, worn edges, a few gum spots and a kerb stone
+    g.fillStyle = "#a2a09a"; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { const v = 150 + rnd() * 22 | 0; g.fillStyle = `rgb(${v},${v - 2},${v - 6})`; g.fillRect(x * 64 + 1, y * 64 + 1, 62, 62); }
+    for (let i = 0; i < 4000; i++) { const c = 110 + rnd() * 80 | 0; g.fillStyle = `rgba(${c},${c},${c},${rnd() * .35})`; g.fillRect(rnd() * w | 0, rnd() * h | 0, 1, 1); }
+    g.fillStyle = "rgba(70,70,72,.55)"; for (let k = 0; k <= 4; k++) { g.fillRect(k * 64 - 1, 0, 2, h); g.fillRect(0, k * 64 - 1, w, 2); }
+    for (let i = 0; i < 7; i++) { g.fillStyle = `rgba(40,40,42,${.25 + rnd() * .3})`; g.beginPath(); g.arc(rnd() * w, rnd() * h, 1.5 + rnd() * 2, 0, 7); g.fill(); }
+  }, [1, 1]);
   const GLASS = [["#1b3248", "#4b7898"], ["#0d1218", "#2a3440"], ["#3a2c1c", "#8a6a44"], ["#16302c", "#4f8a80"]];
   const glassTex = (st, lit) => canvasTex(256, 256, (g, w, h) => {           // 16 m x 16 m: 4 bays x 4 floors
     if (lit) { g.fillStyle = "#000"; g.fillRect(0, 0, w, h); }
@@ -165,7 +171,11 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const crownA = (() => { const cols = ["#3df5ff", "#b38cff", "#fff1d6", "#ffc23d"]; const t = canvasTex(4, 1, g => cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i, 0, 1, 1); })); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
     const m = atlasify(new THREE.MeshBasicMaterial({ map: t, color: new THREE.Color(2.2, 2.2, 2.2), toneMapped: false }), 4, false); emissive.push(m); return m; })();
   const shopA = atlasify(lit(mat({ map: atlasOf(AWN.map((_, k) => shopTex(k, false))), emissive: 0xffffff, emissiveMap: atlasOf(AWN.map((_, k) => shopTex(k, true))), emissiveIntensity: 1, roughness: .5, metalness: .1 }), 1.1), AWN.length, false);
-  const roofM = mat({ color: 0x3b3c40, roughness: .9 }), trimM = mat({ color: 0xd9d2c4, roughness: .7 }), darkM = mat({ color: 0x1c1d21, roughness: .6, metalness: .4 });
+  const roofTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#4a4b4f"; g.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { const c = 50 + rnd() * 70 | 0; g.fillStyle = `rgba(${c},${c},${c + 3},${.4 + rnd() * .5})`; g.fillRect(rnd() * w | 0, rnd() * h | 0, 1 + (rnd() < .3), 1 + (rnd() < .3)); }
+    g.strokeStyle = "rgba(20,20,22,.55)"; g.lineWidth = 3; for (let k = 0; k < 4; k++) { g.beginPath(); g.moveTo(0, k * 64 + 20); g.lineTo(w, k * 64 + 20 + (rnd() - .5) * 8); g.stroke(); }
+    for (let k = 0; k < 6; k++) { g.fillStyle = `rgba(${rnd() < .5 ? "25,25,28" : "95,95,100"},.35)`; g.fillRect(rnd() * w, rnd() * h, 20 + rnd() * 50, 14 + rnd() * 40); } }, [1, 1]);
+  roofTex.wrapS = roofTex.wrapT = THREE.RepeatWrapping;
+  const roofM = mat({ map: roofTex, color: 0xd0d0d4, roughness: .92 }), trimM = mat({ color: 0xd9d2c4, roughness: .7 }), darkM = mat({ color: 0x1c1d21, roughness: .6, metalness: .4 });
 
   // ---- geometry buckets: every wall of a kind goes into one merged mesh ----
   const B = new Map();
@@ -175,7 +185,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
     o.pos.push(x1, y0, z1, x2, y0, z2, x2, y1, z2, x1, y0, z1, x2, y1, z2, x1, y1, z1);
     o.uv.push(0, v0, u1, v0, u1, v1, 0, v0, u1, v1, 0, v1);
   };
-  const top = (o, x0, x1, z0, z1, y) => { o.pos.push(x0, y, z0, x0, y, z1, x1, y, z1, x0, y, z0, x1, y, z1, x1, y, z0); o.uv.push(0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0); };
+  const top = (o, x0, x1, z0, z1, y) => { o.pos.push(x0, y, z0, x0, y, z1, x1, y, z1, x0, y, z0, x1, y, z1, x1, y, z0); const a = x0 / o.tw, b = x1 / o.tw, c = z0 / o.th, d = z1 / o.th; o.uv.push(a, c, a, d, b, d, a, c, b, d, b, c); };          // world-space UVs: the roof texture tiles at a fixed size
   // walls go round counter-clockwise seen from above so they face out
   const walls = (o, x0, x1, z0, z1, y0, y1) => { quad(o, x0, z1, x1, z1, y0, y1); quad(o, x1, z1, x1, z0, y0, y1); quad(o, x1, z0, x0, z0, y0, y1); quad(o, x0, z0, x0, z1, y0, y1); };
   const roofB = bucket(roofM, 8, 8), trimB = bucket(trimM, 4, 4), darkB = bucket(darkM, 4, 4), crownB = [0, 1, 2, 3].map(k => bucket(crownA, 4, 4, k));
@@ -581,14 +591,18 @@ export async function buildCity(scene, canvasTex, COARSE) {
   {
     const white = mat({ color: 0xe8e8ea, roughness: .4, metalness: .5 }), wood = mat({ color: 0x8a6a48, roughness: .85 });
     const wheel = new THREE.Group(); wheel.position.set(FW.x, FW.y, FW.z); scene.add(wheel); FW.g = wheel;
-    for (const x of [-1.4, 1.4]) { const rim = new THREE.Mesh(new THREE.TorusGeometry(FW.R, .3, 8, 72), white); rim.rotation.y = Math.PI / 2; rim.position.x = x; wheel.add(rim); const inner = new THREE.Mesh(new THREE.TorusGeometry(FW.R * .55, .2, 6, 48), white); inner.rotation.y = Math.PI / 2; inner.position.x = x; wheel.add(inner); }
-    for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2; for (const x of [-1.4, 1.4]) { const sp = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, FW.R, 5), white); sp.position.set(x, Math.cos(a) * FW.R / 2, Math.sin(a) * FW.R / 2); sp.rotation.x = a; wheel.add(sp); } }
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 3.6, 16).rotateZ(Math.PI / 2), white); wheel.add(hub);
+    { const parts = [];
+      for (const x of [-1.4, 1.4]) { parts.push(new THREE.TorusGeometry(FW.R, .3, 8, 72).rotateY(Math.PI / 2).translate(x, 0, 0).toNonIndexed(), new THREE.TorusGeometry(FW.R * .55, .2, 6, 48).rotateY(Math.PI / 2).translate(x, 0, 0).toNonIndexed()); }
+      for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2; for (const x of [-1.4, 1.4]) parts.push(new THREE.CylinderGeometry(.09, .09, FW.R, 5).rotateX(a).translate(x, Math.cos(a) * FW.R / 2, Math.sin(a) * FW.R / 2).toNonIndexed()); }
+      parts.push(new THREE.CylinderGeometry(1.2, 1.2, 3.6, 16).rotateZ(Math.PI / 2).toNonIndexed());
+      for (const q of parts) for (const k of Object.keys(q.attributes)) if (k !== "position" && k !== "normal") q.deleteAttribute(k);
+      wheel.add(new THREE.Mesh(mergeGeometries(parts), white)); }
     const bulb = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .75, .4).multiplyScalar(2.4), toneMapped: false }); emissive.push(bulb);
-    const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(.28, 6, 4), bulb, 144), bm = new THREE.Matrix4();
+    const bulbs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.28, 0), bulb, 144), bm = new THREE.Matrix4();
     for (let k = 0; k < 72; k++) for (const [j, x] of [[0, -1.4], [1, 1.4]]) { const a = k / 72 * Math.PI * 2; bulbs.setMatrixAt(k * 2 + j, bm.makeTranslation(x, Math.cos(a) * FW.R, Math.sin(a) * FW.R)); }
     wheel.add(bulbs);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const len = Math.hypot(FW.y, 14), leg = new THREE.Mesh(new THREE.CylinderGeometry(.35, .5, len, 8), white); leg.position.set(FW.x + sx * 3.2, FW.y / 2, FW.z + sz * 7); leg.rotation.x = -sz * Math.atan2(14, FW.y) * .5; scene.add(leg); solid(FW.x + sx * 3.2 - .8, FW.x + sx * 3.2 + .8, FW.z + sz * 10 - .8, FW.z + sz * 10 + .8, 6, { noRoof: true }); }
+    const legs = []; for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const len = Math.hypot(FW.y, 14); legs.push(new THREE.CylinderGeometry(.35, .5, len, 8).rotateX(-sz * Math.atan2(14, FW.y) * .5).translate(FW.x + sx * 3.2, FW.y / 2, FW.z + sz * 7)); solid(FW.x + sx * 3.2 - .8, FW.x + sx * 3.2 + .8, FW.z + sz * 10 - .8, FW.z + sz * 10 + .8, 6, { noRoof: true }); }
+    scene.add(new THREE.Mesh(mergeGeometries(legs), white));
     const gondM = new THREE.MeshStandardMaterial({ vertexColors: false, roughness: .4 }); FW.gond = new THREE.InstancedMesh(new THREE.BoxGeometry(2.2, 2.2, 2.6).translate(0, -1.6, 0), gondM, 18);
     for (let k = 0; k < 18; k++) FW.gond.setColorAt(k, new THREE.Color().setHSL(k / 18, .75, .55)); scene.add(FW.gond);
     // the boardwalk: planks, a few stalls with striped awnings
@@ -669,7 +683,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   instT(new THREE.CylinderGeometry(.18, .28, 3, 5).translate(0, 1.5, 0), mat({ color: 0x5a4330, roughness: .9 }), P.trees, ([x, z, s]) => at(x, 0, z, 0, s), null, 520);
   const leafGeo = COARSE ? mergeGeometries([new THREE.IcosahedronGeometry(2.2, 0).translate(0, 4.4, 0), new THREE.IcosahedronGeometry(1.7, 0).translate(.8, 5.8, .3), new THREE.IcosahedronGeometry(1.5, 0).translate(-.9, 5.3, -.4)].map(g => g.toNonIndexed()))
     : mergeGeometries([[2.2, 0, 4.4, 0], [1.8, .9, 5.9, .3], [1.6, -1, 5.4, -.5], [1.45, .2, 6.7, -.6], [1.35, -.3, 4.8, 1.2]].map(([rad, x, y, z]) => {
-      const g = new THREE.IcosahedronGeometry(rad, 1).toNonIndexed(), p = g.attributes.position, col = new Float32Array(p.count * 3);
+      const g = new THREE.IcosahedronGeometry(rad, 0).toNonIndexed(), p = g.attributes.position, col = new Float32Array(p.count * 3);
       for (let i = 0; i < p.count; i++) { const j = 1 + Math.sin(p.getX(i) * 7.1 + p.getY(i) * 3.3 + p.getZ(i) * 5.7) * .14; p.setXYZ(i, p.getX(i) * j, p.getY(i) * j, p.getZ(i) * j); }
       g.translate(x, y, z); for (let i = 0; i < p.count; i++) { const v = .6 + .48 * Math.max(0, Math.min(1, (p.getY(i) - (y - rad)) / (2 * rad))); col[i * 3] = v; col[i * 3 + 1] = v; col[i * 3 + 2] = v; }
       g.setAttribute("color", new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
@@ -751,7 +765,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const globe = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dff6a).multiplyScalar(2), toneMapped: false }); globe.userData.glow = 2; globe.userData.base = new THREE.Color(0x3dff6a); emissive.push(globe);
   instT(mergeGeometries([new THREE.BoxGeometry(2.4, 1.1, .08).translate(0, .55, -1.6), new THREE.BoxGeometry(2.4, 1.1, .08).translate(0, .55, 1.6), new THREE.BoxGeometry(.08, 1.1, 3.2).translate(1.2, .55, 0),
     new THREE.CylinderGeometry(.05, .05, 2.6, 4).translate(-1.2, 1.3, -1.6), new THREE.CylinderGeometry(.05, .05, 2.6, 4).translate(-1.2, 1.3, 1.6)].map(g => g.toNonIndexed())), mat({ color: 0x1f4d2a, metalness: .6, roughness: .4 }), P.subway, ([x, z]) => at(x, 0, z));
-  instT(new THREE.SphereGeometry(.28, 12, 8), globe, P.subway.flatMap(([x, z]) => [[x - 1.2, z - 1.6], [x - 1.2, z + 1.6]]), ([x, z]) => at(x, 2.75, z));
+  instT(new THREE.IcosahedronGeometry(.28, 1), globe, P.subway.flatMap(([x, z]) => [[x - 1.2, z - 1.6], [x - 1.2, z + 1.6]]), ([x, z]) => at(x, 2.75, z));
   instT(new THREE.PlaneGeometry(2.3, 3.1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x050505 }), P.subway, ([x, z]) => at(x + .05, .08, z));
   const stoopGeo = mergeGeometries([0, 1, 2, 3].map(k => new THREE.BoxGeometry(2, .3, .5).translate(0, .15 + k * .3, -k * .45)).map(g => g.toNonIndexed()));
   instT(stoopGeo, mat({ color: 0x7a5a44, roughness: .9 }), P.stoops, ([x, z, s]) => at(x, 0, z + (s > 0 ? 0 : 0), s > 0 ? Math.PI : 0));
@@ -777,7 +791,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const padTex = canvasTex(256, 256, (g, w) => { g.fillStyle = "#2a2c30"; g.fillRect(0, 0, w, w); g.strokeStyle = "#ffd23d"; g.lineWidth = 10; g.beginPath(); g.arc(128, 128, 110, 0, 7); g.stroke(); g.fillStyle = "#fff"; g.font = "900 150px sans-serif"; g.textAlign = "center"; g.fillText("H", 128, 180); });
   if (P.helipads.length) scene.add(new THREE.Mesh(mergeGeometries(P.helipads.map(h => new THREE.CircleGeometry(h.r, 32).rotateX(-Math.PI / 2).translate(h.x, h.y + .05, h.z))), new THREE.MeshStandardMaterial({ map: padTex, roughness: .8 })));
   const avMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2020).multiplyScalar(3), toneMapped: false, transparent: true });
-  inst(new THREE.SphereGeometry(.6, 8, 6), avMat, P.aviation, ([x, y, z]) => at(x, y, z));
+  instT(new THREE.IcosahedronGeometry(.6, 0), avMat, P.aviation, ([x, y, z]) => at(x, y, z), null, 900);
 
   // ---- traffic lights at every intersection: a pole on two corners, four heads that change colour ----
   const tlHeads = [], tlIdx = [];
@@ -788,10 +802,15 @@ export async function buildCity(scene, canvasTex, COARSE) {
     tlHeads.push([x - aw, z + sw, 0, 0], [x + aw, z - sw, Math.PI, 0], [x - aw, z - sw, Math.PI / 2, 1], [x + aw, z + sw, -Math.PI / 2, 1]);
     tlIdx.push([i, j]);
   }
-  inst(new THREE.CylinderGeometry(.12, .14, 5.5, 6).translate(0, 2.75, 0), darkM, tlHeads, ([x, z]) => at(x, 0, z));
-  inst(new THREE.BoxGeometry(.5, 1.3, .5).translate(0, 5.2, 0), darkM, tlHeads, ([x, z, ry]) => at(x, 0, z, ry));
-  const tlMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-  const tlMesh = inst(new THREE.SphereGeometry(.2, 8, 6), tlMat, tlHeads, ([x, z, ry]) => { at(0, 0, 0, ry); v.set(-.28, 5.2, 0).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); });
+  instT(mergeGeometries([new THREE.CylinderGeometry(.12, .14, 5.5, 5).translate(0, 2.75, 0).toNonIndexed(), new THREE.BoxGeometry(.5, 1.3, .5).translate(0, 5.2, 0).toNonIndexed()]), darkM, tlHeads, ([x, z, ry]) => at(x, 0, z, ry), null, 300);
+  const tlMat = new THREE.MeshBasicMaterial({ toneMapped: false }), lampGeo = new THREE.IcosahedronGeometry(.2, 0), tlSlot = [], tlTiles = new Map();
+  tlHeads.forEach(([x, z, ry], n) => { const k = Math.floor(x / 400) * 1000 + Math.floor(z / 400); let t = tlTiles.get(k); if (!t) tlTiles.set(k, t = { list: [], x: (Math.floor(x / 400) + .5) * 400, z: (Math.floor(z / 400) + .5) * 400 }); tlSlot[n] = [t, t.list.length]; t.list.push([x, z, ry]); });
+  for (const t of tlTiles.values()) {
+    t.mesh = new THREE.InstancedMesh(lampGeo, tlMat, t.list.length);
+    t.list.forEach(([x, z, ry], i) => { at(0, 0, 0, ry); v.set(-.28, 5.2, 0).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); t.mesh.setMatrixAt(i, m4); t.mesh.setColorAt(i, new THREE.Color(1, 1, 1)); });
+    t.mesh.computeBoundingSphere(); scene.add(t.mesh); propTiles.push({ mesh: t.mesh, x: t.x, z: t.z, far: 300 });
+  }
+  const tlMesh = { setColorAt(n, c) { const [t, i] = tlSlot[n]; t.mesh.setColorAt(i, c); t.dirty = true; }, get instanceColor() { return true; } };
   const RED = new THREE.Color(0xff2020).multiplyScalar(2.5), AMBER = new THREE.Color(0xffb020).multiplyScalar(2.5), GREEN = new THREE.Color(0x30ff70).multiplyScalar(2.5);
   let lastPh = [];
   const setLights = t => {
@@ -801,7 +820,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
       const xs = ph === 0 ? GREEN : ph === 1 ? AMBER : RED, zs = ph === 2 ? GREEN : ph === 3 ? AMBER : RED;
       for (let k = 0; k < 4; k++) tlMesh.setColorAt(n * 4 + k, k < 2 ? xs : zs);
     });
-    if (changed && tlMesh.instanceColor) tlMesh.instanceColor.needsUpdate = true;
+    if (changed) for (const t of tlTiles.values()) if (t.dirty) { t.dirty = false; t.mesh.instanceColor.needsUpdate = true; }
   };
   setLights(0);
 

@@ -203,7 +203,7 @@ export function buildCar(model = "hydra") {
   const discG = new THREE.CylinderGeometry(.2, .2, .03, 48).rotateX(Math.PI / 2), hatG = new THREE.CylinderGeometry(.09, .09, .06, 32).rotateX(Math.PI / 2);
   const nutG = new THREE.CylinderGeometry(.045, .045, .05, 6).rotateX(Math.PI / 2);
   const spokeG = new THREE.BoxGeometry(.026, .2, .028).translate(0, .155, 0);
-  const disc = new THREE.MeshStandardMaterial({ color: 0x5a5c62, metalness: .8, roughness: .45, clippingPlanes: clip });
+  const disc = new THREE.MeshStandardMaterial({ color: 0x5a5c62, metalness: .8, roughness: .45, clippingPlanes: clip, emissive: 0xff4a10, emissiveIntensity: 0 });     // glows when the brakes are hammered
   const wireWheel = new THREE.EdgesGeometry(new THREE.CylinderGeometry(WR, WR, .3, 28).rotateX(Math.PI / 2), 20);
   for (const xw of WHEELS) for (const s of [-1, 1]) {
     const spin = new THREE.Group(); spin.position.set(xw, WR, s * .83); solid.add(spin);
@@ -277,6 +277,15 @@ export function buildCar(model = "hydra") {
   for (const w of wheels) mergeStatic(w, new Set());
   // ---- garage parts: spoilers, liveries, exhaust flames ----
   const spoilers = new THREE.Group(); solid.add(spoilers);
+  // active aero: a carbon wing stowed in the tail that rises at speed and flips up as an air brake under hard braking
+  const aero = new THREE.Group(), aeroWing = new THREE.Group(); solid.add(aero); aero.add(aeroWing);
+  { const y0 = topAt(.05), w = Math.max(1.4, halfAt(.05) * 1.9), x = X0 + .3;
+    aero.position.set(x, y0 - .02, 0);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(.42, .03, w), carbon); blade.position.x = -.06; aeroWing.add(blade);
+    for (const z of [-1, 1]) { const ep = new THREE.Mesh(new THREE.BoxGeometry(.46, .14, .02), carbon); ep.position.set(-.06, .03, z * w / 2); aeroWing.add(ep); }
+    const ledG = new THREE.Mesh(new THREE.BoxGeometry(.02, .012, w * .9), rear); ledG.position.set(-.27, 0, 0); aeroWing.add(ledG);
+    for (const z of [-.3, .3]) { const st = new THREE.Mesh(new THREE.BoxGeometry(.05, .4, .04).translate(0, -.2, 0), carbon); st.position.set(0, 0, z * w); aeroWing.add(st); }
+    aero.userData = { lift: 0, tilt: 0 }; }
   function setSpoiler(k) {
     spoilers.clear();
     const y0 = topAt(.04), w = Math.max(1.5, halfAt(.05) * 2), x = X0 + .18;
@@ -406,6 +415,12 @@ export function buildCar(model = "hydra") {
       paint.metalness = F[0]; paint.roughness = F[1]; paint.clearcoat = F[2]; paint.normalScale.setScalar(F[3]);
     },
     setAccent(hex) { caliper.color.set(hex); },
+    // brakes: the tail lights flare and the discs glow when you brake hard at speed
+    setBrakes(k, heat) { rear.color.setRGB(2.6 * (1 + k * 1.2), .42 * (1 + k * 1.2), .58 * (1 + k)); disc.emissiveIntensity += ((heat || 0) * 2.2 - disc.emissiveIntensity) * .08; },
+    // the active wing: up above 110 km/h, air-brake tilt when braking hard; it stays stowed if a fixed spoiler is fitted
+    setAero(kmh, braking, dt) { const A = aero.userData, on = !spoilers.children.length; aero.visible = on; if (!on) return;
+      A.lift += ((kmh > 110 || braking > .5 && kmh > 60 ? 1 : 0) - A.lift) * Math.min(1, dt * 3); A.tilt += ((braking > .5 && kmh > 60 ? 1 : 0) - A.tilt) * Math.min(1, dt * 5);
+      aeroWing.position.y = .03 + A.lift * .38; aeroWing.rotation.z = .08 + A.tilt * .95; aeroWing.visible = A.lift > .02; },
     setTrim(hex) { trim.color.set(hex); },
     setRim(hex) { rim.color.set(hex); },
     setLight(hex) { front.color.set(hex).multiplyScalar(3); },
