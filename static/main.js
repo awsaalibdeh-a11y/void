@@ -66,7 +66,7 @@ setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a h
 const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
 const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
 const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;      // recent RTX cards start on Ultra
-const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal", board: "ion", crowd: LITE ? "few" : "normal", fps: "off" }, store.get("void.settings") || {});
+const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal", board: "ion", crowd: LITE ? "few" : "normal", fps: "off", voice: "open" }, store.get("void.settings") || {});
 const gameOpts = {
   handling: () => SET.handling, buyFood: () => { if (cash < 10) return false; cash -= 10; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
@@ -113,6 +113,7 @@ menuEl.querySelectorAll("[data-veh]").forEach(b => b.onclick = () => game.api.se
 document.getElementById("gFuelNav").onclick = () => { const st = game.state; if (!st) return; const best = W.city.stations.slice().sort((a, b) => Math.hypot(a.x - st.x, a.z - st.z) - Math.hypot(b.x - st.x, b.z - st.z))[0]; nav.setDest({ name: "⛽ Fuel station", x: best.x, z: best.z }); };
 function applySettings(save = true) {
   document.body.classList.toggle("show-fps", SET.fps === "on");
+  net.setPTT(SET.voice === "ptt"); micLabel();
   if (typeof boardMesh !== "undefined") paintBoard();
   if (typeof life !== "undefined" && life.setVoidDetail) life.setVoidDetail(SET.q !== "lite");          // Lite: simple flying VOID cars
   document.body.classList.toggle("big-ui", SET.text === "large");
@@ -262,6 +263,12 @@ document.getElementById("gSaveIn").onclick = () => {
 // ---------- online: other real players' cars, name tags, emotes, proximity voice ----------
 const remotes = new Map();
 const tagTex = (text, col = "#ffffff") => W.canvasTex(512, 96, (g, w, h) => { g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(0, 0, w, h); g.fillStyle = col; g.font = "800 50px Inter, sans-serif"; g.textAlign = "center"; g.fillText(text, w / 2, 66); });
+// the speaking icon: a green speaker with sound waves
+const spkMat = new THREE.SpriteMaterial({ depthTest: false, toneMapped: false, map: W.canvasTex(128, 128, (g, w, h) => {
+  g.fillStyle = "rgba(0,0,0,.55)"; g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill(); g.fillStyle = g.strokeStyle = "#3dff8a"; g.lineWidth = 9; g.lineCap = "round";
+  g.beginPath(); g.moveTo(26, 50); g.lineTo(44, 50); g.lineTo(64, 30); g.lineTo(64, 98); g.lineTo(44, 78); g.lineTo(26, 78); g.closePath(); g.fill();
+  for (const r of [16, 30]) { g.beginPath(); g.arc(68, 64, r, -.8, .8); g.stroke(); }
+}) });
 function remoteFor(p) {
   let r = remotes.get(p.id);
   const model = Object.keys(MODELS)[p.model | 0] || "hydra";
@@ -271,7 +278,8 @@ function remoteFor(p) {
     c.group.traverse(o => { if (o.isMesh) o.castShadow = true; });
     const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tagTex(p.name), depthTest: false, toneMapped: false })); tag.scale.set(5, .95, 1); tag.position.y = 2.6; root.add(tag);
     const emo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tagTex(""), depthTest: false, toneMapped: false })); emo.scale.set(6, 1.15, 1); emo.position.y = 3.8; emo.visible = false; root.add(emo);
-    scene.add(root); r = { root, car: c, tag, emo, model, name: p.name, paint: null, emoT: 0 }; remotes.set(p.id, r);
+    const spk = new THREE.Sprite(spkMat); spk.scale.set(1.1, 1.1, 1); spk.position.set(0, 2.6, 0); spk.center.set(2.85, .5);       // anchored so it sits just left of the name tag spk.visible = false; root.add(spk);
+    scene.add(root); r = { root, car: c, tag, emo, spk, model, name: p.name, paint: null, emoT: 0 }; remotes.set(p.id, r);
   }
   if (r.name !== p.name) { r.name = p.name; r.tag.material.map = tagTex(p.name); }
   if (p.paint && r.paint !== p.paint) { r.paint = p.paint; r.car.setPaint(p.paint); }
@@ -279,10 +287,22 @@ function remoteFor(p) {
 }
 net.on("change", () => { for (const id of [...remotes.keys()]) if (!net.players().some(p => p.id === id)) { scene.remove(remotes.get(id).root); remotes.delete(id); } renderPlayers(); });
 net.on("status", t => { document.getElementById("gNetStatus").textContent = t; document.getElementById("gNetBtn").classList.toggle("on", net.online()); });
-net.on("mic", on => { const b = document.getElementById("gMic"); b.classList.toggle("on", on); b.textContent = on ? "🎙 Mic on" : "🎙 Voice chat"; });
-net.on("emote", (m, from) => { const r = remotes.get(from), e = EMOTES[m.e | 0]; if (!e) return; if (r) { r.emo.material.map = tagTex(e, "#ffd23d"); r.emo.visible = true; r.emoT = 4; } feed(`${net.nameOf(from)}: ${e}`); });
+net.on("mic", () => micLabel());
+function micLabel() { const b = document.getElementById("gMic"), t = !net.mic ? "🎙 Voice chat" : !net.ptt ? "🎙 Mic on" : net.talking ? "🎙 Talking" : "🎙 Hold Z to talk"; b.classList.toggle("on", net.mic); if (b.textContent !== t) b.textContent = t; }
+net.on("emote", (m, from) => { const r = remotes.get(from), e = EMOTES[m.e | 0]; if (!e || net.muted(from)) return; if (r) { r.emo.material.map = tagTex(e, "#ffd23d"); r.emo.visible = true; r.emoT = 4; } feed(`${net.nameOf(from)}: ${e}`); });
 function feed(t) { const f = document.getElementById("gFeed"); const d = document.createElement("div"); d.textContent = t; f.prepend(d); setTimeout(() => d.remove(), 7000); while (f.children.length > 5) f.lastChild.remove(); }
-function renderPlayers() { document.getElementById("gPlayers").innerHTML = net.online() ? [`<b>${net.name} (you)</b>`, ...net.players().map(p => `<span>${p.vc ? "🎙 " : ""}${p.name}</span>`)].join("") : ""; }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const pingDot = ms => ms == null ? "" : `<i class="ping ${ms < 90 ? "ok" : ms < 200 ? "mid" : "bad"}"></i>${ms} ms`;
+let playersHTML = "", netListHTML = "", netUiT = 0, micLv = 0;
+function renderPlayers() {
+  const me = net.online() ? `<b>${esc(net.name)} (you)${net.ping != null && !net.host ? " · " + pingDot(net.ping) : ""}</b>` : "";
+  const rows = net.online() ? [me, ...net.players().map(p => { const m = net.muted(p.id), sp = net.speaking(p.id);
+    return `<span class="${sp ? "speaking" : ""}">${m ? "🔇 " : sp ? "🔊 " : p.vc ? "🎙 " : ""}${esc(p.name)}${p.ping != null ? " · " + pingDot(p.ping) : ""}</span>`; })].join("") : "";
+  if (rows !== playersHTML) { playersHTML = rows; document.getElementById("gPlayers").innerHTML = rows; }
+  const list = net.online() ? net.players().map(p => { const m = net.muted(p.id);
+    return `<div class="net-row"><span>${p.vc ? "🎙 " : ""}${esc(p.name)} ${pingDot(p.ping)}</span><button class="pill${m ? " on" : ""}" data-mute="${esc(p.id)}">${m ? "🔇 Muted" : "🔊 Mute"}</button></div>`; }).join("") || `<p class="small">No one else here yet.</p>` : "";
+  if (list !== netListHTML) { netListHTML = list; document.getElementById("gNetPlayers").innerHTML = list; }
+}
 {
   const $ = id => document.getElementById(id), panel = $("gNetPanel");
   $("gNetName").value = store.get("void.name") || "";
@@ -294,6 +314,13 @@ function renderPlayers() { document.getElementById("gPlayers").innerHTML = net.o
   $("gNetJoin").onclick = () => { const code = $("gNetCode").value.trim().toLowerCase(); if (code) go("room-" + code); };
   $("gNetLeave").onclick = () => { net.leave(); panel.hidden = true; };
   $("gMic").onclick = () => net.setMic(!net.mic);
+  $("gNetPlayers").onclick = e => { const b = e.target.closest("[data-mute]"); if (!b) return; const id = b.dataset.mute; net.mute(id, !net.muted(id)); toast(net.muted(id) ? `Muted ${net.nameOf(id)} (voice and emotes)` : `Unmuted ${net.nameOf(id)}`); };
+  // push-to-talk: hold Z (or hold the mic button on a touch screen)
+  addEventListener("keydown", e => { if (e.code === "KeyZ" && !e.repeat && net.ptt && net.mic && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) net.talk(true); });
+  addEventListener("keyup", e => { if (e.code === "KeyZ") net.talk(false); });
+  addEventListener("blur", () => net.talk(false));
+  $("gMic").addEventListener("pointerdown", () => { if (net.ptt && net.mic) net.talk(true); });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) $("gMic").addEventListener(ev, () => { if (net.ptt) net.talk(false); });
   $("gEmotes").innerHTML = EMOTES.map((e, k) => `<button class="pill" data-e="${k}">${e}</button>`).join("");
   $("gEmotes").onclick = ev => { const b = ev.target.closest("[data-e]"); if (!b || !net.online()) return; net.send({ t: "emote", e: +b.dataset.e }); feed(`You: ${EMOTES[+b.dataset.e]}`); };
 }
@@ -538,8 +565,10 @@ function frameLoop(fixed) {
     document.getElementById("gStars").textContent = stars ? "★".repeat(stars) + "☆".repeat(5 - stars) : "";
     document.getElementById("gStars").classList.toggle("bust", police.bust > .5);
     const pr = races.progress();
-    net.tick(dt, { p: [st.x, st.y, st.z, st.yaw, st.pitch, st.roll].map(v => Math.round(v * 100) / 100), m: Object.keys(MODELS).indexOf(car.model), c: OPTS.paint.items[build.paint][1], v: Math.round(S.speed), a: S.air ? 1 : 0, r: pr ? pr.race : 0, rp: pr ? pr.rp : 0, rf: pr ? pr.rf : 0, w: stars });
+    net.tick(dt, { p: [st.x, st.y, st.z, st.yaw, st.pitch, st.roll].map(v => Math.round(v * 100) / 100), m: Object.keys(MODELS).indexOf(car.model), c: OPTS.paint.items[build.paint][1], v: Math.round(S.speed), a: S.air ? 1 : 0, r: pr ? pr.race : 0, rp: pr ? pr.rp : 0, rf: pr ? pr.rf : 0, w: stars, u: [st.vel.x, st.vel.y, st.vel.z].map(v => Math.round(v * 10) / 10) });
     net.listen(sound.ctx, camera);
+    if ((netUiT += dt) > .15) { netUiT = 0; renderPlayers(); micLabel(); }
+    { const lv = net.myLevel(); if (Math.abs(lv - micLv) > .03) { micLv = lv; document.getElementById("gMic").style.setProperty("--lvl", (lv * 100).toFixed(0) + "%"); } }
     for (const p of net.players()) {
       const at = net.sample(p); const r = remoteFor(p); r.at = at;
       if (!at || at.stale) { r.root.visible = false; continue; }
@@ -549,6 +578,7 @@ function frameLoop(fixed) {
       if (r.emoT > 0 && (r.emoT -= dt) <= 0) r.emo.visible = false;
       const dx = st.x - at.x, dz = st.z - at.z, d = Math.hypot(dx, dz);
       net.placeVoice(p.id, at.x, at.y, at.z, Math.hypot(d, st.y - at.y));
+      { const on = net.speaking(p.id); r.spk.visible = on; if (on) r.spk.scale.setScalar(1 + net.level(p.id) * .6); }
       if (d < 3.4 && d > .01 && Math.abs(st.y - at.y) < 2) { st.x += dx / d * (3.4 - d) * .5; st.z += dz / d * (3.4 - d) * .5; st.vel.multiplyScalar(.9); }
     }
   } else { for (const r of remotes.values()) r.root.visible = false; net.tick(dt, null); }     // the host keeps relaying from the menus

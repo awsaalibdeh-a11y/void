@@ -453,3 +453,12 @@ body.big-ui .g-hint, body.big-ui .g-job, body.big-ui .g-tut, body.big-ui .g-gps 
 /* fps counter (Settings → Show FPS) */
 .fps-hud { display: none; position: absolute; left: 50%; bottom: calc(10px + var(--bot, 0px)); transform: translateX(-50%); padding: 3px 10px; border-radius: 999px; background: rgba(0,0,0,.6); font: 700 12px var(--body); color: #9dffb0; pointer-events: none; z-index: 5; }
 body.show-fps .fps-hud { display: block; } .fps-hud.mid { color: #ffd23d; } .fps-hud.low { color: #ff6b6b; }
+
+/* online: who's talking, pings, mute buttons, the mic level */
+.g-players .speaking { color: #3dff8a; }
+.ping { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 4px 1px 0; vertical-align: middle; background: #9dffb0; }
+.ping.mid { background: #ffd23d; } .ping.bad { background: #ff6b6b; }
+.net-list { display: grid; gap: 6px; margin: 4px 0 8px; max-height: 180px; overflow: auto; }
+.net-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.net-row .pill { padding: 4px 10px; font-size: 12px; }
+#gMic.on { background: linear-gradient(90deg, #3dff8a var(--lvl, 0%), #3dfcff var(--lvl, 0%)) !important; }

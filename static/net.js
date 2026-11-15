@@ -2,7 +2,8 @@
 // A room is a well-known peer id; the first player to claim it is the host and relays everyone's car to everyone.
 // If the host leaves, the others race to claim it again. Voice chat is a mesh of audio calls, off until you
 // switch your mic on, and you hear each voice from where that player's car is: louder when close, left or right, ahead or behind. Chat is quick emotes only (strangers
-// can join the public city), and names are short and filtered.
+// can join the public city), and names are short and filtered. Anyone can be muted (voice and emotes), push-to-talk is
+// a setting, a speaker icon shows who is talking, and everyone's ping to the host is shown.
 const PREFIX = "voidcity-awsaa-v1-";
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "stun:global.stun.twilio.com:3478" }] };
 // a TURN relay for players behind strict networks (some phone carriers, school and office wifi), where direct links fail.
@@ -19,7 +20,8 @@ export const cleanName = s => { s = String(s || "").replace(/[^\p{L}\p{N} _-]/gu
 // what strangers may send: only these events, only sane numbers, and not too often
 const EVENTS = new Set(["race", "emote"]);
 const num = (v, lim) => Number.isFinite(v) && Math.abs(v) <= lim;
-const okState = st => st && Array.isArray(st.p) && st.p.length === 6 && num(st.p[0], 8000) && num(st.p[1], 4000) && num(st.p[2], 8000) && st.p.slice(3).every(v => num(v, 50));
+const okState = st => st && Array.isArray(st.p) && st.p.length === 6 && num(st.p[0], 8000) && num(st.p[1], 4000) && num(st.p[2], 8000) && st.p.slice(3).every(v => num(v, 50))
+  && (st.u === undefined || (Array.isArray(st.u) && st.u.length === 3 && st.u.every(v => num(v, 500))));
 const flood = c => { const now = performance.now(); if (now - (c._t || 0) > 1000) { c._t = now; c._n = 0; } return ++c._n > 60; };
 export const EMOTES = ["👋 Hi!", "🏁 Race?", "😂", "🔥 Nice!", "GG", "🚓 Cops!", "Follow me", "Wait up"];
 
@@ -33,8 +35,14 @@ export function createNet() {
   let stream = null, micOn = false, calls = new Map();
   // each voice: a media element (Chrome only feeds a remote WebRTC stream into Web Audio while an element plays it too, and it is
   // the fallback when the game's audio isn't running) plus, once there is an audio context, a 3D panner at that player's car
-  const voices = new Map();                // id -> { el, src, pan, s }
-  let actx = null;
+  const voices = new Map();                // id -> { el, src, pan, gain, an, buf, level, loud, s }
+  let actx = null, mic = null;             // mic: an analyser on my own microphone, for the level meter
+  let ptt = false, talking = false;        // push-to-talk: the mic only sends while the key is held
+  const muted = new Set(), mutedNames = new Set();   // ids, and names so a muted player stays muted after reconnecting
+  let rtt = null, pingT = 0;               // my round trip to the host (ms)
+  const isMuted = id => muted.has(id) || mutedNames.has((players.get(id) || {}).name);
+  const applyTracks = () => { if (stream) for (const t of stream.getAudioTracks()) t.enabled = micOn && (!ptt || talking); };
+  const rms = (an, buf) => { an.getFloatTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return Math.sqrt(s / buf.length); };
 
   async function lib() { if (!Peer) ({ Peer } = await import("https://cdn.jsdelivr.net/npm/peerjs@1.5.4/+esm")); return Peer; }
   async function join(r, nm) {
@@ -78,14 +86,17 @@ export function createNet() {
   function upsert(id, st) {
     let p = players.get(id), fresh = !p; if (!p) { p = { id, name: "Driver", s: [] }; players.set(id, p); }
     if (st.n && cleanName(st.n) !== p.name) { p.name = cleanName(st.n); fresh = true; }
-    Object.assign(p, { model: Number.isInteger(st.m) && st.m >= 0 && st.m < 20 ? st.m : 0, paint: /^#[0-9a-f]{6}$/i.test(st.c) ? st.c : "#888888", race: typeof st.r === "string" ? st.r.slice(0, 20) : 0, rp: num(st.rp, 1e7) ? st.rp : 0, rf: num(st.rf, 1e7) ? st.rf : 0, vc: !!st.vc, wanted: num(st.w, 5) ? st.w | 0 : 0 });
-    p.s.push({ t: performance.now(), x: st.p[0], y: st.p[1], z: st.p[2], yaw: st.p[3], pitch: st.p[4], roll: st.p[5], v: num(st.v, 2000) ? st.v : 0, air: !!st.a });
+    Object.assign(p, { model: Number.isInteger(st.m) && st.m >= 0 && st.m < 20 ? st.m : 0, paint: /^#[0-9a-f]{6}$/i.test(st.c) ? st.c : "#888888", race: typeof st.r === "string" ? st.r.slice(0, 20) : 0, rp: num(st.rp, 1e7) ? st.rp : 0, rf: num(st.rf, 1e7) ? st.rf : 0, vc: !!st.vc, wanted: num(st.w, 5) ? st.w | 0 : 0, ping: num(st.q, 10000) ? st.q | 0 : null });
+    const u = st.u || [0, 0, 0];
+    p.s.push({ t: performance.now(), x: st.p[0], y: st.p[1], z: st.p[2], yaw: st.p[3], pitch: st.p[4], roll: st.p[5], vx: u[0], vy: u[1], vz: u[2], v: num(st.v, 2000) ? st.v : 0, air: !!st.a });
     if (p.s.length > 12) p.s.shift();
-    if (fresh) emit("change");
+    if (fresh) { emit("change"); ring(id); }              // someone new: if my mic is on, call them so they hear me
   }
   function onData(c, d) {
     if (!d || typeof d !== "object" || flood(c)) return;
     if (d.t === "ev" && !EVENTS.has(d.k)) return;
+    if (d.t === "pi") { if (host && num(d.ts, 1e12)) try { c.send({ t: "po", ts: d.ts }); } catch { } return; }
+    if (d.t === "po") { const r = performance.now() - d.ts; if (num(d.ts, 1e12) && r >= 0 && r < 10000) rtt = rtt == null ? r : rtt * .7 + r * .3; return; }
     if (host) {
       if (d.t === "hello") { const p = players.get(c.peer) || { id: c.peer, s: [] }; p.name = cleanName(d.name); players.set(c.peer, p); emit("change"); return; }
       if (d.t === "s") { if (okState(d)) upsert(c.peer, d); return; }
@@ -98,11 +109,24 @@ export function createNet() {
     }
   }
   // voice: everyone with their mic on calls everyone; people without a mic still hear
-  function answer(call) { call.answer(stream || undefined); hook(call); }
-  function hook(call) {
-    calls.set(call.peer, call);
+  // one call per pair carries both voices. If both ring at once, the call started by the smaller id wins (both sides agree).
+  function answer(call) {
+    const old = calls.get(call.peer);
+    if (old && old._out && me < call.peer) { try { call.close(); } catch { } return; }
+    if (old) try { old.close(); } catch { }
+    call.answer(stream || undefined); hook(call, !!stream, false);
+  }
+  // call someone with my mic, unless a call already carries it (a call I answered without a mic is replaced)
+  function ring(id) {
+    if (!peer || !stream || !micOn || id === me) return;
+    const c = calls.get(id); if (c && c._sent) return;
+    if (c) { try { c.close(); } catch { } calls.delete(id); }
+    try { hook(peer.call(id, stream), true, true); } catch { }
+  }
+  function hook(call, sent, out) {
+    call._sent = sent; call._out = out; calls.set(call.peer, call);
     call.on("stream", s => voiceIn(call.peer, s));
-    call.on("close", () => { calls.delete(call.peer); });
+    call.on("close", () => { if (calls.get(call.peer) === call) calls.delete(call.peer); });
   }
   function voiceIn(id, s) {
     let v = voices.get(id); if (!v) { v = { el: new Audio() }; v.el.autoplay = true; voices.set(id, v); }
@@ -112,20 +136,20 @@ export function createNet() {
   function wire(v) {
     if (v.pan || !actx || !v.s) return;
     try {
-      v.src = actx.createMediaStreamSource(v.s); v.pan = actx.createPanner();
+      v.src = actx.createMediaStreamSource(v.s); v.pan = actx.createPanner(); v.gain = actx.createGain(); v.an = actx.createAnalyser(); v.an.fftSize = 256; v.buf = new Float32Array(256);
       Object.assign(v.pan, { panningModel: "HRTF", distanceModel: "linear", refDistance: 6, maxDistance: 260, rolloffFactor: 1 });
-      v.src.connect(v.pan).connect(actx.destination);
+      v.src.connect(v.an); v.src.connect(v.pan).connect(v.gain).connect(actx.destination);
     } catch { unwire(v); }
   }
-  function unwire(v) { try { v.src && v.src.disconnect(); v.pan && v.pan.disconnect(); } catch { } v.src = v.pan = null; }
+  function unwire(v) { try { v.src && v.src.disconnect(); v.pan && v.pan.disconnect(); v.gain && v.gain.disconnect(); } catch { } v.src = v.pan = v.gain = v.an = null; }
+  function micMeter() { if (mic || !actx || !stream) return; try { const src = actx.createMediaStreamSource(stream), an = actx.createAnalyser(); an.fftSize = 256; src.connect(an); mic = { src, an, buf: new Float32Array(256), level: 0 }; } catch { } }
   function dropAudio(id) { const v = voices.get(id); if (v) { unwire(v); v.el.srcObject = null; voices.delete(id); } const c = calls.get(id); if (c) { try { c.close(); } catch { } calls.delete(id); } }
+  const now = () => performance.now();
   const at = (node, x, y, z, set) => { if (node.positionX) { const t = actx.currentTime; node.positionX.setTargetAtTime(x, t, .03); node.positionY.setTargetAtTime(y, t, .03); node.positionZ.setTargetAtTime(z, t, .03); } else set.call(node, x, y, z); };
   async function setMic(on) {
     if (on && !stream) { try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); } catch { status("Microphone blocked"); emit("mic", false); return false; } }
-    micOn = on;
-    if (stream) for (const t of stream.getAudioTracks()) t.enabled = on;
-    if (on && peer) for (const p of players.values()) if (!calls.has(p.id)) { try { hook(peer.call(p.id, stream)); } catch { } }
-    if (!on && !stream) { }
+    micOn = on; applyTracks(); micMeter();
+    if (on) for (const p of players.values()) ring(p.id);
     emit("mic", on); return on;
   }
 
@@ -145,15 +169,20 @@ export function createNet() {
     // ~12 times a second: my car to the host; the host sends everyone to everyone
     tick(dt, mine) {
       if (!peer || !me) return;
-      lastState = mine; sendT += dt; if (sendT < 1 / 12) return; sendT = 0;
-      const st = mine && { t: "s", n: name, ...mine, vc: micOn };
-      if (host) { const all = [...(st ? [{ id: me, ...st }] : []), ...[...players.values()].filter(p => p.s.length).map(p => { const q = p.s[p.s.length - 1]; return { id: p.id, n: p.name, p: [q.x, q.y, q.z, q.yaw, q.pitch, q.roll], m: p.model, c: p.paint, r: p.race, rp: p.rp, rf: p.rf, vc: p.vc, v: q.v, a: q.air, w: p.wanted }; })]; broadcast({ t: "w", all }); }
+      lastState = mine;
+      if (!host && hostConn && hostConn.open && (pingT += dt) > 2) { pingT = 0; try { hostConn.send({ t: "pi", ts: performance.now() }); } catch { } }
+      sendT += dt; if (sendT < 1 / 12) return; sendT = 0;
+      const st = mine && { t: "s", n: name, ...mine, vc: micOn, q: rtt == null ? undefined : Math.round(rtt) };
+      if (host) { const all = [...(st ? [{ id: me, ...st, q: 0 }] : []), ...[...players.values()].filter(p => p.s.length).map(p => { const q = p.s[p.s.length - 1]; return { id: p.id, n: p.name, p: [q.x, q.y, q.z, q.yaw, q.pitch, q.roll], m: p.model, c: p.paint, r: p.race, rp: p.rp, rf: p.rf, vc: p.vc, v: q.v, a: q.air, w: p.wanted, u: [q.vx, q.vy, q.vz], q: p.ping ?? undefined }; })]; broadcast({ t: "w", all }); }
       else if (st && hostConn && hostConn.open) try { hostConn.send(st); } catch { }
     },
-    // where a player's car should be drawn now: 120 ms behind, between two samples
+    // where a player's car should be drawn now: 120 ms behind, between two samples; when packets are late it carries on
+    // along the last known velocity for up to 0.35 s (then holds) instead of freezing and jumping
     sample(p) {
-      const t = performance.now() - 120, s = p.s; if (!s.length) return null;
-      let a = s[0], b = s[s.length - 1];
+      const now = performance.now(), t = now - 120, s = p.s; if (!s.length) return null;
+      const last = s[s.length - 1];
+      if (t >= last.t) { const k = Math.min(t - last.t, 350) / 1000; return { x: last.x + last.vx * k, y: last.y + last.vy * k, z: last.z + last.vz * k, yaw: last.yaw, pitch: last.pitch, roll: last.roll, v: last.v, air: last.air, stale: now - last.t > 4000 }; }
+      let a = s[0], b = last;
       for (let k = 0; k < s.length - 1; k++) if (s[k].t <= t && s[k + 1].t >= t) { a = s[k]; b = s[k + 1]; break; }
       const u = b.t > a.t ? Math.max(0, Math.min(1.5, (t - a.t) / (b.t - a.t))) : 1, L = (x, y) => x + (y - x) * u;
       const ay = (x, y) => { let d = y - x; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return x + d * u; };
@@ -173,9 +202,19 @@ export function createNet() {
       const v = voices.get(id); if (!v) return;
       const live = actx && actx.state === "running";
       if (live) { wire(v); }
-      if (live && v.pan) { at(v.pan, x, y + 1, z, v.pan.setPosition); v.el.volume = 0; }
-      else v.el.volume = Math.max(0, Math.min(1, 1 - d / 260));
+      const off = isMuted(id);
+      if (live && v.pan) { at(v.pan, x, y + 1, z, v.pan.setPosition); v.el.volume = 0; v.gain.gain.value = off ? 0 : 1; }
+      else v.el.volume = off ? 0 : Math.max(0, Math.min(1, 1 - d / 260));
+      // the speaking icon: a smoothed level, held a moment so it doesn't flicker between words
+      if (v.an) { const r = rms(v.an, v.buf); v.level = Math.max(r, (v.level || 0) * .9); v.loud = r > .02 ? now() : v.loud || 0; }
     },
+    speaking: id => { const v = voices.get(id); return !!(v && v.loud && now() - v.loud < 350 && !isMuted(id)); },
+    level: id => { const v = voices.get(id); return v ? Math.min(1, (v.level || 0) * 6) : 0; },
+    myLevel() { if (!mic) { micMeter(); return 0; } mic.level = Math.max(rms(mic.an, mic.buf), mic.level * .85); return micOn && (!ptt || talking) ? Math.min(1, mic.level * 6) : 0; },
+    setPTT(on) { ptt = !!on; applyTracks(); }, talk(down) { talking = !!down; applyTracks(); },
+    get ptt() { return ptt; }, get talking() { return talking; }, get ping() { return host ? 0 : rtt == null ? null : Math.round(rtt); },
+    mute(id, on) { const n = (players.get(id) || {}).name; if (on) { muted.add(id); if (n) mutedNames.add(n); } else { muted.delete(id); if (n) mutedNames.delete(n); } emit("change"); },
+    muted: isMuted,
     voiceIn, voice: id => voices.get(id),
   };
 }
