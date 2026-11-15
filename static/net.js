@@ -1,10 +1,19 @@
 // Online play with real people, no server of our own: WebRTC peer-to-peer through the free PeerJS broker.
 // A room is a well-known peer id; the first player to claim it is the host and relays everyone's car to everyone.
 // If the host leaves, the others race to claim it again. Voice chat is a mesh of audio calls, off until you
-// switch your mic on, and you hear people louder the closer their car is. Chat is quick emotes only (strangers
+// switch your mic on, and you hear each voice from where that player's car is: louder when close, left or right, ahead or behind. Chat is quick emotes only (strangers
 // can join the public city), and names are short and filtered.
 const PREFIX = "voidcity-awsaa-v1-";
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "stun:global.stun.twilio.com:3478" }] };
+// a TURN relay for players behind strict networks (some phone carriers, school and office wifi), where direct links fail.
+// The free no-signup relays are gone (openrelay.metered.ca no longer resolves), so this needs a free Metered account:
+// its credentials URL (https://<app>.metered.live/api/v1/turn/credentials?apiKey=...) goes here. Empty: STUN only.
+const TURN_URL = "";
+let turnTried = false;
+async function addTurn() {
+  if (turnTried || !TURN_URL) return; turnTried = true;
+  try { const r = await fetch(TURN_URL), list = await r.json(); if (Array.isArray(list)) ICE.iceServers.push(...list.filter(s => s && s.urls)); } catch { }
+}
 const BAD = /(fuck|shit|bitch|nigg|cunt|dick|pussy|sex|porn|kill|nazi|hitler|rape|fag)/i;
 export const cleanName = s => { s = String(s || "").replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 14); return !s || BAD.test(s) ? "Driver" : s; };
 // what strangers may send: only these events, only sane numbers, and not too often
@@ -21,12 +30,16 @@ export function createNet() {
   const handlers = {};
   const emit = (k, ...a) => (handlers[k] || []).forEach(f => f(...a));
   const status = t => emit("status", t);
-  let stream = null, micOn = false, calls = new Map(), audios = new Map();
+  let stream = null, micOn = false, calls = new Map();
+  // each voice: a media element (Chrome only feeds a remote WebRTC stream into Web Audio while an element plays it too, and it is
+  // the fallback when the game's audio isn't running) plus, once there is an audio context, a 3D panner at that player's car
+  const voices = new Map();                // id -> { el, src, pan, s }
+  let actx = null;
 
   async function lib() { if (!Peer) ({ Peer } = await import("https://cdn.jsdelivr.net/npm/peerjs@1.5.4/+esm")); return Peer; }
   async function join(r, nm) {
     await leave(); closing = false; room = String(r).toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24) || "public-1"; name = cleanName(nm);
-    status("Connecting…"); await lib(); claim();
+    status("Connecting…"); await lib(); await addTurn(); claim();
   }
   function claim() {
     if (closing) return;
@@ -59,7 +72,7 @@ export function createNet() {
   function rejoin() { if (closing) return; try { peer && peer.destroy(); } catch { } hostConn = null; conns.clear(); claim(); }
   async function leave() {
     closing = true; try { peer && peer.destroy(); } catch { } peer = null; hostConn = null; host = false; conns.clear(); players.clear();
-    for (const id of [...audios.keys()]) dropAudio(id); setMic(false); room = null; emit("change"); status("Offline");
+    for (const id of [...voices.keys()]) dropAudio(id); setMic(false); room = null; emit("change"); status("Offline");
   }
   function broadcast(m, except) { for (const [id, c] of conns) if (id !== except && c.open) try { c.send(m); } catch { } }
   function upsert(id, st) {
@@ -88,10 +101,25 @@ export function createNet() {
   function answer(call) { call.answer(stream || undefined); hook(call); }
   function hook(call) {
     calls.set(call.peer, call);
-    call.on("stream", s => { let a = audios.get(call.peer); if (!a) { a = new Audio(); a.autoplay = true; audios.set(call.peer, a); } a.srcObject = s; a.play().catch(() => { }); });
+    call.on("stream", s => voiceIn(call.peer, s));
     call.on("close", () => { calls.delete(call.peer); });
   }
-  function dropAudio(id) { const a = audios.get(id); if (a) { a.srcObject = null; audios.delete(id); } const c = calls.get(id); if (c) { try { c.close(); } catch { } calls.delete(id); } }
+  function voiceIn(id, s) {
+    let v = voices.get(id); if (!v) { v = { el: new Audio() }; v.el.autoplay = true; voices.set(id, v); }
+    if (v.s !== s) { unwire(v); v.s = s; v.el.srcObject = s; v.el.play().catch(() => { }); }
+    wire(v);
+  }
+  function wire(v) {
+    if (v.pan || !actx || !v.s) return;
+    try {
+      v.src = actx.createMediaStreamSource(v.s); v.pan = actx.createPanner();
+      Object.assign(v.pan, { panningModel: "HRTF", distanceModel: "linear", refDistance: 6, maxDistance: 260, rolloffFactor: 1 });
+      v.src.connect(v.pan).connect(actx.destination);
+    } catch { unwire(v); }
+  }
+  function unwire(v) { try { v.src && v.src.disconnect(); v.pan && v.pan.disconnect(); } catch { } v.src = v.pan = null; }
+  function dropAudio(id) { const v = voices.get(id); if (v) { unwire(v); v.el.srcObject = null; voices.delete(id); } const c = calls.get(id); if (c) { try { c.close(); } catch { } calls.delete(id); } }
+  const at = (node, x, y, z, set) => { if (node.positionX) { const t = actx.currentTime; node.positionX.setTargetAtTime(x, t, .03); node.positionY.setTargetAtTime(y, t, .03); node.positionZ.setTargetAtTime(z, t, .03); } else set.call(node, x, y, z); };
   async function setMic(on) {
     if (on && !stream) { try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); } catch { status("Microphone blocked"); emit("mic", false); return false; } }
     micOn = on;
@@ -131,6 +159,23 @@ export function createNet() {
       const ay = (x, y) => { let d = y - x; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return x + d * u; };
       return { x: L(a.x, b.x), y: L(a.y, b.y), z: L(a.z, b.z), yaw: ay(a.yaw, b.yaw), pitch: L(a.pitch, b.pitch), roll: L(a.roll, b.roll), v: b.v, air: b.air, stale: performance.now() - s[s.length - 1].t > 4000 };
     },
-    setVolume(id, v) { const a = audios.get(id); if (a) a.volume = Math.max(0, Math.min(1, v)); },
+    // once a frame: the camera is the listener (every voice then sits where that player's car is drawn)
+    listen(ctx, cam) {
+      if (ctx && ctx !== actx) { for (const v of voices.values()) unwire(v); actx = ctx; }
+      if (!actx || actx.state !== "running" || !voices.size) return;
+      const L = actx.listener, e = cam.matrixWorld.elements, fx = -e[8], fy = -e[9], fz = -e[10], ux = e[4], uy = e[5], uz = e[6];
+      at(L, cam.position.x, cam.position.y, cam.position.z, L.setPosition);
+      if (L.forwardX) { const t = actx.currentTime; L.forwardX.setTargetAtTime(fx, t, .03); L.forwardY.setTargetAtTime(fy, t, .03); L.forwardZ.setTargetAtTime(fz, t, .03); L.upX.setTargetAtTime(ux, t, .03); L.upY.setTargetAtTime(uy, t, .03); L.upZ.setTargetAtTime(uz, t, .03); }
+      else L.setOrientation(fx, fy, fz, ux, uy, uz);
+    },
+    // a player's voice comes from their car; without running game audio it falls back to plain volume by distance
+    placeVoice(id, x, y, z, d) {
+      const v = voices.get(id); if (!v) return;
+      const live = actx && actx.state === "running";
+      if (live) { wire(v); }
+      if (live && v.pan) { at(v.pan, x, y + 1, z, v.pan.setPosition); v.el.volume = 0; }
+      else v.el.volume = Math.max(0, Math.min(1, 1 - d / 260));
+    },
+    voiceIn, voice: id => voices.get(id),
   };
 }

@@ -539,6 +539,7 @@ function frameLoop(fixed) {
     document.getElementById("gStars").classList.toggle("bust", police.bust > .5);
     const pr = races.progress();
     net.tick(dt, { p: [st.x, st.y, st.z, st.yaw, st.pitch, st.roll].map(v => Math.round(v * 100) / 100), m: Object.keys(MODELS).indexOf(car.model), c: OPTS.paint.items[build.paint][1], v: Math.round(S.speed), a: S.air ? 1 : 0, r: pr ? pr.race : 0, rp: pr ? pr.rp : 0, rf: pr ? pr.rf : 0, w: stars });
+    net.listen(sound.ctx, camera);
     for (const p of net.players()) {
       const at = net.sample(p); const r = remoteFor(p); r.at = at;
       if (!at || at.stale) { r.root.visible = false; continue; }
@@ -547,7 +548,7 @@ function frameLoop(fixed) {
       for (const wh of r.car.wheels) wh.rotation.z -= at.v / 3.6 * dt / .37;
       if (r.emoT > 0 && (r.emoT -= dt) <= 0) r.emo.visible = false;
       const dx = st.x - at.x, dz = st.z - at.z, d = Math.hypot(dx, dz);
-      net.setVolume(p.id, 1 - d / 260);
+      net.placeVoice(p.id, at.x, at.y, at.z, Math.hypot(d, st.y - at.y));
       if (d < 3.4 && d > .01 && Math.abs(st.y - at.y) < 2) { st.x += dx / d * (3.4 - d) * .5; st.z += dz / d * (3.4 - d) * .5; st.vel.multiplyScalar(.9); }
     }
   } else { for (const r of remotes.values()) r.root.visible = false; net.tick(dt, null); }     // the host keeps relaying from the menus
