@@ -95,6 +95,7 @@ export function createRaces(scene, api, sound, canvasTex, net) {
     $("gRace").hidden = false; $("gRaceRes").hidden = true;
   }
   function finish(msg) {
+    if (msg !== "Race cancelled") dispatchEvent(new CustomEvent("void:break"));
     const p = api.state, best = store.get("void.race." + R.route.id);
     const me = R.done, rank = standings().findIndex(s => s.me) + 1;
     if (me && (!best || me < best)) { store.set("void.race." + R.route.id, me); if (R.rec.length >= 8) store.set("void.ghost." + R.route.id, { t: me, s: R.splits, p: R.rec.slice(0, 12000) }); }

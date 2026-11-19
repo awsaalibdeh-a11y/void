@@ -17,7 +17,9 @@ const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, 
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } } };
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } if (window.portalSave) window.portalSave(); } };
+// game portals (CrazyGames, Poki): portal.js listens for these; on the normal site nobody does
+const portalEvt = (n, d) => dispatchEvent(new CustomEvent("void:" + n, { detail: d }));
 // a quick look at the machine before anything is built: built-in graphics or a small CPU (an i3 has 4 threads) gets the light build:
 // fewer cars, people and trees, a shorter view, no shadows or glow. Anyone can switch it in Settings (Graphics: Lite).
 const PROBE_GPU = (() => { try { const c = document.createElement("canvas").getContext("webgl2") || document.createElement("canvas").getContext("webgl"), e = c && c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
@@ -628,6 +630,7 @@ function frameLoop(fixed) {
   const gs = mode === "play" ? game.state : null;
   if (gs && gs.impacts && gs.impacts.length && car.damage) { carRoot.updateMatrixWorld(true); for (const im of gs.impacts.splice(0)) car.damage(carRoot.worldToLocal(new THREE.Vector3(im.x, im.y, im.z)), im.p); }
   if (S.wrecked && !wasWrecked) { car.wreck && car.wreck(); wreckPose = { p: carRoot.position.clone(), q: carRoot.quaternion.clone() }; }
+  if (!S.wrecked && wasWrecked) portalEvt("break");
   if (!S.wrecked && wasWrecked && wreckPose && inner) {
     const wg = inner.group; carRoot.remove(wg); wg.position.copy(wreckPose.p); wg.quaternion.copy(wreckPose.q); scene.add(wg);
     wrecks.push({ g: wg, t: 30 }); if (wrecks.length > 4) { const o = wrecks.shift(); scene.remove(o.g); }
@@ -744,7 +747,13 @@ let frameErr = 0;
 const loop = () => { raf = requestAnimationFrame(loop); try { frameLoop(); } catch (e) { if (frameErr++ < 3) console.error(e); } };   // one bad frame never stops the game
 loop();
 setLoad(100);
-setTimeout(() => { $("loader").classList.add("done"); setTimeout(() => { intro.t = 0; if (sound.on) sound.rev(); }, 450); }, 900);
+setTimeout(() => { $("loader").classList.add("done"); setTimeout(() => { intro.t = 0; if (sound.on) sound.rev(); }, 450); portalEvt("loaded"); if (window.PORTAL) go("play"); }, 900);
+// portals: gameplay is "on" while you are driving with no menu, garage or ad over it; ads pause and silence everything
+let portalPlay = false, adOn = false;
+setInterval(() => { const on = mode === "play" && !paused0() && !adOn && !document.hidden && $("gReady").hidden && $("gOver").hidden; if (on !== portalPlay) { portalPlay = on; portalEvt("gameplay", on); } }, 250);
+addEventListener("void:ad", e => { adOn = !!e.detail; if (!net.online()) game.pause(adOn || paused0()); if (sound.ctx) adOn ? sound.ctx.suspend() : (sound.on && !document.hidden && sound.ctx.resume()); });
+let preMute = null;          // the portal's own mute setting wins over ours, and lifting it puts ours back
+addEventListener("void:mute", e => { if (e.detail) { if (preMute == null) preMute = sound.on; setSound(false); } else if (preMute != null) { setSound(preMute); preMute = null; } });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { cancelAnimationFrame(raf); if (mode === "watch" && w.playing) pause(); if (sound.ctx) sound.ctx.suspend(); }
   else { clock.getDelta(); loop(); if (sound.on && sound.ctx) sound.ctx.resume(); }
