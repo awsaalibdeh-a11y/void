@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 dist/
 tools/portal/cache/
+tools/portal/covers/shots/
+tools/portal/covers/contact*.jpg
