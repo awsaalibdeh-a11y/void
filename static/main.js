@@ -82,6 +82,9 @@ const gameOpts = {
     if (races && races.race && races.race.next) { const [a, b] = P(races.race.next[0], races.race.next[2]); mx.strokeStyle = "#ffd23d"; mx.lineWidth = 3; mx.beginPath(); mx.arc(a, b, 7, 0, 7); mx.stroke(); }
     for (const r of remotes.values()) if (r.at) { const [a, b] = P(r.at.x, r.at.z); mx.fillStyle = "#c07dff"; mx.beginPath(); mx.arc(a, b, 4.5, 0, 7); mx.fill(); }
     mx.font = "bold 12px sans-serif"; mx.textAlign = "center"; for (const st of W.city.stations) { const [a, b] = P(st.x, st.z); if (Math.abs(a) < 90 && Math.abs(b) < 90) { mx.save(); mx.translate(a, b); mx.rotate(g.yaw + Math.PI / 2); mx.fillText("⛽", 0, 4); mx.restore(); } }
+    // VOID Motors: a gold "$" badge on every counter in view (beside the pump icon), and an arrow on the rim pointing at the nearest one when none is
+    const dl = gameOpts.dealer; if (dl) { let seen = false; for (const st of dl.sites) { const [a, b] = P(st.x, st.z); if (Math.hypot(a, b) < 82) { seen = true; mx.save(); mx.translate(a, b); mx.rotate(g.yaw + Math.PI / 2); const ox = st.main ? 0 : 9, oy = st.main ? 0 : -9; mx.fillStyle = "#ffd23d"; mx.strokeStyle = "#000"; mx.lineWidth = 2; mx.beginPath(); mx.arc(ox, oy, 6.5, 0, 7); mx.fill(); mx.stroke(); mx.fillStyle = "#000"; mx.font = "900 10px sans-serif"; mx.textAlign = "center"; mx.fillText("$", ox, oy + 3.5); mx.restore(); } }
+      if (!seen) { const st = dl.nearest(g.x, g.z), [a, b] = P(st.x, st.z), an = Math.atan2(b, a); mx.save(); mx.rotate(an); mx.translate(80, 0); mx.fillStyle = "#ffd23d"; mx.strokeStyle = "#000"; mx.lineWidth = 1.5; mx.beginPath(); mx.moveTo(8, 0); mx.lineTo(-6, -7); mx.lineTo(-6, 7); mx.closePath(); mx.fill(); mx.stroke(); mx.restore(); } }
   },
 };
 const game = createGame(W, car, sound, life, gameOpts); lt("game");
@@ -164,6 +167,7 @@ life.collide = (x, z) => !!game.api.hitBox(x, z, .8, .3);
 life.onCrash = (x, z, power) => { const s = game.state; if (!s || mode !== "play") return; const d = Math.hypot(x - s.x, z - s.z); if (d < 170) { sound.crash(); if (d < 70) s.shake = Math.min(1, (s.shake || 0) + .35 * (1 - d / 70)); } };
 // VOID Motors: 50 cars for sale
 const dealer = createDealer(W, game, life, nav, sound, store, toast, { cash: () => cash, spend: n => { if (cash < n) return false; cash -= n; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), unlockHero: () => unlockHero() });
+gameOpts.dealer = dealer;
 document.getElementById("gDealer").onclick = () => dealer.menu();
 // the secret code box: one word unlocks the best car, nothing else does anything
 function unlockHero() { store.set("void.hero", 1); game.api.useHero(); }

@@ -1,6 +1,7 @@
 // VOID Motors: a dealership in the park with over 100 cars for sale in 14 categories, from microcars and work vans to
 // rally cars, drift cars, electric cars, lowriders, off-roaders, track cars, hover cars and hypercars.
-// Walk or drive up to the showroom (or open it from the Menu once you have been there) and buy with your cash.
+// The big showroom is in the park, and every gas station has a VOID Motors counter too (gold sign, gold dot on the
+// minimap, and an arrow to the nearest one). Or just open it from the Menu, anywhere. Buy with your cash.
 // Bought cars are yours for good: pick one in the showroom and it is delivered next to you, wherever you are.
 import * as THREE from "three";
 import { GRID } from "./city.js";
@@ -59,6 +60,10 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   root.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 80, 32, 1, true).translate(0, 40, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.5), transparent: true, opacity: .1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }))));
   const sign = W.canvasTex(512, 128, (g, w, h) => { g.fillStyle = "#0b0b0e"; g.fillRect(0, 0, w, h); g.strokeStyle = "#ffd23d"; g.lineWidth = 6; g.strokeRect(4, 4, w - 8, h - 8); g.fillStyle = "#ffd23d"; g.font = "900 58px Unbounded, Impact, sans-serif"; g.textAlign = "center"; g.fillText("VOID MOTORS", w / 2, 84); });
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sign, toneMapped: false })); sp.scale.set(18, 4.5, 1); sp.position.y = 11; root.add(sp);
+  // a counter at every gas station: the same sign and a short gold beam over the canopy
+  const sites = [{ x: at.x, z: at.z, r: 16, main: true }, ...(W.city.stations || []).map(st => ({ x: st.x, z: st.z, r: 19 }))];
+  const beamGeo = new THREE.CylinderGeometry(2.4, 2.4, 34, 16, 1, true).translate(0, 25, 0), beamMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.5), transparent: true, opacity: .12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }), signMat = new THREE.SpriteMaterial({ map: sign, toneMapped: false });
+  for (const st of sites) if (!st.main) { const b = new THREE.Mesh(beamGeo, beamMat); b.position.set(st.x, 0, st.z); scene.add(b); const sg = new THREE.Sprite(signMat); sg.scale.set(12, 3, 1); sg.position.set(st.x, 9.5, st.z); scene.add(sg); }
   const plats = [];
   [[-9, 0], [0, -9], [9, 0]].forEach(([x, z], k) => {
     const pl = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.6, .25, 32), new THREE.MeshStandardMaterial({ color: 0x15161a, metalness: .6, roughness: .3 })); pl.position.set(x, .12, z); root.add(pl);
@@ -97,11 +102,12 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   function show(on) { open = on; panel.hidden = !on; game.pause(on); if (on) { render(); if (document.pointerLockElement) document.exitPointerLock(); store.set("void.dealerSeen", 1); } }
   const goBtn = document.createElement("button"); goBtn.className = "pill solid g-racego g-dealgo"; goBtn.hidden = true; goBtn.textContent = "Enter VOID Motors (Enter)"; goBtn.onclick = () => show(true); document.getElementById("playUI").appendChild(goBtn);
   addEventListener("keydown", e => { if (e.code === "Enter" && !open && api.active() && near()) show(true); });
-  const near = () => { const p = api.state; return p && p.started && Math.hypot(p.x - at.x, p.z - at.z) < 16 && p.y < 3; };
+  const near = () => { const p = api.state; return p && p.started && p.y < 3 && sites.some(st => Math.hypot(p.x - st.x, p.z - st.z) < st.r); };
+  const nearest = (x, z) => sites.reduce((b, st) => Math.hypot(st.x - x, st.z - z) < Math.hypot(b.x - x, b.z - z) ? st : b, sites[0]);
   return {
-    at, STOCK, owned, show, get open() { return open; },
-    // from the Menu: open the showroom if you have visited it, otherwise set the GPS there
-    menu() { if (store.get("void.dealerSeen")) show(true); else { nav.setDest({ name: "🏪 VOID Motors", x: at.x, z: at.z }); toast("GPS set to VOID Motors. Visit once and you can shop from the Menu"); } },
+    at, sites, nearest, STOCK, owned, show, get open() { return open; },
+    // from the Menu: shop from anywhere; the car is delivered next to you
+    menu() { show(true); },
     update(dt, time) { plats.forEach((c, k) => c.rotation.y = time * .4 + k * 2); goBtn.hidden = open || !near(); },
   };
 }
