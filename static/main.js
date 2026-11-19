@@ -752,7 +752,7 @@ let frameErr = 0;
 const loop = () => { raf = requestAnimationFrame(loop); try { frameLoop(); } catch (e) { if (frameErr++ < 3) console.error(e); } };   // one bad frame never stops the game
 loop();
 setLoad(100);
-setTimeout(() => { $("loader").classList.add("done"); setTimeout(() => { intro.t = 0; if (sound.on) sound.rev(); }, 450); portalEvt("loaded"); if (window.PORTAL) { go("play"); setTimeout(() => { if (!$("gReady").hidden) $("gGo").click(); }, 700); }   // portals: straight into driving, the tutorial hints teach the keys }, 900);
+setTimeout(() => { $("loader").classList.add("done"); setTimeout(() => { intro.t = 0; if (sound.on) sound.rev(); }, 450); portalEvt("loaded"); if (window.PORTAL) { go("play"); setTimeout(() => { if (!$("gReady").hidden) $("gGo").click(); }, 700); } }, 900);
 // portals: gameplay is "on" while you are driving with no menu, garage or ad over it; ads pause and silence everything
 let portalPlay = false, adOn = false;
 setInterval(() => { const on = mode === "play" && !paused0() && !adOn && !document.hidden && $("gReady").hidden && $("gOver").hidden; if (on !== portalPlay) { portalPlay = on; portalEvt("gameplay", on); } }, 250);
