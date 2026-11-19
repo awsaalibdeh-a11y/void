@@ -44,9 +44,34 @@
 
   addEventListener("void:loaded", () => {
     if (!sdk) return;
-    if (P === "crazygames") try { sdk.game.loadingStop(); } catch { }
+    if (P === "crazygames") { try { sdk.game.loadingStop(); } catch { } cgMulti(); }
     if (P === "poki") try { sdk.gameLoadingFinished(); } catch { }
   });
+
+  // CrazyGames online play: an invite link for the room you're in, joining straight from one, and instant
+  // multiplayer (a party leader lands in a fresh private room right away). Rooms hold up to 12 drivers.
+  function cgMulti() {
+    const net = window.VOID && window.VOID.net, g = sdk.game; if (!net) return;
+    const name = () => { try { return JSON.parse(localStorage.getItem("void.name")) || "Driver"; } catch { return "Driver"; } };
+    const join = id => { id = String(id || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24); if (id) net.join(/^(room|public)-/.test(id) ? id : "room-" + id, name()); };
+    let invited = null; try { invited = g.getInviteParam("roomId"); } catch { }
+    if (invited) join(invited); else if (g.isInstantMultiplayer) join(Math.random().toString(36).slice(2, 7));
+    try { g.addJoinRoomListener(p => join(p && p.roomId)); } catch { }
+    const btn = document.createElement("button"); btn.className = "pill solid"; btn.id = "gInvite"; btn.hidden = true; btn.textContent = "🔗 Invite friends";
+    btn.onclick = async () => {
+      try { const link = g.inviteLink({ roomId: net.room }); await navigator.clipboard.writeText(link); btn.textContent = "✅ Invite link copied"; }
+      catch { btn.textContent = "Couldn't copy the link"; }
+      setTimeout(() => btn.textContent = "🔗 Invite friends", 2500);
+    };
+    const panel = document.getElementById("gNetPanel"); if (panel) panel.insertBefore(btn, panel.querySelector(".row"));
+    let last = null;
+    const sync = () => {
+      const room = net.online() ? net.room : null; btn.hidden = !room;
+      if (room === last) return; last = room;
+      try { if (room) { g.updateRoom({ roomId: room, isJoinable: true, inviteParams: { roomId: room } }); g.showInviteButton({ roomId: room }); } else { g.leftRoom(); g.hideInviteButton(); } } catch { }
+    };
+    net.on("change", sync); net.on("status", sync);
+  }
 
   // gameplay: Poki counts it from the player's first input, CrazyGames from the moment the car is drivable
   let playing = false, wantPlay = false, gotInput = P !== "poki";

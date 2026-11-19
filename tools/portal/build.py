@@ -106,6 +106,28 @@ def net_js():
     return src.replace(old, new)
 
 
+def flatten(files):
+    """Every file in one folder, for upload forms that take files but not folders or zips (CrazyGames' "Select files").
+    Paths in the page, the import map, the addons' relative imports, net.js and portal.js are rewritten to match."""
+    names = {n: os.path.basename(n) for n in files}
+    assert len(set(names.values())) == len(names), "two files share a name, flat build impossible"
+    out = {}
+    addons = sorted(n for n in files if n.startswith("vendor/three/examples/jsm/"))
+    for n, data in files.items():
+        if n == "index.html":
+            html = data.decode("utf-8").replace('"static/', '"').replace('"vendor/fonts/', '"').replace('"./vendor/three/build/three.module.js"', '"./three.module.js"')
+            imap = ",\n      ".join(f'"three/addons/{a[len("vendor/three/examples/jsm/"):]}": "./{names[a]}"' for a in addons)
+            html = html.replace('"three/addons/": "./vendor/three/examples/jsm/"', imap)
+            assert "vendor/" not in html and "static/" not in html, "flat: a folder path is left in the page"
+            data = html.encode("utf-8")
+        elif n.startswith("vendor/three/examples/jsm/"):
+            data = re.sub(rb"""(from\s+['"])\.{1,2}/(?:[\w-]+/)*([\w-]+\.js)(['"])""", rb"\1./\2\3", data)
+        elif n == "static/net.js":
+            data = data.replace(b'"vendor/peerjs.min.js"', b'"peerjs.min.js"')
+        out[names[n]] = data
+    return out
+
+
 def build():
     stamp = str(int(time.time()))
     shared = {}
@@ -140,6 +162,11 @@ def build():
         open(os.path.join(DIST, f"void-{portal}.zip"), "wb").write(buf.getvalue())
         raw = sum(len(v) for v in files.values())
         print(f"{portal}: {len(files)} files, {raw / 1e6:.1f} MB raw, {len(buf.getvalue()) / 1e6:.1f} MB zipped -> dist/void-{portal}.zip")
+        flat = flatten(files)
+        folder = os.path.join(DIST, f"void-{portal}-flat")
+        shutil.rmtree(folder, ignore_errors=True); os.makedirs(folder)
+        for n, data in flat.items():
+            open(os.path.join(folder, n), "wb").write(data)
 
 
 if __name__ == "__main__":
