@@ -77,6 +77,7 @@ def font_files():
 
 def page(portal, stamp):
     html = open(os.path.join(ROOT, "templates", "index.html"), encoding="utf-8").read()
+    html = html.replace("<title>VOID</title>", "<title>VOID: New Legion</title>", 1)
     html = html.replace("{{ v }}", stamp).replace('"/static/', '"static/')
     html = re.sub(r'\s*<link rel="preconnect"[^>]*>(<link rel="preconnect"[^>]*>)?', "", html)
     html = re.sub(r'<link href="https://fonts\.googleapis\.com[^>]*>', '<link rel="stylesheet" href="vendor/fonts/fonts.css">', html)
