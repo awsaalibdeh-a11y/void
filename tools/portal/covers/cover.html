@@ -28,7 +28,7 @@ const f = document.getElementById("f"), t = document.getElementById("t"), shape 
 const topFade = Math.max(0, y0) / H * 100;
 f.style.background = `linear-gradient(180deg, #06070b 0%, #06070b ${topFade}%, rgba(6,7,11,.0) ${topFade + 22}%, rgba(6,7,11,0) 70%, rgba(6,7,11,.75) 100%)` + (shape === "land" ? ", linear-gradient(90deg, rgba(6,7,11,.85) 0%, rgba(6,7,11,0) 50%)" : ", linear-gradient(180deg, rgba(6,7,11,.9) 0%, rgba(6,7,11,.75) 36%, rgba(6,7,11,0) 56%)");
 const base = Math.min(W, H);
-if (shape === "land") { t.style.left = W * .055 + "px"; t.style.top = H * .1 + "px"; t.querySelector("h1").style.fontSize = H * .25 + "px"; t.style.fontSize = H * .028 + "px"; }
-else { t.style.left = 0; t.style.right = 0; t.style.textAlign = "center"; t.style.top = H * (shape === "port" ? .07 : .06) + "px"; t.querySelector("h1").style.fontSize = base * (shape === "port" ? .26 : .22) + "px"; t.style.fontSize = base * .034 + "px"; }
+if (shape === "land") { t.style.left = W * .055 + "px"; t.style.top = H * .17 + "px"; t.querySelector("h1").style.fontSize = H * .23 + "px"; t.style.fontSize = H * .028 + "px"; }
+else { t.style.left = 0; t.style.right = 0; t.style.textAlign = "center"; t.style.top = H * (shape === "port" ? .12 : .13) + "px"; t.querySelector("h1").style.fontSize = base * (shape === "port" ? .26 : .22) + "px"; t.style.fontSize = base * .034 + "px"; }
 document.fonts.ready.then(() => document.title = "ready");
 </script></body></html>
