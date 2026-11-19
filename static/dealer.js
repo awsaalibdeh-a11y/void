@@ -53,6 +53,10 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   STOCK.unshift({ m: HERO, price: 250000, hero: true, cat: "flying" });
   const owned = store.get("void.owned") || {};          // id -> colour
   if (wallet.heroOwned()) owned.void = 0x0a0a0c;
+  // everyone starts with every car: the showroom is your garage, fastest first, and switching is free
+  STOCK.sort((a, b) => (b.hero ? 1 : 0) - (a.hero ? 1 : 0) || b.m.top - a.m.top);      // the VOID car (the only one that flies) stays on top
+  let gave = false; for (const st of STOCK) if (!owned[st.m.id]) { owned[st.m.id] = st.m.cols[0]; gave = true; }
+  if (gave) store.set("void.owned", owned);
   // the showroom: a gold column, a sign, and three cars on turntables, on a quiet crossing near the start
   // on the lawn at the edge of the park, off the streets, so traffic never drives through it
   const at = (() => { const L = W.city.lake || { x: 1e9, z: 1e9 }; for (let j = 12; j < 18; j++) for (let i = 2; i < 5; i++) { const x = (GRID.ax(i) + GRID.ax(i + 1)) / 2, z = (GRID.sz(j) + GRID.sz(j + 1)) / 2; if (!api.hitBox(x, z, .5, 14) && !api.isWater(x, z) && Math.hypot(x - L.x, z - L.z) > 150) return { x, z }; } return { x: GRID.ax(4) + 40, z: GRID.sz(13) }; })();

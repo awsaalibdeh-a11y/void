@@ -19,6 +19,7 @@ setLoad(40);
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } if (window.portalSave) window.portalSave(); } };
 // game portals (CrazyGames, Poki): portal.js listens for these; on the normal site nobody does
+if (!store.get("void.hero")) store.set("void.hero", 1);           // everyone starts with every car, the VOID car too
 const portalEvt = (n, d) => dispatchEvent(new CustomEvent("void:" + n, { detail: d }));
 // a quick look at the machine before anything is built: built-in graphics or a small CPU (an i3 has 4 threads) gets the light build:
 // fewer cars, people and trees, a shorter view, no shadows or glow. Anyone can switch it in Settings (Graphics: Lite).
