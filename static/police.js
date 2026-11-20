@@ -1,7 +1,9 @@
 // Police chases: smash traffic or speed past a cop and you get wanted stars. Cruisers spawn out of sight and hunt
 // you through the street grid (straight at you when the road is clear, round the blocks when it isn't), ram you,
 // and box you in: stop near them for a few seconds and you are busted. Lose them for long enough and the stars
-// fall away. From three stars a helicopter joins in with a searchlight, so flying away is not a free escape.
+// fall away. From three stars a helicopter joins in with a searchlight and roadblocks go up ahead of you (two cruisers
+// and an EMP strip that kills your engine for a moment); at five stars pursuit drones chase you even in the air, firing
+// EMP pulses (ram one to bring it down).
 // Also: the AI driver that the street racers use.
 import * as THREE from "three";
 import { GRID } from "./city.js";
@@ -67,6 +69,36 @@ export function createPolice(scene, api, sound, life) {
     heli.visible = false; scene.add(heli);
   }
   const H = { on: false, x: 0, y: 80, z: 0, yaw: 0 };
+  // ---- roadblocks: two cruisers parked across the road and an EMP strip in front of them ----
+  const empMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(.3, .9, 2.6), toneMapped: false, transparent: true, opacity: .85, depthWrite: false });
+  const blocks = [0, 1].map(() => {
+    const g = new THREE.Group(), strip = new THREE.Mesh(new THREE.BoxGeometry(1.4, .06, 15), empMat); strip.position.set(-9, .06, 0); g.add(strip);
+    const bars = [];
+    for (const sd of [-1, 1]) {
+      const c = new THREE.Group(), body = new THREE.Mesh(geo.body, bodyMat), lights = new THREE.Mesh(geo.lights, lightMat), rr = new THREE.Mesh(new THREE.BoxGeometry(.32, .18, .5), red), bb = new THREE.Mesh(new THREE.BoxGeometry(.32, .18, .5), blue);
+      rr.position.set(-.2, 1.82, .32); bb.position.set(-.2, 1.82, -.32); body.castShadow = true; c.add(body, lights, rr, bb); c.position.set(0, 0, sd * 3.2); c.rotation.y = Math.PI / 2 + sd * .3; g.add(c); bars.push([rr, bb]);
+    }
+    g.visible = false; scene.add(g); return { g, bars, on: false, x: 0, z: 0, yaw: 0, t: 0, hit: false };
+  });
+  let blockT = 6;
+  function placeBlock(B, p) {
+    const fx = Math.cos(p.yaw), fz = Math.sin(p.yaw), alongX = Math.abs(fx) > Math.abs(fz);
+    let x = p.x + fx * 190, z = p.z + fz * 190;
+    if (alongX) { z = GRID.sz(clamp(Math.round((p.z - GRID.Z0) / GRID.ST), 0, GRID.NZ - 1)); } else { x = GRID.ax(clamp(Math.round((p.x - GRID.X0) / GRID.AV), 0, GRID.NX - 1)); }
+    if (api.hitBox(x, z, .5, 4) || api.isWater(x, z)) return;
+    Object.assign(B, { on: true, x, z, yaw: alongX ? (fx > 0 ? 0 : Math.PI) : (fz > 0 ? Math.PI / 2 : -Math.PI / 2), t: 40, hit: false });
+    B.g.position.set(x, 0, z); B.g.rotation.y = -B.yaw; B.g.visible = true; api.say("🚧 Roadblock ahead!", 2);
+  }
+  // ---- pursuit drones (five stars): four rotors, a red eye, and an EMP pulse when they get close ----
+  const droneMat = new THREE.MeshStandardMaterial({ color: 0x15181f, metalness: .6, roughness: .35 }), boltMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(.5, 1.2, 3), toneMapped: false, transparent: true, opacity: .9, depthWrite: false });
+  const drones = [0, 1, 2].map(k => {
+    const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.BoxGeometry(1.3, .35, 1.3), droneMat));
+    for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { const rotor = new THREE.Mesh(new THREE.CylinderGeometry(.5, .5, .04, 14), droneMat); rotor.position.set(x, .22, z); g.add(rotor); }
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.2, 8, 6), red); eye.position.set(.7, 0, 0); g.add(eye);
+    const tag = new THREE.Mesh(new THREE.BoxGeometry(.2, .12, .6), blue); tag.position.set(-.5, .25, 0); g.add(tag);
+    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(.08, .08, 1, 6).translate(0, .5, 0), boltMat); bolt.visible = false; scene.add(bolt);
+    g.visible = false; scene.add(g); return { g, bolt, on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, shotT: 3 + k, boltT: 0, down: 0, ph: k * 2.1 };
+  });
   let heat = 0, stars = 0, evade = 0, bust = 0, speedT = 0, cool = 0;
   const starsOf = h => { let s = 0; for (let k = 1; k < HEAT.length; k++) if (h >= HEAT[k]) s = k; return s; };
   function addHeat(n, why) {
@@ -88,6 +120,7 @@ export function createPolice(scene, api, sound, life) {
     heat = 0; stars = 0; evade = 0; bust = 0;
     for (const c of cops) { c.on = false; c.g.visible = false; }
     H.on = false; heli.visible = false; if (msg) api.say(msg, 3);
+    for (const B of blocks) { B.on = false; B.g.visible = false; } for (const d of drones) { d.on = false; d.g.visible = false; d.bolt.visible = false; }
   }
   return {
     get stars() { return stars; }, get bust() { return bust; }, cops, clear,
@@ -150,6 +183,32 @@ export function createPolice(scene, api, sound, life) {
         heli.beam.lookAt(p.x, p.y, p.z); heli.beam.rotateX(-Math.PI / 2); heli.spot.intensity = d < 160 ? 900 : 0; heli.spot.position.set(H.x, H.y - 1.5, H.z); heli.spot.target.position.set(p.x, p.y, p.z); heli.spot.target.updateMatrixWorld();
         if (d < 120) nearest = Math.min(nearest, d * .5);
       } else if (H.on) { H.on = false; heli.visible = false; heli.spot.intensity = 0; }
+      // roadblocks from three stars: one goes up ahead of you every so often
+      if (stars >= 3 && !air && (blockT -= dt) < 0) { blockT = 18 + Math.random() * 10; const B = blocks.find(b => !b.on); if (B) placeBlock(B, p); }
+      for (const B of blocks) {
+        if (!B.on) continue;
+        const flash = Math.sin(time * 16 + B.x) > 0; for (const [rr, bb] of B.bars) { rr.visible = flash; bb.visible = !flash; }
+        const dx = p.x - B.x, dz = p.z - B.z, along = dx * Math.cos(B.yaw) + dz * Math.sin(B.yaw), side = -dx * Math.sin(B.yaw) + dz * Math.cos(B.yaw);
+        if (!B.hit && p.mode === "drive" && p.y < 2 && Math.abs(along + 9) < 1.3 && Math.abs(side) < 7.5) { B.hit = true; api.emp && api.emp(1.8); }
+        if (p.y < 2.5 && Math.abs(along) < 2.8 && Math.abs(Math.abs(side) - 3.2) < 2.8 && ps > 3) { const rel = ps; api.hurt(4 + rel * .5, "Hit the roadblock"); p.vel.multiplyScalar(-.25); p.x -= Math.cos(B.yaw) * 1.5; p.z -= Math.sin(B.yaw) * 1.5; sound.crash(); api.impact && api.impact(p.x, p.z, rel); }
+        if ((B.t -= dt) < 0 || along > 140) { B.on = false; B.g.visible = false; }
+        nearest = Math.min(nearest, Math.hypot(dx, dz) + 60);
+      }
+      // drones at five stars: they find you anywhere, even flying, and fire EMP pulses from close up
+      for (const d of drones) {
+        d.boltT = Math.max(0, d.boltT - dt); d.bolt.visible = d.boltT > 0;
+        if (stars < 5) { if (d.on) { d.on = false; d.g.visible = false; } continue; }
+        if (d.down > 0) { d.down -= dt; d.vy -= 9.81 * dt; d.y = Math.max(0, d.y + d.vy * dt); d.g.position.set(d.x, d.y, d.z); d.g.rotation.x += dt * 6; if (d.down <= 0) { d.on = false; d.g.visible = false; } continue; }
+        if (!d.on) { const a = p.yaw + Math.PI + (Math.random() - .5); Object.assign(d, { on: true, x: p.x + Math.cos(a) * 140, y: p.y + 30, z: p.z + Math.sin(a) * 140, vx: 0, vy: 0, vz: 0 }); d.g.visible = true; d.g.rotation.set(0, 0, 0); if (d === drones[0]) api.say("🛸 Police drones!", 2.5); }
+        const ang = time * .9 + d.ph, tx = p.x + Math.cos(ang) * 14 + p.vel.x * .6, ty = Math.max(p.y + 6, 4), tz = p.z + Math.sin(ang) * 14 + p.vel.z * .6;
+        const ax = (tx - d.x) * 2.2 - d.vx * 1.6, ay = (ty - d.y) * 2.2 - d.vy * 1.6, az = (tz - d.z) * 2.2 - d.vz * 1.6;
+        d.vx += ax * dt; d.vy += ay * dt; d.vz += az * dt; const sp = Math.hypot(d.vx, d.vy, d.vz); if (sp > 80) { d.vx *= 80 / sp; d.vy *= 80 / sp; d.vz *= 80 / sp; }
+        d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+        d.g.position.set(d.x, d.y, d.z); d.g.rotation.set(Math.min(.4, Math.hypot(d.vx, d.vz) / 160), -Math.atan2(d.vz, d.vx), 0, "YXZ");
+        const dd = Math.hypot(p.x - d.x, p.y - d.y, p.z - d.z); nearest = Math.min(nearest, dd);
+        if ((d.shotT -= dt) < 0 && dd < 28) { d.shotT = 6 + Math.random() * 3; api.emp && api.emp(1.2); d.boltT = .18; d.bolt.position.set(d.x, d.y, d.z); d.bolt.scale.set(1, dd, 1); d.bolt.lookAt(p.x, p.y, p.z); d.bolt.rotateX(Math.PI / 2); }
+        if (dd < 4.2 && ps > 22) { d.down = 2.5; d.vy = 4; api.addScore(500, "Drone down!"); sound.crash(); }
+      }
       // busted: stopped with a cruiser right beside you
       if (close && ps < 4 && !air) { bust += dt; if (bust > 3) { const lost = Math.round(p.score * .15); p.score -= lost; api.busted(`BUSTED! The police fined you ${lost} points`); clear(); return; } } else bust = Math.max(0, bust - dt * 2);
       // losing them

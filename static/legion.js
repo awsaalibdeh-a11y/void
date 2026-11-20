@@ -1,9 +1,12 @@
 // New Legion: the layer on top of the game that makes the first minute click and keeps every minute after it
 // worth playing. Three keys to start and the neon launch ramp, key hints that turn up when you need them, the GPS
 // beam and arrow, drift trails, the sonic boom and the cloud deck, smashable street props, smoke and fireballs when
-// traffic falls out of the sky, score pops, and the city's light columns only where they help.
+// traffic falls out of the sky, score pops, and the city's light columns only where they help. And the places: fifteen
+// rooftop stunt pads, six neon paint shops that wipe your wanted level, the Sky Park's loop and boost pads, and the
+// secret tunnel under the Hudson with a harbor at the far end.
 import * as THREE from "three";
 import { RAMP_X, LZ } from "./world.js";
+import { GRID, TUNNEL } from "./city.js";
 
 export function createLegion(o) {
   const { W, game, sound, store, life, COARSE } = o, scene = W.scene, city = W.city, fx = W.fx, $ = id => document.getElementById(id);
@@ -164,13 +167,127 @@ export function createLegion(o) {
   }
   addEventListener("keydown", e => { if (e.code === "KeyU" && !e.repeat && game.api.active() && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) o.radioNext && o.radioNext(); });
 
+  const textTex = (lines, w = 512, h = 128, bg = "rgba(0,0,0,.65)", col = "#ff3df0") => { const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); g.fillStyle = bg; g.fillRect(0, 0, w, h); g.fillStyle = col; g.shadowColor = col; g.shadowBlur = 18; g.font = `900 ${Math.round(h * .55)}px Unbounded, Impact, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(lines, w / 2, h / 2); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const neonMat = col => new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(2), toneMapped: false });
+
+  // ---- 15 rooftop stunt pads on the tallest towers: each new one pays more, a bullseye doubles it ----
+  const padHits = new Set(store.get("void.padtargets") || []), TGT = [];
+  {
+    const hp = city.helipads.slice().sort((a, b) => b.y - a.y), pick = [];
+    for (const h of hp) { if (pick.length >= 15) break; if (pick.every(q => Math.hypot(q.x - h.x, q.z - h.z) > 140)) pick.push(h); }
+    const tex = (() => { const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d"); for (const [r0, col] of [[124, "#ff3df0"], [100, "rgba(0,0,0,0)"], [80, "#ffffff"], [58, "rgba(0,0,0,0)"], [38, "#ff3df0"], [16, "#ffffff"]]) { g.beginPath(); g.arc(128, 128, r0, 0, 7); g.fillStyle = col; g.globalCompositeOperation = col === "rgba(0,0,0,0)" ? "destination-out" : "source-over"; g.fill(); } return new THREE.CanvasTexture(c); })();
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false, color: new THREE.Color(1.6, 1.6, 1.6), polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    pick.forEach((h, i) => { const rr = Math.max(6, Math.min(9, h.r || 8)), m = add(new THREE.Mesh(new THREE.PlaneGeometry(rr * 2, rr * 2).rotateX(-Math.PI / 2), mat)); m.position.set(h.x, h.y + .15, h.z); TGT.push({ id: i, x: h.x, y: h.y, z: h.z, r: rr, done: padHits.has(i) }); });
+  }
+  const chips = $("gCoins") && $("gCoins").parentElement, padChip = document.createElement("span");
+  if (chips) { padChip.id = "gPadsChip"; chips.appendChild(padChip); }
+  const padText = () => { padChip.textContent = `🎯 ${padHits.size}/15`; }; padText();
+  function onLand(s, down) {
+    for (const t of TGT) {
+      const d = Math.hypot(s.x - t.x, s.z - t.z); if (d > t.r + 1 || Math.abs(s.y - t.y) > 3) continue;
+      if (t.done) { if (d < 2) game.api.addScore(250, "🎯 Bullseye again"); else game.api.say("🎯 Already landed here. Find another tower!", 2); return; }
+      const mult = d < 2 ? 2 : d < 4.5 ? 1.5 : 1, pay = Math.round(1000 * (padHits.size + 1) * mult * (down < 4 ? 1.2 : 1));
+      t.done = true; padHits.add(t.id); store.set("void.padtargets", [...padHits]); padText();
+      game.api.addScore(pay, `🎯 ${mult === 2 ? "BULLSEYE" : mult > 1 ? "Close" : "Pad"} ${padHits.size}/15`); pop(`🎯 ${mult === 2 ? "BULLSEYE" : "ROOFTOP"}  +$${pay.toLocaleString()}`, "gold"); return;
+    }
+  }
+
+  // ---- six neon paint shops: drive through one and the police lose you, and you come out in a new colour ----
+  const SHOPS = [];
+  {
+    const frame = new THREE.MeshStandardMaterial({ color: 0x1b1d24, metalness: .6, roughness: .4 }), nA = neonMat(0xff3df0), nB = neonMat(0x3df5ff), sign = new THREE.MeshBasicMaterial({ map: textTex("🎨 PAINT"), toneMapped: false, side: THREE.DoubleSide });
+    for (const [i, j] of [[2, 6], [10, 12], [4, 21], [8, 29], [1, 35], [11, 3]]) {
+      const x = GRID.ax(i), z = (GRID.sz(j) + GRID.sz(j + 1)) / 2, w = GRID.avW(i) / 2 + .6, g = new THREE.Group(); g.position.set(x, 0, z);
+      for (const sd of [-1, 1]) { const pil = new THREE.Mesh(new THREE.BoxGeometry(.9, 7.4, 2.4), frame); pil.position.set(sd * w, 3.7, 0); g.add(pil); const st = new THREE.Mesh(new THREE.BoxGeometry(.12, 7, .12), sd < 0 ? nA : nB); st.position.set(sd * (w - .5), 3.6, 1.25); g.add(st); }
+      const top = new THREE.Mesh(new THREE.BoxGeometry(w * 2 + .9, 1.3, 2.4), frame); top.position.y = 7.6; g.add(top);
+      for (const fz of [-1.25, 1.25]) { const n = new THREE.Mesh(new THREE.BoxGeometry(w * 2, .14, .14), fz < 0 ? nB : nA); n.position.set(0, 6.9, fz); g.add(n); const sg = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.5), sign); sg.position.set(0, 7.6, fz * 1.02); if (fz < 0) sg.rotation.y = Math.PI; g.add(sg); }
+      add(g); SHOPS.push({ x, z, w, t: 0 });
+    }
+  }
+  function shops(dt, s) {
+    for (const sh of SHOPS) {
+      if (sh.t > 0) { sh.t -= dt; continue; }
+      if (s.veh !== "car" || s.y > 3 || Math.abs(s.z - sh.z) > 2.5 || Math.abs(s.x - sh.x) > sh.w) continue;
+      sh.t = 20; const name = o.respray ? o.respray() : null, col = o.paintHex ? o.paintHex() : 0xffffff;
+      for (let k = 0; k < 26; k++) puff(sh.x + rnd() * sh.w * 1.6, 1 + Math.random() * 5, sh.z + rnd() * 2, rnd() * 3, -1 - Math.random() * 2, rnd() * 3, col, .9, 1.2);
+      const hot = o.stars && o.stars() > 0; if (hot && o.policeClear) o.policeClear();
+      game.api.say(`🎨 ${name ? `Fresh paint: ${name}` : "Fresh paint"}${hot ? " · the police lost you" : ""}`, 3); pop(hot ? "🎨 HEAT CLEARED" : "🎨 NEW PAINT", "gold"); sound.whoosh && sound.whoosh();
+    }
+  }
+
+  // ---- boost pads: the Sky Park run-up and the tunnel floor kick you forward ----
+  const BOOSTS = [];
+  const boostMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3df5ff).multiplyScalar(1.8), toneMapped: false, transparent: true, opacity: .9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, side: THREE.DoubleSide });
+  const boostPad = (x, y, z, yaw) => { const c = add(new THREE.Mesh(chevGeo, boostMat)); c.scale.setScalar(2.2); c.position.set(x, y + .06, z); c.rotation.y = -yaw; BOOSTS.push({ x, y, z, t: 0 }); };
+  function boosts(dt, s) {
+    for (const b of BOOSTS) {
+      if (b.t > 0) { b.t -= dt; continue; }
+      if (s.mode !== "drive" || Math.abs(s.x - b.x) > 3 || Math.abs(s.z - b.z) > 3 || Math.abs(s.y - b.y) > 2) continue;
+      b.t = 1.2; const sp = Math.hypot(s.vel.x, s.vel.z) || 1, nv = Math.min(105, sp + 20); s.vel.x *= nv / sp; s.vel.z *= nv / sp; s.shake = .4; game.api.say("⚡ BOOST", 1); sound.whoosh && sound.whoosh();
+    }
+  }
+
+  // ---- Sky Park: the loop's track (it twists a few metres sideways so you come out beside where you went in), boost pads, a sign ----
+  {
+    const L2 = game.LOOP2, N = 120, pos = [], hw = 3.6;
+    const at = (th, side) => [L2.x + L2.R * Math.sin(th), L2.R * (1 - Math.cos(th)) - .05 * Math.cos(th), L2.z + L2.shift * th / (2 * Math.PI) + side];
+    for (let i = 0; i < N; i++) { const a = i / N * 2 * Math.PI, b = (i + 1) / N * 2 * Math.PI, p1 = at(a, -hw), p2 = at(a, hw), p3 = at(b, hw), p4 = at(b, -hw); pos.push(...p1, ...p2, ...p3, ...p1, ...p3, ...p4); }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+    add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x1d1e24, roughness: .6, metalness: .3, side: THREE.DoubleSide })));
+    for (const sd of [-hw, hw]) { const pts = []; for (let i = 0; i <= 64; i++) pts.push(new THREE.Vector3(...at(i / 64 * 2 * Math.PI, sd))); add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 160, .14, 6), neonMat(0xff3df0))); }
+    for (const x of [-905, -870, -835]) boostPad(x, 0, -1000, 0);
+    boostPad(L2.x - 40, 0, L2.z, 0); boostPad(L2.x - 70, 0, L2.z, 0);
+    const sg = add(new THREE.Mesh(new THREE.PlaneGeometry(36, 9), new THREE.MeshBasicMaterial({ map: textTex("SKY PARK", 1024, 256), toneMapped: false, side: THREE.DoubleSide }))); sg.position.set(-500, 16, -775);
+  }
+
+  // ---- the secret tunnel: down a trench south of downtown, a lit tube under the Hudson, up a trench into the harbor ----
+  const T = TUNNEL, covered = x => x <= T.a0 - 100 && x >= T.b1 + 100, floorAt = x => x > T.a1 ? T.floor * (T.a0 - x) / (T.a0 - T.a1) : x < T.b0 ? T.floor * (x - T.b1) / (T.b0 - T.b1) : T.floor;
+  {
+    const xs = []; for (let x = T.a0; x > T.a1; x -= 12) xs.push(x); xs.push(T.a0 - 100, T.a1, T.b0); for (let x = T.b0 - 12; x > T.b1; x -= 12) xs.push(x); xs.push(T.b1 + 100, T.b1);
+    xs.sort((a, b) => b - a);
+    const prof = x => { const f = floorAt(x), top = covered(x) ? T.ceil : .3, pts = [[-T.half, top], [-T.half, f + 2.6]]; for (let k = 1; k <= 6; k++) { const b = -T.half + 2.8 * k / 6, e = (Math.abs(b) - 4.2) / 2.8; pts.push([b, f + 2.6 * Math.max(0, e) ** 2]); } for (let k = 0; k <= 6; k++) { const b = 4.2 + 2.8 * k / 6, e = (b - 4.2) / 2.8; pts.push([b, f + 2.6 * e * e]); } pts.push([T.half, top]); return pts; };
+    const pos = [];
+    for (let i = 0; i < xs.length - 1; i++) { const A = prof(xs[i]), B = prof(xs[i + 1]); for (let k = 0; k < A.length - 1; k++) { const q = [[xs[i], A[k]], [xs[i + 1], B[k]], [xs[i + 1], B[k + 1]], [xs[i], A[k + 1]]].map(([x, [b, y]]) => [x, y, T.z + b]); pos.push(...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]); } }
+    const cx0 = T.a0 - 100, cx1 = T.b1 + 100, Z0 = T.z - T.half, Z1 = T.z + T.half;
+    pos.push(cx0, T.ceil, Z0, cx1, T.ceil, Z0, cx1, T.ceil, Z1, cx0, T.ceil, Z0, cx1, T.ceil, Z1, cx0, T.ceil, Z1);                                        // the roof
+    for (const x of [cx0, cx1]) pos.push(x, T.ceil, Z0, x, .3, Z0, x, .3, Z1, x, T.ceil, Z0, x, .3, Z1, x, T.ceil, Z1);                                  // the walls over each portal
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+    const tun = add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x6d7078, roughness: .85, side: THREE.DoubleSide }))); tun.receiveShadow = true;
+    // the grass over the covered ends of the trenches (the holes in the ground are cut a little longer than the open part)
+    const grass = new THREE.MeshStandardMaterial({ color: 0x5a7a44, roughness: 1 });
+    for (const [x0, x1] of [[T.a1 - 12, cx0], [cx1, T.b0 + 12]]) { const slab = add(new THREE.Mesh(new THREE.BoxGeometry(Math.abs(x1 - x0), .3, T.half * 2 + 1.2), grass)); slab.position.set((x0 + x1) / 2, -.27, T.z); }
+    // light strips along the roof and the walls, boost pads on the floor every 250 m, and a sign over each portal
+    const stripMat = neonMat(0xbfefff), len = cx0 - cx1;
+    for (const sd of [-5.4, 5.4]) { const st = add(new THREE.Mesh(new THREE.BoxGeometry(len, .06, .3), stripMat)); st.position.set((cx0 + cx1) / 2, T.ceil - .06, T.z + sd); }
+    for (const sd of [-T.half + .05, T.half - .05]) { const st = add(new THREE.Mesh(new THREE.BoxGeometry(T.a1 - T.b0, .14, .06), neonMat(0x3df5ff))); st.position.set((T.a1 + T.b0) / 2, T.floor + 3.4, T.z + sd); }
+    for (let x = T.a1 - 150; x > T.b0 + 100; x -= 250) boostPad(x, T.floor, T.z, Math.PI);
+    const tsign = new THREE.MeshBasicMaterial({ map: textTex("VOID TUNNEL", 1024, 192, "rgba(0,0,0,.75)", "#3df5ff"), toneMapped: false, side: THREE.DoubleSide });
+    for (const [x, ry] of [[T.a0 - 2, Math.PI / 2], [T.b1 + 2, -Math.PI / 2]]) { const sg = add(new THREE.Mesh(new THREE.PlaneGeometry(14, 2.6), tsign)); sg.position.set(x, 4, T.z); sg.rotation.y = ry; for (const sd of [-1, 1]) { const post = add(new THREE.Mesh(new THREE.BoxGeometry(.4, 4.5, .4), stripMat)); post.position.set(x, 2.25, T.z + sd * 7.2); } }
+    // the harbor at the far end: stacks of shipping containers either side of the road out
+    const box = new THREE.BoxGeometry(12, 2.6, 2.5), cols = [0xb8322a, 0x1f5aa8, 0x2e7a3a, 0xd98a1f, 0x6a6e78], cm = new THREE.InstancedMesh(box, new THREE.MeshStandardMaterial({ roughness: .7, metalness: .3 }), 120);
+    let n = 0; const M4 = new THREE.Matrix4(), C3 = new THREE.Color();
+    for (let i = 0; i < 6; i++) for (const zs of [-1, 1]) for (let row = 0; row < 3; row++) for (let lvl = 0; lvl < (i + row) % 3 + 1; lvl++) { if (n >= 120) break; M4.makeTranslation(T.b1 - 20 - i * 14, 1.3 + lvl * 2.6, T.z + zs * (14 + row * 3)); cm.setMatrixAt(n, M4); cm.setColorAt(n, C3.setHex(cols[(i * 3 + row + lvl) % 5])); n++; }
+    cm.count = n; cm.castShadow = true; add(cm);
+  }
+  function tunnel(x, z, y) {
+    if (Math.abs(z - T.z) > T.half || x > T.a0 || x < T.b1) return null;
+    const cov = covered(x); if (cov && y > T.ceil - .5) return null;                   // up on the grass over the tube
+    const inA = x > T.a1, inB = x < T.b0, b = z - T.z, e = Math.max(0, (Math.abs(b) - 4.2) / 2.8);
+    return { h: floorAt(x) + 2.6 * e * e, tunnel: T, ceil: cov ? T.ceil : null, slopeX: inA ? -T.floor / (T.a0 - T.a1) : inB ? T.floor / (T.b0 - T.b1) : 0, side: Math.sign(b) * 2 * 2.6 * e / 2.8 };
+  }
+
+  // ---- the coin chime: a soft ping that quickens as you close in on a hidden coin (inside 60 m) ----
+  let chimeT = 0;
+  function chime(dt) { const d = o.extras ? o.extras().nearestCoin() : 1e9; if (d > 60) { chimeT = 0; return; } if ((chimeT -= dt) <= 0) { chimeT = .22 + d / 60 * 1.1; sound.chime && sound.chime(880 + (60 - d) * 9); } }
+
   let odWas = false;
   return {
-    props, pop, onScore,
+    props, pop, onScore, onLand, tunnel,
+    pads: () => TGT, mapData: () => ({ targets: TGT, shops: SHOPS, tunnel: T }),
     update(dt, time, S, cam) {
       const s = game.state; if (!s || !s.started) { columnsUpdate(dt, cam, false); return; }
       columnsUpdate(dt, cam, s.mode === "air");
-      gpsUpdate(time, s); trailsUpdate(dt, s, S); debrisUpdate(dt, cam); hints(dt, s, S);
+      gpsUpdate(time, s); trailsUpdate(dt, s, S); debrisUpdate(dt, cam); hints(dt, s, S); shops(dt, s); boosts(dt, s); chime(dt);
       const nos = $("gNos"); if (nos) { nos.classList.toggle("od", !!S.od); nos.classList.toggle("full", !!S.nitroFull && !S.od); }
       if (S.od && !odWas) pop("⚡ OVERDRIVE", "hot"); odWas = !!S.od;
       // the shockwave: a ring that bursts out across the flight path

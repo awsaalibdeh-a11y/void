@@ -1,6 +1,7 @@
 // Taxi jobs and hidden coins.
 //  Taxi: press J (or Menu → Taxi job). Passengers wave from the kerb near you; stop next to one and they hop in,
 //  the GPS shows where they're going, and the fare drops the longer you take. Back-to-back fares build a streak.
+//  VIPs (gold, only when your car can fly) want a skyscraper's rooftop helipad against the clock, and pay big.
 //  Coins: 80 spinning VOID coins: rooftops, piers, the bridge towers, the park, and since the city doubled the south
 //  supertalls, the Ferris wheel, the El, the stunt park, Brooklyn, the highway and up the mountain trail; found ones stay found.
 import * as THREE from "three";
@@ -17,7 +18,9 @@ export function createExtras(W, api, nav, sound) {
   // ---- passengers: a little figure with a yellow beacon ----
   const personMat = new THREE.MeshStandardMaterial({ color: 0x3060c0, roughness: .7 }), skin = new THREE.MeshStandardMaterial({ color: 0xd9a07a, roughness: .7 });
   const beaconMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.8), transparent: true, opacity: .35, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-  const fig = () => { const g = new THREE.Group(); const b = new THREE.Mesh(new THREE.CylinderGeometry(.25, .3, 1.2, 10).translate(0, .9, 0), personMat); const h = new THREE.Mesh(new THREE.SphereGeometry(.17, 12, 8).translate(0, 1.7, 0), skin); const arm = new THREE.Mesh(new THREE.BoxGeometry(.1, .6, .1).translate(0, .3, 0), personMat); arm.position.set(0, 1.35, .3); arm.rotation.x = -2.6; g.add(b, h, arm); const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 30, 16, 1, true).translate(0, 15, 0), beaconMat); g.add(beam); g.userData.arm = arm; scene.add(g); return g; };
+  const fig = () => { const g = new THREE.Group(); const b = new THREE.Mesh(new THREE.CylinderGeometry(.25, .3, 1.2, 10).translate(0, .9, 0), personMat); const h = new THREE.Mesh(new THREE.SphereGeometry(.17, 12, 8).translate(0, 1.7, 0), skin); const arm = new THREE.Mesh(new THREE.BoxGeometry(.1, .6, .1).translate(0, .3, 0), personMat); arm.position.set(0, 1.35, .3); arm.rotation.x = -2.6; g.add(b, h, arm); const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 30, 16, 1, true).translate(0, 15, 0), beaconMat); g.add(beam); g.userData.arm = arm; g.userData.beam = beam; g.userData.body = b; scene.add(g); return g; };
+  const vipBeam = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, .5, 2.2), transparent: true, opacity: .4, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }), vipSuit = new THREE.MeshStandardMaterial({ color: 0xd4a83a, metalness: .6, roughness: .3 });
+  const canFly = () => { const p = api.state; return !!p && (!p.ride || !!(p.ride.model && p.ride.model.kind && p.ride.model.kind.fly)); };
   const waiting = [fig(), fig(), fig()], dropMark = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 40, 24, 1, true).translate(0, 20, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dff8a).multiplyScalar(1.6), transparent: true, opacity: .22, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
   scene.add(dropMark); dropMark.visible = false; waiting.forEach(w => w.visible = false);
   const kerb = (x0, z0, rMin, rMax) => {          // a sidewalk spot rMin..rMax metres away
@@ -32,7 +35,10 @@ export function createExtras(W, api, nav, sound) {
     return null;
   };
   const J = { on: false, fare: null, streak: 0, t: 0, earned: 0 };
-  function placeWaiting(p) { for (const w of waiting) { const s = kerb(p.x, p.z, 60, 260); if (s) { w.position.set(s[0], 0, s[1]); w.visible = true; } } }
+  function placeWaiting(p) {
+    waiting.forEach((w, k) => { const s = kerb(p.x, p.z, 60, 260); if (!s) return; w.position.set(s[0], 0, s[1]); w.visible = true;
+      const vip = k === 2 && canFly() && rnd() < .6; w.userData.vip = vip; w.userData.beam.material = vip ? vipBeam : beaconMat; w.userData.body.material = vip ? vipSuit : personMat; });
+  }
   function toggle(on = !J.on) {
     const p = api.state; if (!p) return;
     J.on = on; J.fare = null; dropMark.visible = false;
@@ -97,13 +103,28 @@ export function createExtras(W, api, nav, sound) {
     const spots = [[GRID.ax(9), GRID.sz(3), "Midtown"], [GRID.ax(3), GRID.sz(15), "Park Ave"], [GRID.ax(11), GRID.sz(17), "Downtown"], [600, 0, "Broadway"], [GRID.ax(1), GRID.sz(6), "West Side"], [1400, 18, "Bridge"],
       [1880, 0, "Highway West"], [2380, 0, "Highway East"], [GRID.ax(5), GRID.sz(27), "South Ave"], [GRID.ax(10), GRID.sz(32), "Harbor"], [GRID.ax(2), GRID.sz(37), "Bay Ridge"], [GRID.ax(7), GRID.sz(22), "Midtown South"], [480, GRID.sz(20), "Under the El"]];
     if (W.city.mountains) { const [x, , z] = W.city.mountains.trail[1]; spots.push([x, z, "Hill Climb"]); }
-    spots.forEach(([x, z, name]) => {
-      const g = new THREE.Group(); g.position.set(x + 11, 0, z + 9); scene.add(g);
+    spots.push([GRID.ax(12), GRID.sz(10), "East Side"], [GRID.ax(0), GRID.sz(28), "Riverside"], [GRID.ax(6), GRID.sz(40), "Battery"], [GRID.ax(9), GRID.sz(36), "Downtown South"], [-860, -1000, "Sky Park"], [-1100, 2200, "Tunnel", -12]);
+    spots.forEach(([x, z, name, y]) => {
+      const g = new THREE.Group(); if (y != null) g.position.set(x + 4, y, z + 5.2); else g.position.set(x + 11, 0, z + 9); scene.add(g);
       g.add(new THREE.Mesh(new THREE.CylinderGeometry(.12, .15, 5, 8).translate(0, 2.5, 0), pole)); const b = new THREE.Mesh(new THREE.BoxGeometry(.8, .5, .5), boxM); b.position.y = 5; g.add(b);
       const f = new THREE.Mesh(new THREE.SphereGeometry(.18, 8, 6), flashM.clone()); f.position.set(-.45, 5, 0); g.add(f);
       TRAPS.push({ x, z, name, f, cool: 0 });
     });
   }
+  // ---- radar gates: big frames in the sky that clock your speed and height as you fly through ----
+  const GATES = [], gateBest = store.get("void.gates") || {};
+  {
+    const frameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(.3, 1.6, 2.2), toneMapped: false });
+    const C = W.city, M = C.mountains;
+    [[-1320, 200, 400, 0, "Hudson Gate"], [C.lawn.x, 170, C.lawn.z, Math.PI / 2, "Park Gate"], [1350, 150, 0, 0, "Bridge Gate"], [-80, 360, 1250, Math.PI / 2, "Supertall Gate"], [M ? M.peak[0] - 200 : 3700, M ? M.peak[1] + 80 : 380, M ? M.peak[2] : -380, 0, "Summit Gate"], [-300, 140, -1000, 0, "Sky Park Gate"]].forEach(([x, y, z, yaw, name]) => {
+      const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = -yaw;
+      for (const [w, h, py, pz] of [[1.4, 1.4, 15, 0], [1.4, 1.4, -15, 0]]) { const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, 31.4), frameMat); bar.position.set(0, py, pz); g.add(bar); }
+      for (const pz of [15, -15]) { const bar = new THREE.Mesh(new THREE.BoxGeometry(1.4, 30, 1.4), frameMat); bar.position.set(0, 0, pz); g.add(bar); }
+      scene.add(g); GATES.push({ x, y, z, nx: Math.cos(yaw), nz: Math.sin(yaw), name, g, side: 0, t: 0 });
+    });
+  }
+  let nearestCoinD = 1e9;
+
   // ---- sky traffic: an airliner crossing high up, a slow blimp with a glowing VOID sign ----
   const plane = new THREE.Group(), blimp = new THREE.Group();
   {
@@ -124,6 +145,9 @@ export function createExtras(W, api, nav, sound) {
   return {
     toggle, pads: PADS, get job() { return J; }, coins: () => ({ got: got.size, total: COINS.length }),
     fastCams: () => TRAPS.filter(t => (best[t.name] || 0) >= 250).length,
+    nearestCoin: () => nearestCoinD, gates: GATES, traps: TRAPS,
+    coinsNear: (x, z, rr) => COINS.filter(c => c.on && Math.hypot(c.x - x, c.z - z) < rr).map(c => [c.x, c.z]),
+    taxi: () => ({ on: J.on, fare: J.fare, waiting: waiting.filter(w => w.visible).map(w => [w.position.x, w.position.z, !!w.userData.vip]) }),
     sky(dt, time) {
       skyT += dt;
       const a = (skyT * .012) % (Math.PI * 2); plane.position.set(Math.cos(a) * 2600, 620, Math.sin(a) * 1600); plane.rotation.y = -Math.atan2(Math.cos(a) * 1600, -Math.sin(a) * 2600);
@@ -162,13 +186,35 @@ export function createExtras(W, api, nav, sound) {
         cm.compose(cv, cq, cs); coinMesh.setMatrixAt(c.id, cm); glowMesh.setMatrixAt(c.id, cm);
       }
       coinMesh.instanceMatrix.needsUpdate = glowMesh.instanceMatrix.needsUpdate = true;
-      $("gCoins").textContent = `🪙 ${got.size}/${COINS.length}` + (near < 150 ? ` · one ${Math.round(near)} m away` : "");
+      $("gCoins").textContent = `🪙 ${got.size}/${COINS.length}` + (near < 150 ? ` · one ${Math.round(near)} m away` : ""); nearestCoinD = near;
+      // radar gates: fly through one and it clocks you
+      for (const G of GATES) {
+        if (G.t > 0) { G.t -= dt; if (G.t <= 0) G.g.children.forEach(m => m.material.color.setRGB(.3, 1.6, 2.2)); }
+        const dx = p.x - G.x, dy = p.y - G.y, dz = p.z - G.z, plane = dx * G.nx + dz * G.nz, side = Math.sign(plane);
+        if (G.side && side !== G.side && Math.abs(plane) < 8 && Math.abs(dy) < 15 && Math.abs(-dx * G.nz + dz * G.nx) < 15 && G.t <= 0) {
+          G.t = 3; const kmh = Math.round(Math.hypot(p.vel.x, p.vel.y, p.vel.z) * 3.6), alt = Math.round(p.y), b = gateBest[G.name] || 0;
+          if (!G.own) { G.own = true; G.g.children.forEach(m => m.material = m.material.clone()); } G.g.children.forEach(m => m.material.color.setRGB(2.6, 2.6, 2.6));
+          if (kmh > b) { gateBest[G.name] = kmh; store.set("void.gates", gateBest); api.addScore(Math.round(kmh * 3), `📡 ${G.name}: ${kmh} km/h at ${alt} m (new best)`); } else api.say(`📡 ${G.name}: ${kmh} km/h at ${alt} m (best ${b})`, 2.5);
+        }
+        G.side = side;
+      }
       if (!J.on) return;
       const sp = Math.hypot(p.vel.x, p.vel.z);
       // waving passengers; the nearest one gets in when you stop beside it
       for (const w of waiting) {
         if (!w.visible) continue;
         w.userData.arm.rotation.z = Math.sin(time * 6) * .4;
+        if (!J.fare && Math.hypot(p.x - w.position.x, p.z - w.position.z) < 9 && sp < 4 && p.mode === "drive" && w.userData.vip) {
+          // a VIP: fly them to a rooftop helipad 400-1200 m away before the clock runs out
+          const pads = W.city.helipads.filter(h => { const d = Math.hypot(h.x - w.position.x, h.z - w.position.z); return d > 400 && d < 1200 && h.y > 40; });
+          if (pads.length) {
+            const h = pads[Math.floor(rnd() * pads.length)], dist = Math.hypot(h.x - w.position.x, h.z - w.position.z);
+            J.fare = { x: h.x, z: h.z, y: h.y, vip: true, t: dist / 38 + 35, max: 1500 + Math.round(dist * 1.4), street: `the rooftop ${Math.round(h.y)} m up` };
+            waiting.forEach(o => o.visible = false); dropMark.position.set(h.x, h.y, h.z); dropMark.visible = true;
+            nav.setDest({ name: `👔 VIP rooftop`, x: h.x, z: h.z, y: h.y, air: true, taxi: true });
+            api.say(`👔 VIP: "Fly me to that rooftop, ${Math.round(h.y)} m up. You have ${Math.round(J.fare.t)} seconds."`, 4); sound.pop(); continue;
+          }
+        }
         if (!J.fare && Math.hypot(p.x - w.position.x, p.z - w.position.z) < 9 && sp < 4 && p.mode === "drive") {
           const d = kerb(w.position.x, w.position.z, 350, 1100); if (!d) continue;
           const dist = Math.hypot(d[0] - w.position.x, d[1] - w.position.z);
@@ -182,13 +228,13 @@ export function createExtras(W, api, nav, sound) {
       if (J.fare) {
         const f = J.fare; f.t -= dt;
         const pay = Math.max(50, Math.round(f.max * Math.min(1, .35 + f.t / 40)));
-        $("gJob").textContent = `🚕 To ${f.street} · ${fmt(Math.max(0, f.t))} · $${pay}${J.streak > 1 ? ` · streak ×${J.streak}` : ""}`;
-        if (Math.hypot(p.x - f.x, p.z - f.z) < 12 && sp < 4) {
+        $("gJob").textContent = `${f.vip ? "👔 VIP" : "🚕"} To ${f.street} · ${fmt(Math.max(0, f.t))} · $${pay}${J.streak > 1 ? ` · streak ×${J.streak}` : ""}`;
+        if (Math.hypot(p.x - f.x, p.z - f.z) < (f.vip ? 10 : 12) && sp < 4 && (!f.vip || Math.abs(p.y - f.y) < 3)) {
           J.streak = f.t > 0 ? J.streak + 1 : 0; const total = pay + (J.streak > 1 ? J.streak * 100 : 0); J.earned += total;
-          api.addScore(total, `🚕 Fare $${total}${J.streak > 1 ? ` (streak ×${J.streak})` : ""}`); J.fare = null; dropMark.visible = false; if (nav.dest && nav.dest.taxi) nav.setDest(null); placeWaiting(p);
+          api.addScore(total, `${f.vip ? "👔 VIP fare" : "🚕 Fare"} $${total}${J.streak > 1 ? ` (streak ×${J.streak})` : ""}`); J.fare = null; dropMark.visible = false; if (nav.dest && nav.dest.taxi) nav.setDest(null); placeWaiting(p);
         } else if (f.t < -20) { api.say("🚕 The passenger gave up and got out", 3); J.fare = null; J.streak = 0; dropMark.visible = false; if (nav.dest && nav.dest.taxi) nav.setDest(null); placeWaiting(p); }
       } else {
-        $("gJob").textContent = `🚕 Find a passenger (yellow beams)${J.earned ? ` · $${J.earned} so far` : ""}`;
+        $("gJob").textContent = `🚕 Find a passenger (yellow beams${waiting.some(w => w.visible && w.userData.vip) ? ", the purple one is a VIP" : ""})${J.earned ? ` · $${J.earned} so far` : ""}`;
         if (waiting.every(w => !w.visible || Math.hypot(p.x - w.position.x, p.z - w.position.z) > 600)) placeWaiting(p);
       }
     },

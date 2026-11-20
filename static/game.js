@@ -88,14 +88,21 @@ export function createGame(W, car, sound, life, opts = {}) {
     { x: city.lawn.x - 40, z: city.lawn.z, yaw: 0, len: 18, h: 5.5 }, { x: 1000, z: -300, yaw: -Math.PI / 2, len: 18, h: 6 }, { x: -1000, z: -500, yaw: Math.PI / 2, len: 18, h: 6 },
     // the stunt park (south-west square)
     { x: -900, z: 1345, yaw: 0, len: 10, h: 2.2 }, { x: -860, z: 1365, yaw: 0, len: 8, h: 1.6 }, { x: -760, z: 1350, yaw: Math.PI, len: 10, h: 2.4 }, { x: -880, z: 1420, yaw: 0, len: 22, h: 7.5, w: 5 },
-    { x: -680, z: 1440, yaw: Math.PI, len: 22, h: 7.5, w: 5 }, { x: -620, z: 1350, yaw: Math.PI / 2, len: 12, h: 3 }, { x: -560, z: 1460, yaw: -Math.PI / 2, len: 12, h: 3 }, { x: -800, z: 1395, yaw: Math.PI / 4, len: 9, h: 1.8 }]) RAMPS.push({ w: 4, ...r });
+    { x: -680, z: 1440, yaw: Math.PI, len: 22, h: 7.5, w: 5 }, { x: -620, z: 1350, yaw: Math.PI / 2, len: 12, h: 3 }, { x: -560, z: 1460, yaw: -Math.PI / 2, len: 12, h: 3 }, { x: -800, z: 1395, yaw: Math.PI / 4, len: 9, h: 1.8 },
+    // Sky Park, the grass north of the city: a 500 m mega ramp up to 60 m, a long soft landing slope, kickers and a half-pipe
+    { x: -780, z: -1000, yaw: 0, len: 500, h: 60, w: 9, mega: true }, { x: 520, z: -1000, yaw: Math.PI, len: 420, h: 34, w: 14, land: true },
+    { x: -560, z: -880, yaw: 0, len: 26, h: 9, w: 5 }, { x: -380, z: -880, yaw: 0, len: 18, h: 5, w: 5 }, { x: 60, z: -880, yaw: Math.PI, len: 26, h: 9, w: 5 },
+    { x: -700, z: -1180, yaw: 0, len: 150, h: 5.5, w: 10, pipe: true, flat: 4.5 }]) RAMPS.push({ w: 4, ...r });
   {
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x1b1c22, metalness: .6, roughness: .35 }), stripe = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(1.6), toneMapped: false });
     for (const r of RAMPS) {
       if (r.main) continue;
-      const shape = new THREE.Shape(); const n = 16; shape.moveTo(0, 0); for (let i = 0; i <= n; i++) { const u = i / n; shape.lineTo(u * r.len, r.h * u * u); } shape.lineTo(r.len, 0); shape.closePath();
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: r.w * 2, bevelEnabled: false }).translate(0, 0, -r.w);
+      const shape = new THREE.Shape(); const n = r.mega || r.land ? 40 : 16;
+      if (r.pipe) { shape.moveTo(-r.w, r.h + .4); shape.lineTo(-r.w, 0); shape.lineTo(r.w, 0); shape.lineTo(r.w, r.h + .4); for (let i = 0; i <= n; i++) { const b = r.w - i / n * 2 * r.w, e = Math.max(0, Math.abs(b) - r.flat) / (r.w - r.flat); shape.lineTo(b, r.h * e * e); } shape.closePath(); }
+      else { shape.moveTo(0, 0); for (let i = 0; i <= n; i++) { const u = i / n; shape.lineTo(u * r.len, r.h * u * u); } shape.lineTo(r.len, 0); shape.closePath(); }
+      const geo = r.pipe ? new THREE.ExtrudeGeometry(shape, { depth: r.len, bevelEnabled: false }).rotateY(Math.PI / 2) : new THREE.ExtrudeGeometry(shape, { depth: r.w * 2, bevelEnabled: false }).translate(0, 0, -r.w);
       const m = new THREE.Mesh(geo, rampMat); m.position.set(r.x, 0, r.z); m.rotation.y = -r.yaw; m.castShadow = m.receiveShadow = true; W.scene.add(m);
+      if (r.pipe) { for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.BoxGeometry(r.len, .12, .12), stripe); e.position.set(r.len / 2, r.h + .45, s * r.w); m.add(e); } continue; }
       for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.BoxGeometry(.3, .08, r.w * 2), stripe); e.position.set(r.len - .2, r.h + .02, 0); m.add(e); const side = new THREE.Mesh(new THREE.BoxGeometry(r.len, .1, .1), stripe); side.position.set(r.len / 2, r.h / 2 + .1, s * r.w); side.rotation.z = Math.atan(r.h / r.len); m.add(side); }
     }
   }
@@ -123,10 +130,12 @@ export function createGame(W, car, sound, life, opts = {}) {
   const rampAt = (x, z) => {
     for (const r of RAMPS) {
       const dx = x - r.x, dz = z - r.z, c = Math.cos(r.yaw), s = Math.sin(r.yaw), a = dx * c + dz * s, b = -dx * s + dz * c;
+      if (r.pipe) { if (a >= 0 && a <= r.len && Math.abs(b) < r.w) { const e = Math.max(0, Math.abs(b) - r.flat) / (r.w - r.flat); return { r, h: r.h * e * e, a, slope: 0, side: Math.sign(b) * 2 * r.h * e / (r.w - r.flat) }; } continue; }
       if (a >= 0 && a <= r.len && Math.abs(b) < r.w + .3) return { r, h: r.h * (a / r.len) ** 2, a, slope: 2 * r.h * a / (r.len * r.len) };
     }
     return null;
   };
+  const LOOP2 = { x: 220, z: -905, R: 15, shift: 7 };              // the Sky Park loop: radius, and how far it moves you sideways
   const RINGS = [];
   {
     let sd = 9; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
@@ -338,6 +347,7 @@ export function createGame(W, car, sound, life, opts = {}) {
 
   // the ground under a point: ramps, rooftops (only if you are up there), else the street; water is -1
   function groundAt(x, z, y) {
+    const tn = opts.tunnel && opts.tunnel(x, z, y); if (tn) return tn;
     const rp = rampAt(x, z); if (rp) return { h: rp.h, ramp: rp };
     const roof = city.roofAt(x, z); if (roof > 0 && y >= roof - 1.2) return { h: roof, roof: true };
     if (y < 1.5 && city.isWater(x, z)) return { h: -1, water: true };
@@ -454,6 +464,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     // fuel: about 10 minutes of driving, 5 of flying; empty and the engine (and thrusters) stop
     const flying = g.mode === "air";
     if (gas || flying || Math.hypot(g.vel.x, g.vel.z) > 1 || (g.thr > .05 && g.veh !== "car")) g.fuel = Math.max(0, g.fuel - dt / (flying ? 300 : 600));
+    if (g.emp > 0) { g.emp -= dt; gas = 0; g.nitro = Math.min(g.nitro, .05); if (g.mode === "air") { g.hover = false; g.jump = true; } }
     if (g.fuel <= 0) { gas = 0; if (!g.fuelMsg) { g.fuelMsg = 1; say("Out of fuel! Coast to a ⛽ station (GPS has the nearest)", 5); } }
     else if (g.fuel < .15 && g.fuelMsg !== 2 && g.fuel > 0) { g.fuelMsg = 2; say("Low fuel: find a ⛽ station", 4); }
     if (g.fuel > .2) g.fuelMsg = 0;
@@ -532,7 +543,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       const gr = groundAt(g.x, g.z, g.y), prevY = g.y;
       if (gr.water) { splash(); return; }
       if (gr.ramp) {
-        g.y = gr.h; g.pitch = Math.atan(gr.ramp.slope) * Math.cos(g.yaw - gr.ramp.r.yaw);
+        g.y = gr.h; g.pitch = Math.atan(gr.ramp.slope) * Math.cos(g.yaw - gr.ramp.r.yaw); g.tRoll = gr.ramp.side ? -Math.atan(gr.ramp.side) * Math.cos(g.yaw - gr.ramp.r.yaw) : 0;
         // off the lip fast and you fly
         if (gr.ramp.a > gr.ramp.r.len - .8 && u > 8 && Math.cos(g.yaw - gr.ramp.r.yaw) > .6) {
           const th = Math.atan(gr.ramp.slope); g.mode = "air"; g.hover = false; g.vel.y = Math.sin(th) * u; g.vel.x *= Math.cos(th); g.vel.z *= Math.cos(th); g.airT = 0; g.jump = true; return;
@@ -543,8 +554,12 @@ export function createGame(W, car, sound, life, opts = {}) {
         g.pitch = lerp(g.pitch, Math.atan(sa) + g.sp, clamp(dt * 12)); if (Math.abs(u) > 6 && Math.random() < .08) g.spV += (Math.random() - .5) * Math.abs(u) * .02 / Math.max(.6, OR);   // bumps
         if (Math.abs(u) > 4) g.shake = Math.max(g.shake || 0, Math.min(.22, Math.abs(u) * .004 / Math.max(.6, OR)));    // rough ground rattles you, less in a truck
       }
+      else if (gr.tunnel) { g.y = gr.h; g.pitch = lerp(g.pitch, Math.atan((gr.slopeX || 0) * Math.cos(g.yaw)) + g.sp, clamp(dt * 12)); g.tRoll = -Math.atan(gr.side || 0) * Math.cos(g.yaw); }
       else { g.y = gr.h; g.pitch = g.sp; }
-      g.onTerrain = !!gr.terrain; if (!gr.terrain) { g.slope = 0; g.tRoll = 0; }
+      if (gr.tunnel) { const b = g.z - gr.tunnel.z, lim = gr.tunnel.half - 1.2; if (Math.abs(b) > lim) { g.z = gr.tunnel.z + Math.sign(b) * lim; if (g.vel.z * Math.sign(b) > 0) { if (Math.abs(g.vel.z) > 6) { g.sparks = 1; sound.thud && sound.thud(Math.abs(g.vel.z) / 14); } g.vel.z *= -.2; } } }
+      g.onTerrain = !!gr.terrain; if (!gr.terrain) { g.slope = 0; if (!(gr.ramp && gr.ramp.side) && !gr.tunnel) g.tRoll = 0; }
+      // the Sky Park loop
+      if (Math.abs(g.x - LOOP2.x) < 1.2 && Math.abs(g.z - LOOP2.z) < 3 && Math.cos(g.yaw) > .85 && u > 12 && g.y < .3) { g.mode = "loop2"; g.lp = 0; g.v = u; return; }
       // drive into the loop and the track takes you round
       if (g.x > LOOP_X - 1.5 && g.x < LOOP_X + .5 && Math.abs(g.z) < HW && Math.cos(g.yaw) > .8 && u > 3 && g.y < .2) { g.mode = "rail"; g.d = T.D[T.loopIn]; g.v = u; return; }
       traffic(dt);
@@ -556,6 +571,14 @@ export function createGame(W, car, sound, life, opts = {}) {
       return;
     }
 
+    if (g.mode === "loop2") {
+      const L2 = LOOP2, th = g.lp; g.v = clamp(g.v + ((gas ? 10 * (1 - g.v / 92) : 0) + g.nitroOn * 10 - (brake ? 16 : 0) - .4 - G * Math.sin(th)) * dt, 0, 112);
+      g.lp += g.v / L2.R * dt; const n = g.v * g.v / L2.R + G * Math.cos(th); g.gForce = n / G;
+      g.x = L2.x + L2.R * Math.sin(g.lp); g.y = L2.R * (1 - Math.cos(g.lp)); g.z = L2.z + L2.shift * g.lp / (2 * Math.PI);
+      if (n < 0 || g.v < .5) { g.mode = "air"; g.hover = false; g.jump = true; g.airT = 0; g.vel.set(Math.cos(g.lp) * g.v, Math.sin(g.lp) * g.v, 0); g.yaw = 0; g.pitch = 0; say("Too slow for the loop!", 2); return; }
+      if (g.lp >= 2 * Math.PI) { g.mode = "drive"; g.y = 0; g.yaw = 0; g.pitch = 0; g.roll = 0; g.x = L2.x; g.z = L2.z + L2.shift; g.vel.set(g.v, 0, 0); addScore(800, "Full loop (Sky Park)"); }
+      return;
+    }
     if (g.mode === "rail") {
       T.sample(g.d, fr);
       g.v = clamp(g.v + ((gas ? 10 * (1 - g.v / 92) : 0) + g.nitroOn * 10 - (brake ? 16 : 0) - .4 - G * fr.f.y) * dt, 0, 112);
@@ -675,12 +698,14 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (gr.water) { splash(); return; }
       g.y = gr.h;
       landTricks();
-      const down2 = -g.vel.y, vh2 = Math.hypot(g.vel.x, g.vel.z), angle = Math.atan2(down2, Math.max(.1, vh2));
+      let down2 = -g.vel.y; const vh2 = Math.hypot(g.vel.x, g.vel.z), angle = Math.atan2(down2, Math.max(.1, vh2));
+      if (gr.ramp && gr.ramp.r.land) down2 = Math.min(down2, 4);                  // the landing slope takes the drop
       if (down2 > 12) impact(g.x, g.y, g.z, down2 * 1.2);
       if (down2 > 26 || (down2 > 15 && angle > 1.1)) { hurt(down2 * 3, `Hit the ground hard (${down2.toFixed(1)} m/s down)`); if (g.wreck > 0) return; }
       else if (down2 > 10) hurt((down2 - 10) * 1.5, "Hard landing");
       else if (g.airT > 2 && !g.jump) { if (down2 < 2) addScore(300, "Butter landing!"); else if (down2 < 4.5) addScore(150, "Smooth landing"); else say(`Firm landing (${down2.toFixed(1)} m/s)`, 2); }
       const zone = ZONES.find(z => Math.hypot(g.x - z.x, g.z - z.z) < (z.r || PAD_R) && Math.abs(g.y - (z.y || 0)) < 3);
+      if (opts.onLand) opts.onLand(g, down2);
       if (zone && !g.done.has(zone.id)) { g.done.add(zone.id); if (zone.safe) addScore(1000 + Math.round(Math.max(0, 7 - down2) * 60) + (zone.y ? 500 : 0), `Landed at ${zone.id}`); else say(`${zone.id} is unsafe: ${zone.note}`); }
       if (g.jump && g.airT > 1.2) addScore(Math.round(g.airT * 120), `Airtime ${g.airT.toFixed(1)} s`);
       // keep the kinetic energy: the drop's speed carries into the roll along the ground
@@ -743,7 +768,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     busted(msg) { say(msg, 4); g.hp = 100; g.vel.set(0, 0, 0); $("gScore").textContent = "$" + g.score.toLocaleString(); sound.crash(); },
     // the VOID car: locked until bought (or the secret code); then you're put straight into it
     useHero() { if (!g || !g.started) return; if (g.veh === "foot") Object.assign(g, { veh: "car", mode: "drive" }); if (g.ride) { if (g.ride.c) life.park(g.ride.c, g.x, g.z, g.yaw); g.ride = null; } g.heroPark = null; g.vel.set(0, 0, 0); rig.yaw = null; say("Your VOID car: 330 km/h and it flies (F)", 3); },
-    freeze(t) { g.frozen = t; }, teleport(x, z, yaw) { Object.assign(g, { x, z, y: 0, yaw, mode: "drive", pitch: 0, roll: 0, wings: 0 }); g.vel.set(0, 0, 0); camPos.set(x - Math.cos(yaw) * 8, 3, z - Math.sin(yaw) * 8); rig.yaw = yaw; orbit.yaw = orbit.pitch = 0; },
+    freeze(t) { g.frozen = t; }, emp(t) { if (!g) return; g.emp = Math.max(g.emp || 0, t); g.shake = 1; say("⚡ EMP! Engine down", 1.6); sound.crash(); }, teleport(x, z, yaw) { Object.assign(g, { x, z, y: 0, yaw, mode: "drive", pitch: 0, roll: 0, wings: 0 }); g.vel.set(0, 0, 0); camPos.set(x - Math.cos(yaw) * 8, 3, z - Math.sin(yaw) * 8); rig.yaw = yaw; orbit.yaw = orbit.pitch = 0; },
     hitBox, isWater: (x, z) => city.isWater(x, z), impact: (x, z, p) => impact(x, .6, z, p),
     groundAt: (x, z, y) => groundAt(x, z, y), wreck: why => wreck(why), setVehicle: t => setVehicle(t), setStick: (x, y) => { stick.x = x; stick.y = y; }, nearCars: (x, z, r) => life ? life.nearCars(x, z, r) : [], fly: () => { if (g.mode === "drive") toggleFly(); },
     policeClear: () => opts.policeClear && opts.policeClear(), terrainH: (x, z) => city.terrainH ? city.terrainH(x, z) : 0, board: () => boardToggle(),
@@ -757,7 +782,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     },
   };
   return {
-    api, RINGS, RAILS, RAMPS,
+    api, RINGS, RAILS, RAMPS, LOOP2,
     get state() { return g; }, get photo() { return photo; },
     enter() { active = true; start(); },
     exit() { active = false; keys.clear(); touch.clear(); sound.setGame("off"); if (photo) togglePhoto(); },
@@ -766,8 +791,9 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (!g) start();
       pollPad();
       if (g.started && !paused && !photo) { acc += dt; const H = 1 / 60; let n = 0; while (acc >= H && n < 6) { step(H); acc -= H; n++; } }
-      const air = g.mode === "air", speed = g.mode === "rail" ? g.v * 3.6 : g.vel.length() * 3.6;
+      const air = g.mode === "air", speed = g.mode === "rail" || g.mode === "loop2" ? g.v * 3.6 : g.vel.length() * 3.6;
       if (g.mode === "rail") { basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis); }
+      else if (g.mode === "loop2") { const th = g.lp; fr.f.set(Math.cos(th), Math.sin(th), LOOP2.shift / (2 * Math.PI * LOOP2.R)).normalize(); fr.u.set(-Math.sin(th), Math.cos(th), 0); fr.s.crossVectors(fr.f, fr.u).normalize(); fr.u.crossVectors(fr.s, fr.f); basis.makeBasis(fr.f, fr.u, fr.s); q.setFromRotationMatrix(basis); }
       else {
         const f = new THREE.Vector3(Math.cos(g.yaw) * Math.cos(g.pitch), Math.sin(g.pitch), Math.sin(g.yaw) * Math.cos(g.pitch));
         const s0 = new THREE.Vector3().crossVectors(f, UP).normalize(), u0 = new THREE.Vector3().crossVectors(s0, f);
@@ -779,7 +805,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       car.group.position.copy(fr.p); car.group.quaternion.copy(q); car.group.updateMatrixWorld(true);
       let cam;
       if (orbit.t > 0) orbit.t -= dt;
-      const sp0 = g.mode === "rail" ? g.v : g.vel.length();
+      const sp0 = g.mode === "rail" || g.mode === "loop2" ? g.v : g.vel.length();
       // like GTA: once you stop moving the mouse (or finger) for a moment and the car is moving, the view eases back behind it
       if (orbit.t <= 1.5 && !photo && sp0 > 3 && !orbit.drag && g.veh !== "foot") { const k = clamp(dt * 1.6); orbit.yaw = lerp(orbit.yaw, 0, k); orbit.pitch = lerp(orbit.pitch, 0, k); }
       const nitroFov = g.nitroOn * 9;
@@ -791,6 +817,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       else {
         let up = UP.clone();
         if (g.mode === "rail") { T.sample(Math.max(T.D[T.loopIn] - 6, g.d - 7.5), back); camPos.copy(loc(back, 0, 2.4, 0)); camLook.copy(loc(fr, 5, .8, 0)); up = back.u.clone(); }
+        else if (g.mode === "loop2") { camPos.copy(fr.p).addScaledVector(fr.f, -8).addScaledVector(fr.u, 3); camLook.copy(fr.p).addScaledVector(fr.f, 5); up = fr.u.clone(); }
         else {
           // an orbit rig round the car: only the angles are smoothed, so the camera never lags behind at speed, never
           // cuts through the car when you look round, and never swings in front when you reverse
@@ -806,12 +833,13 @@ export function createGame(W, car, sound, life, opts = {}) {
           const want = g.veh === "foot" ? 3.4 + (orbit.dist || 0) * .6 : g.veh === "board" ? 4.4 + speed * .015 + (orbit.dist || 0) * .6 : lerp(6.6 + speed * .012, 12 + speed * .01, A) + (orbit.dist || 0) + (g.veh === "plane" || g.veh === "heli" ? 6 : g.veh === "boat" ? 2 : 0);
           const pivot = fr.p.clone().add(new THREE.Vector3(0, g.veh === "foot" ? 1.55 : g.veh === "board" ? 1.9 : 1.3 + .1 * A, 0)), dir = new THREE.Vector3(-Math.cos(yawC) * Math.cos(pitC), Math.sin(pitC), -Math.sin(yawC) * Math.cos(pitC));
           // walls: pull in at once, ease back out
-          let room = want; for (let t = .8; t <= want; t += .5) { const q2 = pivot.clone().addScaledVector(dir, t); if (q2.y < .3 || hitBox(q2.x, q2.z, q2.y, .35)) { room = Math.max(1.6, t - .6); break; } }
+          const tun = g.y < -1.5 && opts.tunnel ? opts.tunnel(g.x, g.z, g.y) : null, floorY = tun ? g.y : 0, ceilY = tun && tun.ceil != null ? tun.ceil : 1e9;
+          let room = want; for (let t = .8; t <= want; t += .5) { const q2 = pivot.clone().addScaledVector(dir, t); if (q2.y < floorY + .3 || q2.y > ceilY - .7 || hitBox(q2.x, q2.z, q2.y, .35) || (tun && Math.abs(q2.z - tun.tunnel.z) > tun.tunnel.half - .6)) { room = Math.max(1.6, t - .6); break; } }
           rig.dist = room < rig.dist ? room : lerp(rig.dist, room, clamp(dt * 2.5));
           camPos.copy(pivot).addScaledVector(dir, rig.dist);
           camLook.copy(pivot).add(new THREE.Vector3(fx, 0, fz).multiplyScalar(1.5 + 1.5 * A));
           if (A > .01) up.lerp(fr.u, .15 * A).normalize();
-          if (camPos.y < .4) camPos.y = .4;
+          if (camPos.y < floorY + .4) camPos.y = floorY + .4;
         }
         cam = { pos: camPos.clone(), look: camLook.clone(), up, fov: lerp(56, 68, clamp(speed / 330)) + nitroFov };
       }

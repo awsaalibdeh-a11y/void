@@ -226,6 +226,11 @@ export class Sound {
     this.env(g, t, .004, 1.1, 1.6); o.connect(g).connect(this.musicIn); o.start(t); o.stop(t + 1.7);
     this.noiseHit(t, "lowpass", 6000, .5, .55, 1.5, this.musicIn);
   }
+  // the coin chime: a soft bell, higher the closer you are
+  chime(fr) {
+    if (!this.on || !this.ctx || this.ctx.state !== "running") return; const C = this.ctx, t = C.currentTime, o = C.createOscillator(), g = C.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(fr, t); this.env(g, t, .004, .16, .35); o.connect(g).connect(this.sfx); o.start(t); o.stop(t + .4);
+  }
   // a body thud scaled by how hard you hit (walls, landings)
   thud(p = .5) { if (!this.on) return; const t = this.ctx.currentTime, k = Math.min(1, p); this.noiseHit(t, "lowpass", 400 + k * 1600, .7, .35 + k * .65, .15 + k * .4, this.sfx); if (k > .5) this.noiseHit(t + .01, "bandpass", 2600, 1.2, (k - .5) * .7, .25, this.sfx); }
   whoosh() { if (this.on) this.noiseHit(this.ctx.currentTime, "bandpass", 700, .8, .5, .9, this.sfx); }

@@ -32,6 +32,10 @@ const NEON = ["#ff3b5c", "#3dfcff", "#ffd23d", "#7dff6a", "#ff8a3d", "#c07dff", 
 const ADS = [["HYDRA LTE242", "THE DREAM CAR", "#ff2a3a", "#0b0b10"], ["VOID", "DRIVE · FLY · LAND", "#ffffff", "#101828"], ["NY PIZZA", "A SLICE FOR $1", "#ffd23d", "#8a1010"],
   ["SMASH BURGERS", "OPEN ALL NIGHT", "#ff8a3d", "#1a0d05"], ["MADE BY AWSAA", "BUILT IN CODE", "#3dfcff", "#081a24"], ["SKYLINE", "WEATHER APP", "#7cc4ff", "#0c1424"], ["COLA", "ICE COLD", "#ffffff", "#c8102e"], ["BROADWAY", "TONIGHT", "#ffd23d", "#2a0838"]];
 
+// the Sky Park (open grass north of the grid: the mega ramp, the half-pipe, the second loop) and the secret tunnel south of
+// downtown: a trench down at a0..a1, a tube under the Hudson, a trench up at b0..b1 on the far bank (floor -12, roof -2)
+export const SKYPARK = { x0: -920, x1: 760, z0: -1320, z1: -760 };
+export const TUNNEL = { z: 2200, half: 7, a0: -372, a1: -492, b0: -1768, b1: -1888, floor: -12, ceil: -2 };
 export async function buildCity(scene, canvasTex, COARSE) {
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const pick = a => a[Math.floor(rnd() * a.length)], range = (a, b) => a + rnd() * (b - a);
@@ -217,9 +221,19 @@ export async function buildCity(scene, canvasTex, COARSE) {
   // (the ground layers get depth nudges so they never flicker through each other far away: grass back, pavement, parks and markings forward)
   const grassMat = mat({ map: grassTex, roughness: .95, color: 0xb8d0a0, polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 4 });
   grassTex.repeat.set(1, 1);
+  const V2 = (x, y) => new THREE.Vector2(x, y);
+  const trenches = [[TUNNEL.a1 - 12, TUNNEL.a0], [TUNNEL.b1, TUNNEL.b0 + 12]].map(([x0, x1]) => [x0, x1, TUNNEL.z - TUNNEL.half - .5, TUNNEL.z + TUNNEL.half + .5]);
   for (const [a, b] of [[-20000, HW0], [W1, W2], [EW1, 20000]]) {
-    const g = new THREE.PlaneGeometry(b - a, 40000).rotateX(-Math.PI / 2), uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (b - a) / 10, uv.getY(k) * 4000);
-    const m = new THREE.Mesh(g, grassMat); m.position.set((a + b) / 2, -.12, 0); scene.add(m);
+    const holes = trenches.filter(([x0, x1]) => x0 > a && x1 < b);
+    let g;
+    if (!holes.length) { g = new THREE.PlaneGeometry(b - a, 40000).rotateX(-Math.PI / 2).translate((a + b) / 2, 0, 0); }
+    else {                                                  // (shape y is -z: the shape is laid flat with rotateX)
+      const sh = new THREE.Shape([V2(a, 20000), V2(b, 20000), V2(b, -20000), V2(a, -20000)].reverse());
+      for (const [x0, x1, z0, z1] of holes) sh.holes.push(new THREE.Path([V2(x0, -z0), V2(x1, -z0), V2(x1, -z1), V2(x0, -z1)]));
+      g = new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);
+    }
+    const ps = g.attributes.position, uv = g.attributes.uv; for (let k = 0; k < ps.count; k++) uv.setXY(k, ps.getX(k) / 10, ps.getZ(k) / 10);
+    const m = new THREE.Mesh(g, grassMat); m.position.y = -.12; scene.add(m);
   }
   const asphaltN = normalTex(256, 256, (g, w, h) => { g.fillStyle = "#808080"; g.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { const v = 90 + rnd() * 120 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(rnd() * w | 0, rnd() * h | 0, 1 + (rnd() < .2), 1 + (rnd() < .2)); } }, 1.6);
   asphaltN.repeat.copy(asphaltTex.repeat);
@@ -676,6 +690,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   // small props go in 200 m tiles and are only drawn near the camera (trees a little further)
   const propTiles = [];
   const smashReg = new Map();          // list -> { kind, items: [ [mesh, index, matrix], ... ] per item } for the props a car can knock over
+  P.trees = P.trees.filter(([x, z]) => !(x > SKYPARK.x0 && x < SKYPARK.x1 && z > SKYPARK.z0 && z < SKYPARK.z1) && !trenches.some(([x0, x1, z0, z1]) => x > x0 - 6 && x < x1 + 6 && z > z0 - 6 && z < z1 + 6));
   const instT = (geo, material, list, place, colorOf, far = 330, kind) => {
     const groups = new Map(), PT = 400;
     list.forEach((it, i) => { place(it, i); const e = m4.elements, k = Math.floor(e[12] / PT) * 1000 + Math.floor(e[14] / PT); let gr = groups.get(k); if (!gr) groups.set(k, gr = []); gr.push([m4.clone(), colorOf ? colorOf(it, i) : null, i]); });
@@ -758,6 +773,8 @@ export async function buildCity(scene, canvasTex, COARSE) {
   tufts.frustumCulled = false; tufts.count = 0; tufts.setColorAt(0, new THREE.Color(1, 1, 1)); scene.add(tufts);
   let tuftAt = null; const tuftC = new THREE.Color();
   const grassy = (x, z) => {
+    if (Math.abs(z - TUNNEL.z) < TUNNEL.half + 3 && x < TUNNEL.a0 + 3 && x > TUNNEL.b1 - 3) return -1;            // not in the tunnel trenches
+    if (x > SKYPARK.x0 && x < SKYPARK.x1 && z > SKYPARK.z0 && z < SKYPARK.z1 && (Math.abs(z + 1000) < 16 || Math.abs(z + 905) < 14 || Math.abs(z + 1180) < 12 || Math.abs(z + 880) < 7)) return -1;   // nor on the Sky Park runs
     if (inPark(x, z)) return Math.hypot((x - lake.x) / (lake.rx + 6), (z - lake.z) / (lake.rz + 6)) > 1 ? .08 : -1;
     if (x > MT.x0 && x < MT.x1 && z > MT.z0 && z < MT.z1 && terrain) { const h = terrain.height(x, z); return h > .3 && h < 165 ? h : -1; }
     if (x < HW0 - 30 && !(x > -2660 && x < -1860 && Math.abs(z) < 34)) return 0;                                     // New Jersey, off the runway

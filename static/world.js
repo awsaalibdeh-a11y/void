@@ -36,7 +36,10 @@ export async function createWorld(canvas, COARSE) {
     night: { stops: [[0, "#060b18"], [.4, "#13203d"], [.55, "#2c3a63"], [.63, "#6a5a7a"], [.7, "#2a2d3c"], [1, "#1a1c24"]], fog: 0x2c3550, hemi: [0x9fb0d8, 0x22242c, 1.0], sun: [0x9fb4ff, .55], exp: 1.15, glow: 1, stars: true, sunPos: [-300, 420, -500] },
     sunset: { stops: [[0, "#1d2a55"], [.35, "#4a4a8a"], [.5, "#c46a6a"], [.58, "#ff9a4a"], [.64, "#ffd27a"], [.7, "#6a5048"], [1, "#2a2420"]], fog: 0x8a6a6a, hemi: [0xffc8a8, 0x3a3030, 1.2], sun: [0xffa860, 2.4], exp: 1.1, glow: .55, stars: false, sunPos: [-800, 160, -300] },
     day: { stops: [[0, "#2a6ad0"], [.4, "#5a9ae8"], [.58, "#a8d0f4"], [.66, "#e4eef6"], [.7, "#9aa4ac"], [1, "#6a7078"]], fog: 0xb8cce0, hemi: [0xdfeeff, 0x6a7a5a, 1.5], sun: [0xfff4e0, 3.2], exp: 1.0, glow: .12, stars: false, sunPos: [-400, 700, -350] },
+    dawn: { stops: [[0, "#24305c"], [.4, "#5a5c96"], [.52, "#c88aa8"], [.6, "#ffc0a0"], [.66, "#ffe6c2"], [.7, "#6a5a60"], [1, "#2a2630"]], fog: 0x9a8a9c, hemi: [0xffd4cc, 0x3a3440, 1.15], sun: [0xffbe96, 1.9], exp: 1.08, glow: .7, stars: false, sunPos: [760, 150, 320] },
   };
+  // the sky shader, bloom and the fill light for each time of day (blended between them as the day turns)
+  const SKYU = { day: [3, 1.2, .004], sunset: [8, 2.8, .008], dawn: [6, 2.2, .006] }, BLOOM = { day: .18, sunset: .32, dawn: .3, night: .42 }, KEYL = { day: .4, sunset: 1.1, dawn: .8, night: 1.1 };
   // (a new texture each time: three caches the cube it makes from an equirect background)
   let skyTex = null;
   const paintSky = k => {
@@ -126,27 +129,41 @@ export async function createWorld(canvas, COARSE) {
   }
   let timeOfDay = "night", wxDim = 1, wxOver = false, hemiBase = 1;
   const sunDir = new THREE.Vector3(-300, 420, -500).normalize();
-  function setTime(k) {
-    const S = SKIES[k]; timeOfDay = k; paintSky(k);
+  function setTime(k) { applySky(k, k, 0); captureCity(); }
+  // between two times of day: light, fog, exposure, the sun's path and the window glow all blend; the sun sinks to the
+  // horizon before night and rises from it after; the backdrop switches halfway and the reflections are re-shot at the end
+  function blendTime(a, b, t) { applySky(a, b, Math.min(1, t)); if (t >= 1) captureCity(); }
+  let bgKey = "";
+  const cA = new THREE.Color(), cB = new THREE.Color();
+  function applySky(a, b, t) {
+    const A = SKIES[a], B = SKIES[b], k = t < .5 ? a : b, S = SKIES[k], L = (x, y) => x + (y - x) * t, C = (x, y) => cA.setHex(x).lerp(cB.setHex(y), t);
+    timeOfDay = k;
+    if (bgKey !== k + wxOver) { bgKey = k + wxOver; paintSky(k); if (wxOver) overcast(k); }
     sky.visible = k !== "night" && !wxOver;
-    if (wxOver) {                                   // overcast: a flat grey sky (darker at night)
+    if (sky.visible) {
+      const ua = SKYU[a] || SKYU[b], ub = SKYU[b] || SKYU[a]; skyU.turbidity.value = L(ua[0], ub[0]); skyU.rayleigh.value = L(ua[1], ub[1]); skyU.mieCoefficient.value = L(ua[2], ub[2]); skyU.mieDirectionalG.value = .85;
+      const sp = b === "night" ? [A.sunPos[0], A.sunPos[1] * Math.max(0, 1 - 2 * t) - 8, A.sunPos[2]] : a === "night" ? [B.sunPos[0], B.sunPos[1] * Math.max(0, 2 * t - 1) - 8, B.sunPos[2]] : [L(A.sunPos[0], B.sunPos[0]), L(A.sunPos[1], B.sunPos[1]), L(A.sunPos[2], B.sunPos[2])];
+      skyU.sunPosition.value.set(...sp).normalize();
+    }
+    scene.fog.color.copy(C(A.fog, B.fog)); hemi.color.copy(C(A.hemi[0], B.hemi[0])); hemi.groundColor.copy(C(A.hemi[1], B.hemi[1])); hemi.intensity = L(A.hemi[2], B.hemi[2]);
+    sun.color.copy(C(A.sun[0], B.sun[0])); sun.intensity = L(A.sun[1], B.sun[1]); sunDir.set(L(A.sunPos[0], B.sunPos[0]), L(A.sunPos[1], B.sunPos[1]), L(A.sunPos[2], B.sunPos[2])).normalize();
+    hemi.intensity *= wxDim; sun.intensity *= wxDim * wxDim; hemiBase = hemi.intensity;
+    if (wxOver) scene.fog.color.lerp(cA.set(k === "night" ? 0x151820 : 0x8a919a), .7);
+    renderer.toneMappingExposure = L(A.exp, B.exp); stars.visible = S.stars && !wxOver; key.intensity = L(KEYL[a], KEYL[b]);
+    const glow = L(A.glow, B.glow);
+    for (const m of city.emissive) {
+      if (m.isMeshStandardMaterial) { if (m.userData.base0 == null) m.userData.base0 = m.emissiveIntensity; m.emissiveIntensity = m.userData.base0 * glow; }
+      else { if (!m.userData.base0) m.userData.base0 = m.color.clone(); m.color.copy(m.userData.base0).multiplyScalar(Math.max(.55, glow)); }
+    }
+    bloom.strength = L(BLOOM[a], BLOOM[b]);
+  }
+  function overcast(k) {
+    {                                               // overcast: a flat grey sky (darker at night)
       const c = document.createElement("canvas"); c.width = 4; c.height = 512; const g2 = c.getContext("2d"), gr = g2.createLinearGradient(0, 0, 0, 512);
       const top = k === "night" ? "#0d1016" : k === "sunset" ? "#4a4650" : "#7c838e", mid = k === "night" ? "#1d222b" : k === "sunset" ? "#7a6a6a" : "#a9b0b8";
       gr.addColorStop(0, top); gr.addColorStop(.6, mid); gr.addColorStop(1, top); g2.fillStyle = gr; g2.fillRect(0, 0, 4, 512);
       if (skyTex) skyTex.dispose(); skyTex = new THREE.CanvasTexture(c); skyTex.colorSpace = THREE.SRGBColorSpace; skyTex.mapping = THREE.EquirectangularReflectionMapping; scene.background = skyTex;
     }
-    if (sky.visible) { skyU.turbidity.value = k === "day" ? 3 : 8; skyU.rayleigh.value = k === "day" ? 1.2 : 2.8; skyU.mieCoefficient.value = k === "day" ? .004 : .008; skyU.mieDirectionalG.value = .85; skyU.sunPosition.value.set(...S.sunPos).normalize(); }
-    scene.fog.color.setHex(S.fog); hemi.color.setHex(S.hemi[0]); hemi.groundColor.setHex(S.hemi[1]); hemi.intensity = S.hemi[2];
-    sun.color.setHex(S.sun[0]); sun.intensity = S.sun[1]; sunDir.set(...S.sunPos).normalize();
-    hemi.intensity *= wxDim; sun.intensity *= wxDim * wxDim; hemiBase = hemi.intensity;
-    if (wxOver) scene.fog.color.lerp(new THREE.Color(k === "night" ? 0x151820 : 0x8a919a), .7);
-    renderer.toneMappingExposure = S.exp; stars.visible = S.stars && !wxOver; key.intensity = k === "day" ? .4 : 1.1;
-    for (const m of city.emissive) {
-      if (m.isMeshStandardMaterial) { if (m.userData.base0 == null) m.userData.base0 = m.emissiveIntensity; m.emissiveIntensity = m.userData.base0 * S.glow; }
-      else { if (!m.userData.base0) m.userData.base0 = m.color.clone(); m.color.copy(m.userData.base0).multiplyScalar(Math.max(.55, S.glow)); }
-    }
-    bloom.strength = k === "day" ? .18 : k === "sunset" ? .32 : .42;
-    captureCity();
   }
   // quality: Low / Medium / High / Ultra (the adaptive system steps it down by itself when frames run slow)
   const QUALITY = { lite: { pr: .7, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25, shEvery: 9, flat: true }, low: { pr: .75, shadow: 0, bloom: false, grade: false, msaa: 0, bres: .25 }, medium: { pr: 1, shadow: 1024, bloom: true, grade: true, msaa: 0, bres: .3, shEvery: 4 }, high: { pr: 1.25, shadow: 2048, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 3 }, ultra: { pr: 2, shadow: 4096, bloom: true, grade: true, msaa: 4, bres: .5, shEvery: 2 } };
@@ -164,7 +181,7 @@ export async function createWorld(canvas, COARSE) {
     for (const t of [composer.renderTarget1, composer.renderTarget2]) if (t.samples !== Q.msaa) { t.samples = Q.msaa; t.dispose(); }
     return Math.min(devicePixelRatio || 1, Q.pr);
   }
-  function setWeatherLook(dim, over) { wxDim = dim; wxOver = over; setTime(timeOfDay); }
+  function setWeatherLook(dim, over) { wxDim = dim; wxOver = over; bgKey = ""; setTime(timeOfDay); }
   function setFlash(f) { hemi.intensity = hemiBase + f * 5; }
   function follow(p) { sun.position.copy(p).addScaledVector(sunDir, 600); sun.target.position.copy(p); sun.target.updateMatrixWorld(); }
 
@@ -256,7 +273,7 @@ export async function createWorld(canvas, COARSE) {
   for (let i = 0; i < 90; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0 })); s.visible = false; scene.add(s); puffs.push({ s, life: 0, v: new THREE.Vector3() }); }
 
   return {
-    renderer, scene, camera, composer, bloom, grade, sky, sunDir, setWeatherLook, setFlash, weatherFog: 1, setQuality, get quality() { return quality; }, QUALITY, get bloomRes() { return W0.bres; }, camLight, canvasTex, radial, buildings, city, setTime, follow, captureCity, get timeOfDay() { return timeOfDay; }, studioEnv,
+    renderer, scene, camera, composer, bloom, grade, sky, sunDir, setWeatherLook, setFlash, weatherFog: 1, setQuality, get quality() { return quality; }, QUALITY, blendTime, get bloomRes() { return W0.bres; }, camLight, canvasTex, radial, buildings, city, setTime, follow, captureCity, get timeOfDay() { return timeOfDay; }, studioEnv,
     roads: city.roads, footprints: city.footprints, parks: city.parks, water: city.water, beaches: city.beaches, walkways: city.walkways, bounds: city.bounds, credit: city.credit,
     track: { P, F, S, U, D, N, loopIn, loopOut, rampIn, roadEnd, idxX, sample },
     fx: { shadow, glow, lines, LINES, lineSeed, puffs, puffI: 0 },

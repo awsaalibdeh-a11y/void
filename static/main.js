@@ -59,8 +59,18 @@ const sound = new Sound();
 const watch = createWatch(W, car, interior);
 const DENSITY = { few: .55, normal: 1, busy: 1.3 }[(store.get("void.settings") || {}).crowd || (LITE ? "few" : "normal")] || 1;
 const life = createLife(scene, W.roads, W.walkways, COARSE || LITE, DENSITY); lt("life");
-const TIMES = ["night", "sunset", "day"];
-function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % 3]; W.setTime(k); store.set("void.time", k); toast({ night: "Night in the city", sunset: "Golden hour", day: "Daytime" }[k]); cubeN = 0; }
+const TIMES = ["night", "dawn", "day", "sunset"];
+function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % TIMES.length]; W.setTime(k); store.set("void.time", k); toast({ night: "Night in the city", dawn: "Dawn", sunset: "Golden hour", day: "Daytime" }[k]); cubeN = 0; }
+// the living city: the day turns by itself, blending smoothly into each next time of day (night may bring rain)
+const CYCLE = ["day", "sunset", "night", "dawn"], cyc = { t: 0, b: 0, from: "day", to: "sunset" };
+function dayTurn(dt) {
+  if (!cyc.b) { if ((cyc.t += dt) > 110) { cyc.from = W.timeOfDay; cyc.to = CYCLE[(CYCLE.indexOf(cyc.from) + 1) % CYCLE.length]; cyc.b = .0001; } return; }
+  cyc.b = Math.min(1, cyc.b + dt / 14); W.blendTime(cyc.from, cyc.to, cyc.b);
+  if (cyc.b >= 1) {
+    cyc.b = 0; cyc.t = 0; store.set("void.time", cyc.to); cubeN = 0;
+    if (cyc.to === "night" && Math.random() < .5) { atmos.setWeather("rain"); SET.weather = "rain"; } else if (cyc.to === "day" && SET.weather !== "clear") { atmos.setWeather("clear"); SET.weather = "clear"; }
+  }
+}
 let police, races, nav, legion = null;
 const net = createNet(); lt("net");
 setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
@@ -69,11 +79,12 @@ setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a h
 const GPU = (() => { try { const c = renderer.getContext(), e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : ""; } catch { return ""; } })();
 const STRONG = /RTX|GTX 1[06-9]|GTX 9[78]|Radeon RX|Radeon Pro|Apple M[1-9]/i.test(GPU) && !COARSE;
 const TOP = /RTX\s?(40[6-9]0|50[5-9]0)|RTX\s?A?[45]\d{3}/i.test(GPU) && !COARSE;      // recent RTX cards start on Ultra
-const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "off", handling: "arcade", motion: "on", text: "normal", board: "ion", crowd: LITE ? "few" : "normal", fps: "off", voice: "open" }, store.get("void.settings") || {});
+const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" : COARSE ? "low" : "medium", sens: 1, autogas: "off", steer: "stick", weather: "clear", radio: "score", cycle: "on", handling: "arcade", motion: "on", text: "normal", board: "ion", crowd: LITE ? "few" : "normal", fps: "off", voice: "open" }, store.get("void.settings") || {});
 const gameOpts = {
   handling: () => SET.handling, buyFood: () => { if (cash < 10) return false; cash -= 10; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
   props: (x, z, y, vel) => legion && legion.props(x, z, y, vel),
+  tunnel: (x, z, y) => legion ? legion.tunnel(x, z, y) : null, pads: () => legion ? ZONES.concat(legion.pads()) : ZONES, onLand: (g, d) => legion && legion.onLand(g, d),
   onScore: (n, why, pts) => { if (legion) legion.onScore(why, pts ?? n); if (/^Drift/.test(why)) goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; { const gm = /^Grind (\d+) m/.exec(why); if (gm) goals.stats.grind = (goals.stats.grind || 0) + +gm[1]; const sp = /^(\d+)( |$)/.exec(why); if (sp && +sp[1] >= 720) goals.stats.b720 = 1; if (/Kickflip|Heelflip/.test(why) && / \+ /.test(why)) goals.stats.combo = (goals.stats.combo || 0) + 1; } goals.note(why); earn(pts ?? n); },
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
@@ -83,6 +94,22 @@ const gameOpts = {
     if (police) for (const c of police.cops) if (c.on) { const [a, b] = P(c.x, c.z); mx.fillStyle = Math.sin(performance.now() / 90) > 0 ? "#ff3040" : "#3060ff"; mx.beginPath(); mx.arc(a, b, 4, 0, 7); mx.fill(); }
     if (races && races.race && races.race.next) { const [a, b] = P(races.race.next[0], races.race.next[2]); mx.strokeStyle = "#ffd23d"; mx.lineWidth = 3; mx.beginPath(); mx.arc(a, b, 7, 0, 7); mx.stroke(); }
     for (const r of remotes.values()) if (r.at) { const [a, b] = P(r.at.x, r.at.z); mx.fillStyle = "#c07dff"; mx.beginPath(); mx.arc(a, b, 4.5, 0, 7); mx.fill(); }
+    const inView = (a, b) => Math.abs(a) < 92 && Math.abs(b) < 92;
+    // police sight cones (where each cruiser is looking), race starts, hidden coins close by, taxi passengers and the drop-off
+    if (police) for (const c of police.cops) if (c.on && !c.wreck) { const [a, b] = P(c.x, c.z); mx.fillStyle = "rgba(255,60,70,.22)"; mx.beginPath(); mx.moveTo(a, b); mx.arc(a, b, 26, c.yaw - .5, c.yaw + .5); mx.closePath(); mx.fill(); }
+    if (races) for (const st of races.starts) { const [a, b] = P(st.x, st.z); if (!inView(a, b)) continue; mx.fillStyle = "#fff"; mx.fillRect(a - 3, b - 3, 3, 3); mx.fillRect(a, b, 3, 3); mx.fillStyle = "#111"; mx.fillRect(a, b - 3, 3, 3); mx.fillRect(a - 3, b, 3, 3); }
+    {
+      mx.fillStyle = "#ffc23d"; for (const [x, z] of extras.coinsNear(g.x, g.z, 160)) { const [a, b] = P(x, z); mx.beginPath(); mx.arc(a, b, 2.6, 0, 7); mx.fill(); }
+      const tx = extras.taxi(); if (tx.on) { for (const [x, z, vip] of tx.waiting) { const [a, b] = P(x, z); mx.fillStyle = vip ? "#d84dff" : "#ffd23d"; mx.beginPath(); mx.arc(a, b, 4, 0, 7); mx.fill(); } if (tx.fare) { const [a, b] = P(tx.fare.x, tx.fare.z); mx.strokeStyle = "#3dff8a"; mx.lineWidth = 2.5; mx.beginPath(); mx.arc(a, b, 6, 0, 7); mx.stroke(); } }
+    }
+    // rooftop stunt pads, paint shops, the secret tunnel (dashed), the Sky Park
+    if (legion) {
+      const L = legion.mapData(); mx.lineWidth = 2;
+      for (const t of L.targets) { const [a, b] = P(t.x, t.z); if (!inView(a, b)) continue; mx.strokeStyle = t.done ? "#777" : "#ff3df0"; mx.beginPath(); mx.arc(a, b, 5, 0, 7); mx.stroke(); mx.beginPath(); mx.arc(a, b, 1.5, 0, 7); mx.stroke(); }
+      mx.font = "12px sans-serif"; mx.textAlign = "center"; for (const sh of L.shops) { const [a, b] = P(sh.x, sh.z); if (!inView(a, b)) continue; mx.save(); mx.translate(a, b); mx.rotate(g.yaw + Math.PI / 2); mx.fillText("🎨", 0, 4); mx.restore(); }
+      const T = L.tunnel, [ta, tb] = P(T.a0, T.z), [tc, td] = P(T.b1, T.z); mx.setLineDash([5, 4]); mx.strokeStyle = "#3df5ff"; mx.lineWidth = 3; mx.beginPath(); mx.moveTo(ta, tb); mx.lineTo(tc, td); mx.stroke(); mx.setLineDash([]);
+      const [s0, s1] = P(-920, -1320), [s2, s3] = P(760, -760); mx.strokeStyle = "rgba(255,61,240,.7)"; mx.lineWidth = 2; mx.strokeRect(s0, s1, s2 - s0, s3 - s1);
+    }
     mx.font = "bold 12px sans-serif"; mx.textAlign = "center"; for (const st of W.city.stations) { const [a, b] = P(st.x, st.z); if (Math.abs(a) < 90 && Math.abs(b) < 90) { mx.save(); mx.translate(a, b); mx.rotate(g.yaw + Math.PI / 2); mx.fillText("⛽", 0, 4); mx.restore(); } }
     // VOID Motors: a gold "$" badge on every counter in view (beside the pump icon), and an arrow on the rim pointing at the nearest one when none is
     const dl = gameOpts.dealer; if (dl) { let seen = false; for (const st of dl.sites) { const [a, b] = P(st.x, st.z); if (Math.hypot(a, b) < 82) { seen = true; mx.save(); mx.translate(a, b); mx.rotate(g.yaw + Math.PI / 2); const ox = st.main ? 0 : 9, oy = st.main ? 0 : -9; mx.fillStyle = "#ffd23d"; mx.strokeStyle = "#000"; mx.lineWidth = 2; mx.beginPath(); mx.arc(ox, oy, 6.5, 0, 7); mx.fill(); mx.stroke(); mx.fillStyle = "#000"; mx.font = "900 10px sans-serif"; mx.textAlign = "center"; mx.fillText("$", ox, oy + 3.5); mx.restore(); } }
@@ -100,7 +127,7 @@ function renderGoals() {
   document.getElementById("gStatsRow").innerHTML = `<div><b>${(S.best || 0).toLocaleString()}</b><span>Best score</span></div><div><b>${Math.round(S.top)}</b><span>Top km/h</span></div><div><b>${S.km.toFixed(1)}</b><span>km travelled</span></div><div><b>${goals.done.size}/${GOALS.length}</b><span>Trophies</span></div><div><b>$${cash.toLocaleString()}</b><span>Cash · spend in Garage</span></div>`;
 }
 const WX_ICON = { clear: "☀️ Clear", rain: "🌧 Rain", storm: "⛈ Storm", fog: "🌫 Fog", snow: "❄️ Snow" }, RADIO = { score: "🎵 VOID Score", synth: "🌆 Cyber Synth", chill: "🌙 Chill Night Drive", chase: "🔥 High-Octane Chase", voidfm: "📻 VOID FM", off: "🔇 Radio off" };
-function chips() { document.getElementById("gChips").innerHTML = `<span>${{ night: "🌙", sunset: "🌇", day: "☀️" }[W.timeOfDay]} ${W.timeOfDay}</span><span>${WX_ICON[atmos.weather]}</span>`; document.getElementById("gWeather").innerHTML = `<b>${WX_ICON[SET.weather].split(" ")[0]}</b>${WX_ICON[SET.weather].split(" ").slice(1).join(" ")}`; document.getElementById("gRadio").innerHTML = `<b>${RADIO[SET.radio].split(" ")[0]}</b>${RADIO[SET.radio].split(" ").slice(1).join(" ")}`; }
+function chips() { document.getElementById("gChips").innerHTML = `<span>${{ night: "🌙", sunset: "🌇", dawn: "🌅", day: "☀️" }[W.timeOfDay]} ${W.timeOfDay}</span><span>${WX_ICON[atmos.weather]}</span>`; document.getElementById("gWeather").innerHTML = `<b>${WX_ICON[SET.weather].split(" ")[0]}</b>${WX_ICON[SET.weather].split(" ").slice(1).join(" ")}`; document.getElementById("gRadio").innerHTML = `<b>${RADIO[SET.radio].split(" ")[0]}</b>${RADIO[SET.radio].split(" ").slice(1).join(" ")}`; }
 document.getElementById("gWeather").onclick = () => { SET.weather = WEATHERS[(WEATHERS.indexOf(SET.weather) + 1) % WEATHERS.length]; atmos.setWeather(SET.weather); store.set("void.settings", SET); chips(); toast(WX_ICON[SET.weather]); };
 document.getElementById("gRadio").onclick = () => { const k = Object.keys(RADIO); SET.radio = k[(k.indexOf(SET.radio) + 1) % k.length]; if (!sound.on) setSound(true); sound.setRadio(SET.radio); store.set("void.settings", SET); chips(); toast(RADIO[SET.radio]); };
 // ---------- the menu (☰ or Esc): everything that isn't driving lives here ----------
@@ -621,7 +648,7 @@ function frameLoop(fixed) {
   W.city.poolMat.opacity = W.timeOfDay === "night" ? 1 : W.timeOfDay === "sunset" ? .45 : 0; W.city.poolMat.visible = W.timeOfDay !== "day";
   extras.sky(dt, time);
   // the living city: when switched on, the day turns and the weather changes on its own
-  if (SET.cycle === "on" && mode === "play" && (cycleT += dt) > 150) { cycleT = 0; cycleTime(); if (Math.random() < .5) { const w = ["clear", "clear", "rain", "fog", "storm", "snow"][Math.floor(Math.random() * 6)]; atmos.setWeather(w); SET.weather = w; } }
+  if (SET.cycle === "on" && mode === "play") dayTurn(dt);
   life.raining = atmos.weather === "rain" || atmos.weather === "storm"; life.night = W.timeOfDay !== "day";
   // the El train is solid: you get shoved off the track (and hurt if you hit it hard)
   if (mode === "play" && W.city.el && game.state) { const T = W.city.el.train, s = game.state; if (Math.abs(s.x - W.city.el.x) < 2.6 && s.y > W.city.el.top - .5 && s.y < W.city.el.top + 4 && Math.abs(s.z - T.z) < T.len / 2 + 1) { s.x = W.city.el.x + (s.x >= W.city.el.x ? 3 : -3); const sp = Math.hypot(s.vel.x, s.vel.z); if (sp > 8 || T.v > 5) { game.api.hurt(8 + T.v, "Hit by the train"); sound.crash(); } } }
@@ -736,7 +763,10 @@ try {
   });
   if (parts.length) { const geo = mergeGeometries(parts); geo.translate(0, -.02, 0); life.setVoidGeo(geo); life.setVoidDetail(W.quality !== "lite"); window.__voidTris = geo.attributes.position.count / 3; }
 } catch (e) { console.warn("VOID flyers keep the simple shape", e); }
+// a paint shop's free respray: a new colour (never the same one) and a random finish
+function respray() { const P = OPTS.paint.items; let k = build.paint; for (let t = 0; t < 10 && k === build.paint; t++) k = Math.floor(Math.random() * P.length); build.paint = k; build.finish = Math.floor(Math.random() * OPTS.finish.items.length); applyBuild(); return P[k][0]; }
 legion = createLegion({ W, game, sound, store, life, COARSE, races: () => races, nav: () => nav, dealer: () => dealer, radioNext: () => document.getElementById("gRadio").click(),
+  respray, paintHex: () => parseInt(OPTS.paint.items[build.paint][1].replace("#", ""), 16), stars: () => police.stars, policeClear: () => police.clear(), extras: () => extras,
   trailColor: () => { const v = OPTS.glow.items[build.glow][1]; return v ? new THREE.Color(v).toArray() : [1, .2, .85]; } });
 setLoad(95);
 await precompile(); lt("compile");
