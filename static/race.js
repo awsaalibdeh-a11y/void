@@ -96,14 +96,17 @@ export function createRaces(scene, api, sound, canvasTex, net) {
   }
   function finish(msg) {
     if (msg !== "Race cancelled") dispatchEvent(new CustomEvent("void:break"));
-    const p = api.state, best = store.get("void.race." + R.route.id);
+    const p = api.state, best = store.get("void.race." + R.route.id), route = R.route;
     const me = R.done, rank = standings().findIndex(s => s.me) + 1;
     if (me && (!best || me < best)) { store.set("void.race." + R.route.id, me); if (R.rec.length >= 8) store.set("void.ghost." + R.route.id, { t: me, s: R.splits, p: R.rec.slice(0, 12000) }); }
     const gdiff = me && R.ghost ? me - R.ghost.t : null;
     const reward = me ? [0, 1500, 800, 400, 200][Math.min(4, rank)] || 100 : 0;
     if (reward) api.addScore(reward, `${R.route.name}: ${["", "1st", "2nd", "3rd"][rank] || rank + "th"}`);
-    $("gRaceRes").innerHTML = `<h3>${R.route.name}</h3><p>${msg || (me ? `You finished ${["", "1st", "2nd", "3rd"][rank] || rank + "th"} in ${fmt(me)}` : "Race over")}</p><p class="small">${best ? `Best: ${fmt(Math.min(best, me || 1e9))}` : me ? "New best time!" : ""}${gdiff != null ? ` · vs ghost ${gdiff <= 0 ? "−" : "+"}${Math.abs(gdiff).toFixed(2)} s${gdiff < 0 ? " (new ghost saved)" : ""}` : me && !R.ghost ? " · ghost saved" : ""}</p><ol>${standings().map(s => `<li${s.me ? ' class="me"' : ""}>${s.name}<span>${s.done ? fmt(s.done) : "DNF"}</span></li>`).join("")}</ol><button class="pill solid" id="gRaceOk">OK</button>`;
+    $("gRaceRes").innerHTML = `<h3>${R.route.name}</h3><p>${msg || (me ? `You finished ${["", "1st", "2nd", "3rd"][rank] || rank + "th"} in ${fmt(me)}` : "Race over")}</p><p class="small">${best ? `Best: ${fmt(Math.min(best, me || 1e9))}` : me ? "New best time!" : ""}${gdiff != null ? ` · vs ghost ${gdiff <= 0 ? "−" : "+"}${Math.abs(gdiff).toFixed(2)} s${gdiff < 0 ? " (new ghost saved)" : ""}` : me && !R.ghost ? " · ghost saved" : ""}</p><ol>${standings().map(s => `<li${s.me ? ' class="me"' : ""}>${s.name}<span>${s.done ? fmt(s.done) : "DNF"}</span></li>`).join("")}</ol><div class="res-btns"><button class="pill" id="gRaceRetry">↻ Retry</button><button class="pill solid" id="gRaceNext">Next race →</button><button class="pill" id="gRaceOk">OK</button></div>`;
     $("gRaceRes").hidden = false; $("gRaceOk").onclick = () => { $("gRaceRes").hidden = true; };
+    // straight back in: the same race again, or the next one (no menus)
+    $("gRaceRetry").onclick = () => { $("gRaceRes").hidden = true; start(route); };
+    $("gRaceNext").onclick = () => { $("gRaceRes").hidden = true; const i = routes.indexOf(route); start(routes[(i + 1) % routes.length]); };
     $("gRace").hidden = true; clearGates(); rivals.forEach(r => r.g.visible = false); ghost.visible = false; R = null; void p;
   }
   // everyone's progress: checkpoints passed plus how far along to the next

@@ -3,6 +3,8 @@
 // The big showroom is in the park, and every gas station has a VOID Motors counter too (gold sign, gold dot on the
 // minimap, and an arrow to the nearest one). Or just open it from the Menu, anywhere. Buy with your cash.
 // Bought cars are yours for good: pick one in the showroom and it is delivered next to you, wherever you are.
+// On top of the 125 everyone has, the Legion Collection: exclusive cars you earn (rank, streak, coins) or save up for,
+// each with a 2-minute test drive. Every car you own can be tuned: top speed, nitro, flight thrust, drift grip.
 import * as THREE from "three";
 import { GRID } from "./city.js";
 
@@ -46,7 +48,7 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
       cols: cols.length ? cols : ref.cols, rust: 0, top: (mod.top || ref.top) * (.95 + rr() * .1), acc: (mod.acc || ref.acc) * (.95 + rr() * .1), grip: (mod.grip || ref.grip) * (.97 + rr() * .06), offroad: offroad || ref.offroad };
     STOCK.push({ m, cat, price: Math.round(base * (.8 + rr() * .5) * (m.top / 60) / 500) * 500 });
   });
-  const CATS = { new: "🆕 New arrivals", trucks: "🛻 Off-road trucks", flying: "✈️ Flying", hyper: "🚀 Hypercars", track: "🏁 Track", sports: "🏎️ Sports", muscle: "💪 Muscle", drift: "🌀 Drift", rally: "🌲 Rally", electric: "⚡ Electric",
+  const CATS = { legion: "👑 Legion Collection", new: "🆕 New arrivals", trucks: "🛻 Off-road trucks", flying: "✈️ Flying", hyper: "🚀 Hypercars", track: "🏁 Track", sports: "🏎️ Sports", muscle: "💪 Muscle", drift: "🌀 Drift", rally: "🌲 Rally", electric: "⚡ Electric",
     luxury: "💎 Luxury", classic: "🕰️ Classic", lowrider: "🌴 Lowriders", offroad: "⛰️ Off-road", suv: "🚙 SUVs & pickups", city: "🏙️ Everyday", tiny: "🐞 Microcars", work: "🚕 Work & service" };
   // and the one everybody wants: your VOID car, the fastest thing in the city and the only car with wings
   const HERO = { id: "void", name: "VOID Hydra", kind: { id: "void", fly: true }, cols: [0x0a0a0c], top: 92, acc: 1.7, grip: 1.25, sl: 1, sh: 1, sw: 1 };
@@ -57,6 +59,14 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   STOCK.sort((a, b) => (b.hero ? 1 : 0) - (a.hero ? 1 : 0) || b.m.top - a.m.top);      // the VOID car (the only one that flies) stays on top
   let gave = false; for (const st of STOCK) if (!owned[st.m.id]) { owned[st.m.id] = st.m.cols[0]; gave = true; }
   if (gave) store.set("void.owned", owned);
+  // the Legion Collection, after the free cars so none of it is handed out
+  const P = wallet.progress;
+  if (P) P.EXCLUSIVE.slice().reverse().forEach(ex => {
+    const base = life.models.find(m => m.kind.id === ex.body && !m.rust) || life.models[0], kind = ex.fly && !base.kind.fly ? { ...base.kind, fly: true, base: base.kind } : base.kind;
+    const m = { id: ex.id, name: ex.name, kind, sl: 1.03, sh: .95, sw: 1.04, cols: ex.cols, rust: 0, top: ex.top, acc: ex.acc, grip: ex.grip, offroad: base.offroad, design: [.9, .25, .32, 1 | 16 | 64] };
+    STOCK.splice(1, 0, { m, cat: "legion", price: ex.price, lx: ex });
+    if (P.owns(ex.id) && !owned[ex.id]) owned[ex.id] = ex.cols[0];
+  });
   // the showroom: a gold column, a sign, and three cars on turntables, on a quiet crossing near the start
   // on the lawn at the edge of the park, off the streets, so traffic never drives through it
   const at = (() => { const L = W.city.lake || { x: 1e9, z: 1e9 }; for (let j = 12; j < 18; j++) for (let i = 2; i < 5; i++) { const x = (GRID.ax(i) + GRID.ax(i + 1)) / 2, z = (GRID.sz(j) + GRID.sz(j + 1)) / 2; if (!api.hitBox(x, z, .5, 14) && !api.isWater(x, z) && Math.hypot(x - L.x, z - L.z) > 150) return { x, z }; } return { x: GRID.ax(4) + 40, z: GRID.sz(13) }; })();
@@ -73,7 +83,7 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
     const pl = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.6, .25, 32), new THREE.MeshStandardMaterial({ color: 0x15161a, metalness: .6, roughness: .3 })); pl.position.set(x, .12, z); root.add(pl);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(3.5, .06, 6, 48).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23d).multiplyScalar(2), toneMapped: false })); ring.position.set(x, .27, z); root.add(ring);
     const s = STOCK[[STOCK.length - 1, STOCK.length - 6, STOCK.length - 11][k]] || STOCK[k + 1], geo = life.geoOf(s.m.kind);
-    const car = new THREE.Group(); car.add(new THREE.Mesh(geo.body, new THREE.MeshStandardMaterial({ vertexColors: true, color: s.m.cols[0], roughness: .25, metalness: .6 })), new THREE.Mesh(geo.lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2, 2, 2) })));
+    const car = new THREE.Group(); car.add(new THREE.Mesh(geo.body, wallet.designMaterial ? wallet.designMaterial({ vertexColors: true, color: s.m.cols[0], roughness: .25, metalness: .6 }, s.m.design) : new THREE.MeshStandardMaterial({ vertexColors: true, color: s.m.cols[0], roughness: .25, metalness: .6 })), new THREE.Mesh(geo.lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2, 2, 2) })));
     car.scale.set(s.m.sl, s.m.sh, s.m.sw); car.position.set(x, .25, z); root.add(car); plats.push(car);
   });
 
@@ -81,17 +91,21 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   const panel = document.createElement("div"); panel.className = "g-deal"; panel.id = "gDeal"; panel.hidden = true; document.getElementById("playUI").appendChild(panel);
   const kmh = m => Math.round(m.top * 3.6 * .82);
   const bar = (v, max) => `<i style="--v:${Math.min(1, v / max)}"></i>`;
+  // tuning: four stats, five levels each, bought with cash, for this car only
+  const tuneHTML = s => `<div class="deal-tune"><h4>Tuning</h4>${Object.entries(P.TUNE).map(([k, [label]]) => { const lvl = P.tuneLevel(s.m.id, k), cost = P.tuneCost(lvl); return `<div class="tune-row"><span>${label}</span><i>${"●".repeat(lvl)}${"○".repeat(5 - lvl)}</i>${cost == null ? "<em>MAX</em>" : `<button class="pill" data-tune="${k}" ${wallet.cash() < cost ? "disabled" : ""}>$${cost.toLocaleString()}</button>`}</div>`; }).join("")}</div>`;
   function render() {
     const list = STOCK.filter(s => filter === "all" || (filter === "owned" ? owned[s.m.id] : s.cat === filter));
     const s = sel || list[0]; sel = s;
     const cls = ["all", "owned", ...Object.keys(CATS)];
     panel.innerHTML = `<div class="deal-head"><h2>VOID Motors</h2><span class="deal-cash">$${wallet.cash().toLocaleString()}</span><button class="pill solid" id="gDealX">Close</button></div>
       <div class="deal-filters">${cls.map(c => `<button class="${c === filter ? "on" : ""}" data-f="${c}">${c === "all" ? `All ${STOCK.length}` : c === "owned" ? `Yours (${Object.keys(owned).length})` : `${CATS[c]} ${STOCK.filter(x => x.cat === c).length}`}</button>`).join("")}</div>
-      <div class="deal-body"><div class="deal-list">${list.map(x => `<button class="deal-car${x === s ? " on" : ""}${owned[x.m.id] ? " own" : ""}" data-id="${x.m.id}"><span style="background:#${new THREE.Color(owned[x.m.id] || x.m.cols[0]).getHexString()}"></span><b>${x.m.name}</b><small>${(CATS[x.cat] || "").replace(/^\S+ /, "")} · ${CLASS[x.m.kind.id] || ""} · ${kmh(x.m)} km/h</small><em>${owned[x.m.id] ? "OWNED" : "$" + x.price.toLocaleString()}</em></button>`).join("") || `<p class="small">Nothing here yet.</p>`}</div>
+      <div class="deal-body"><div class="deal-list">${list.map(x => `<button class="deal-car${x === s ? " on" : ""}${owned[x.m.id] ? " own" : ""}" data-id="${x.m.id}"><span style="background:#${new THREE.Color(owned[x.m.id] || x.m.cols[0]).getHexString()}"></span><b>${x.m.name}</b><small>${x.lx && !owned[x.m.id] ? P.reqText(x.lx) : `${(CATS[x.cat] || "").replace(/^\S+ /, "")} · ${CLASS[x.m.kind.id] || ""}`} · ${kmh(x.m)} km/h${x.m.kind.fly ? " · flies" : ""}</small><em>${owned[x.m.id] ? "OWNED" : x.lx && !x.lx.price ? "🔒" : "$" + x.price.toLocaleString()}</em></button>`).join("") || `<p class="small">Nothing here yet.</p>`}</div>
       ${s ? `<div class="deal-info"><h3>${s.m.name}</h3><p class="small">${CATS[s.cat] || ""} · ${CLASS[s.m.kind.id] || ""}${s.m.kind.fly ? " · flies with F" : ""}</p>
         <div class="deal-stats"><label>Top speed<span>${kmh(s.m)} km/h</span>${bar(s.m.top, 92)}</label><label>Acceleration${bar(s.m.acc, 1.7)}</label><label>Grip${bar(s.m.grip, 1.25)}</label></div>
         <div class="deal-cols">${s.m.cols.map(c => `<button data-col="${c}" style="background:#${new THREE.Color(c).getHexString()}" class="${(owned[s.m.id] || s.m.cols[0]) === c ? "on" : ""}"></button>`).join("")}</div>
-        ${owned[s.m.id] ? `<button class="pill solid deal-go" id="gDealDrive">Drive it</button>` : `<button class="pill solid deal-go" id="gDealBuy" ${wallet.cash() < s.price ? "disabled" : ""}>Buy for $${s.price.toLocaleString()}</button>${wallet.cash() < s.price ? `<p class="small">You need $${(s.price - wallet.cash()).toLocaleString()} more. Points from driving, races and contracts are cash.</p>` : ""}`}
+        ${owned[s.m.id] ? `<button class="pill solid deal-go" id="gDealDrive">Drive it</button>${s.hero && wallet.openBuild ? `<button class="pill deal-go" id="gDealStyle">🎨 Style: rims, spoilers, underglow, trails</button>` : ""}${P ? tuneHTML(s) : ""}`
+          : s.lx && !s.lx.price ? `<p class="deal-lock">🔒 ${P.reqText(s.lx)}</p><button class="pill solid deal-go" id="gDealTest">🔑 Test drive (2 min)</button>`
+          : `<button class="pill solid deal-go" id="gDealBuy" ${wallet.cash() < s.price ? "disabled" : ""}>Buy for $${s.price.toLocaleString()}</button>${s.lx ? `<button class="pill deal-go" id="gDealTest">🔑 Test drive (2 min)</button>` : ""}${wallet.cash() < s.price ? `<p class="small">You need $${(s.price - wallet.cash()).toLocaleString()} more. Points from driving, races and contracts are cash.</p>` : ""}`}
       </div>` : ""}</div>`;
   }
   panel.addEventListener("click", e => {
@@ -100,7 +114,10 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
     if (t.dataset.f) { filter = t.dataset.f; sel = null; return render(); }
     if (t.dataset.id) { sel = STOCK.find(x => x.m.id === t.dataset.id); return render(); }
     if (t.dataset.col && sel) { if (owned[sel.m.id]) { owned[sel.m.id] = +t.dataset.col; store.set("void.owned", owned); } else sel.pick = +t.dataset.col; for (const b of panel.querySelectorAll("[data-col]")) b.classList.toggle("on", b === t); return; }
-    if (t.id === "gDealBuy" && sel && wallet.spend(sel.price)) { if (sel.hero) { wallet.unlockHero(); owned.void = 0x0a0a0c; show(false); return; } owned[sel.m.id] = sel.pick || sel.m.cols[0]; store.set("void.owned", owned); sound.win(); toast(`You bought the ${sel.m.name}!`); render(); }
+    if (t.id === "gDealBuy" && sel && wallet.spend(sel.price)) { if (sel.hero) { wallet.unlockHero(); owned.void = 0x0a0a0c; show(false); return; } owned[sel.m.id] = sel.pick || sel.m.cols[0]; store.set("void.owned", owned); if (sel.lx && P) P.bought(sel.lx); sound.win(); toast(`You bought the ${sel.m.name}!`); dispatchEvent(new CustomEvent("void:happy")); render(); }
+    if (t.dataset.tune && sel && P) { if (P.buyTune(sel.m.id, t.dataset.tune, wallet.spend)) toast(`${P.TUNE[t.dataset.tune][0]} upgraded on the ${sel.m.name}`); return render(); }
+    if (t.id === "gDealTest" && sel && wallet.testDrive) { show(false); wallet.testDrive(sel.m); return; }
+    if (t.id === "gDealStyle" && wallet.openBuild) { show(false); wallet.openBuild(); return; }
     if (t.id === "gDealDrive" && sel) { show(false); if (sel.hero) api.useHero(); else api.deliver(sel.m, owned[sel.m.id]); }
   });
   function show(on) { open = on; panel.hidden = !on; game.pause(on); if (on) { render(); if (document.pointerLockElement) document.exitPointerLock(); store.set("void.dealerSeen", 1); } }
@@ -110,6 +127,7 @@ export function createDealer(W, game, life, nav, sound, store, toast, wallet) {
   const nearest = (x, z) => sites.reduce((b, st) => Math.hypot(st.x - x, st.z - z) < Math.hypot(b.x - x, b.z - z) ? st : b, sites[0]);
   return {
     at, sites, nearest, STOCK, owned, show, get open() { return open; },
+    own(ex) { if (!owned[ex.id]) { owned[ex.id] = ex.cols[0]; store.set("void.owned", owned); } },
     // from the Menu: shop from anywhere; the car is delivered next to you
     menu() { show(true); },
     update(dt, time) { plats.forEach((c, k) => c.rotation.y = time * .4 + k * 2); goBtn.hidden = open || !near(); },

@@ -125,6 +125,39 @@ const PROFILES = {
   pickup: (L) => [[[-L / 2, .38], [L / 2, .38], [L / 2, .85], [L / 2 - .4, 1.02], [L / 2 - 1.2, 1.08], [-L / 2, 1.08]],
     [[L / 2 - 1.25, 1.07], [L / 2 - 1.75, 1.75], [L / 2 - 3.0, 1.78], [L / 2 - 3.05, 1.07]], [[L / 2 - 1.72, 1.74], [L / 2 - 3.02, 1.76], [L / 2 - 3.02, 1.84], [L / 2 - 1.75, 1.82]]],
 };
+// every car's design in the vertex shader (shared by the traffic, where the design is per instance, and single cars like
+// the one you drive or the showroom's, where it is a uniform): roof height, nose and tail, rounded body, its own parts
+export function designShader(sh, single) {
+  sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\n" + (single ? "uniform float uRust; uniform vec4 uDesign;\n#define aRust uRust\n#define aDesign uDesign\n" : "attribute float aRust; attribute vec4 aDesign; ") + "attribute vec3 aShape; attribute float aPart; varying float vRust; varying vec3 vOP; varying float vTone; varying float vStripe;")
+    .replace("#include <begin_vertex>", `#include <begin_vertex>
+vRust = aRust; vOP = position; vTone = 0.; vStripe = 0.;
+if (aShape.x > .1) {
+  float bits = aDesign.w;
+  if (aPart > .5 && mod(floor(bits / exp2(aPart - 1.)), 2.) < .5) transformed = vec3(0.);       // a part this car doesn't have
+  else if (!(abs(color.b - color.r) < .005 && color.r < .07)) {                                  // (tyres keep their shape)
+  float hl = aShape.x, belt = aShape.y, ax = abs(transformed.x) / hl;
+  if (transformed.y > belt) transformed.y = belt + (transformed.y - belt) * aDesign.x;           // a taller or lower glasshouse
+  float topN = belt + (aShape.z - belt) * aDesign.x, lift = max(0., transformed.y - .32);
+  transformed.y -= (smoothstep(.45, 1., transformed.x / hl) * aDesign.y + smoothstep(.45, 1., -transformed.x / hl) * aDesign.z) * lift * .55;   // sleek or blunt nose and tail
+  transformed.z *= 1. - .13 * pow(smoothstep(.55, 1., ax), 1.4) - .2 * smoothstep(belt - .05, topN + .05, transformed.y);   // rounded corners, sides leaning in to the roof
+  transformed.y -= .07 * smoothstep(.82, 1., ax) * lift;                                         // rounded top edges front and back
+  }
+  float painted = step(.9, color.r * color.g * color.b);
+  vTone = painted * mod(floor(bits / 32.), 2.) * step(position.y, aShape.y * .62);
+  vStripe = painted * mod(floor(bits / 64.), 2.) * step(abs(position.z), .22) * step(aShape.y * .8, position.y);
+}`);
+  sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vRust; varying vec3 vOP; varying float vTone; varying float vStripe;")
+    .replace("#include <color_fragment>", "#include <color_fragment>\nif (vTone > .5) diffuseColor.rgb *= .22; if (vStripe > .5) diffuseColor.rgb = dot(diffuseColor.rgb, vec3(.3, .59, .11)) > .45 ? vec3(.04) : vec3(.92);")
+    .replace("#include <color_fragment>", "#include <color_fragment>\nfloat rn = fract(sin(dot(floor(vOP * 7.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453) * .6 + fract(sin(dot(floor(vOP * 23.0), vec3(39.3, 11.7, 83.1))) * 9631.7) * .4; float rr = vRust * smoothstep(.55 - vRust * .35, .9, rn) * step(.12, diffuseColor.r + diffuseColor.g + diffuseColor.b); diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - vRust * .35), vec3(.36, .17, .07) * (.6 + .7 * rn), rr);")
+    .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, .95, vRust * .85);")
+    .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - vRust * .85;");
+}
+// a material for one car with a design ([roof, nose, tail, part bits]); all of them share one shader program
+export function designMaterial(params, design = [1, 0, 0, 0]) {
+  const m = new THREE.MeshStandardMaterial(params), u = { uDesign: { value: new THREE.Vector4(...design) }, uRust: { value: 0 } };
+  m.userData.design = u.uDesign.value; m.onBeforeCompile = sh => { Object.assign(sh.uniforms, u); designShader(sh, true); }; m.customProgramCacheKey = () => "void-design";
+  return m;
+}
 export function vehicle(k) {
   const { L, W } = k, p = [], lt = [];
   const H = [1, .95, .85], R = [1, .12, .12], A = [1, .7, .2];
@@ -288,31 +321,7 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
 
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });
-  carMat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float aRust; attribute vec4 aDesign; attribute vec3 aShape; attribute float aPart; varying float vRust; varying vec3 vOP; varying float vTone; varying float vStripe;")
-      .replace("#include <begin_vertex>", `#include <begin_vertex>
-vRust = aRust; vOP = position; vTone = 0.; vStripe = 0.;
-if (aShape.x > .1) {
-  float bits = aDesign.w;
-  if (aPart > .5 && mod(floor(bits / exp2(aPart - 1.)), 2.) < .5) transformed = vec3(0.);       // a part this car doesn't have
-  else if (!(abs(color.b - color.r) < .005 && color.r < .07)) {                                  // (tyres keep their shape)
-    float hl = aShape.x, belt = aShape.y, ax = abs(transformed.x) / hl;
-    if (transformed.y > belt) transformed.y = belt + (transformed.y - belt) * aDesign.x;           // a taller or lower glasshouse
-    float topN = belt + (aShape.z - belt) * aDesign.x, lift = max(0., transformed.y - .32);
-    transformed.y -= (smoothstep(.45, 1., transformed.x / hl) * aDesign.y + smoothstep(.45, 1., -transformed.x / hl) * aDesign.z) * lift * .55;   // sleek or blunt nose and tail
-    transformed.z *= 1. - .13 * pow(smoothstep(.55, 1., ax), 1.4) - .2 * smoothstep(belt - .05, topN + .05, transformed.y);   // rounded corners, sides leaning in to the roof
-    transformed.y -= .07 * smoothstep(.82, 1., ax) * lift;                                         // rounded top edges front and back
-  }
-  float painted = step(.9, color.r * color.g * color.b);
-  vTone = painted * mod(floor(bits / 32.), 2.) * step(position.y, aShape.y * .62);
-  vStripe = painted * mod(floor(bits / 64.), 2.) * step(abs(position.z), .22) * step(aShape.y * .8, position.y);
-}`);
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vRust; varying vec3 vOP; varying float vTone; varying float vStripe;")
-      .replace("#include <color_fragment>", "#include <color_fragment>\nif (vTone > .5) diffuseColor.rgb *= .22; if (vStripe > .5) diffuseColor.rgb = dot(diffuseColor.rgb, vec3(.3, .59, .11)) > .45 ? vec3(.04) : vec3(.92);")
-      .replace("#include <color_fragment>", "#include <color_fragment>\nfloat rn = fract(sin(dot(floor(vOP * 7.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453) * .6 + fract(sin(dot(floor(vOP * 23.0), vec3(39.3, 11.7, 83.1))) * 9631.7) * .4; float rr = vRust * smoothstep(.55 - vRust * .35, .9, rn) * step(.12, diffuseColor.r + diffuseColor.g + diffuseColor.b); diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - vRust * .35), vec3(.36, .17, .07) * (.6 + .7 * rn), rr);")
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, .95, vRust * .85);")
-      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - vRust * .85;");
-  };
+  carMat.onBeforeCompile = sh => designShader(sh, false);
   const lightMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2.2, 2.2, 2.2) });
   const total = KINDS.reduce((s, k) => s + k.share, 0), counts = KINDS.map(k => k.id === "voidcar" ? (COARSE ? 4 : 8) : Math.round(N * k.share / total));
   const meshes = KINDS.map((k, ti) => {
@@ -497,7 +506,7 @@ if (aShape.x > .1) {
     setVoidDetail(full) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M || !M.full) return; M.body.geometry = full ? M.full : M.simple.body; M.lights.geometry = full ? jetGeo : M.simple.lights; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; }, set night(v) { api.night = v; },
     take(c) { c.taken = true; c.parked = false; c.turn = null; },
     park(c, x, z, yaw) { Object.assign(c, { taken: false, parked: true, x, z, yaw, v: 0, y: 0, wreck: null, turn: null, crush: 0 }); },
-    geoOf(k) { const m = meshes[KINDS.indexOf(k)]; return m ? { body: m.body.geometry, lights: m.lights.geometry } : null; },
+    geoOf(k) { const m = meshes[KINDS.indexOf(k.base || k)]; return m ? { body: m.body.geometry, lights: m.lights.geometry } : null; },
     honk(x, z) { for (const p of people) if (Math.abs(p.x - x) < 25 && Math.abs(p.z - z) < 25) p.scare = 2; },
     // cars near a point (for the player's collision tests)
     nearCars(x, z, r) { const out = []; for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) for (let cz = Math.floor((z - r) / CELL); cz <= Math.floor((z + r) / CELL); cz++) for (const c of cell.get(cx * 7919 + cz) || []) out.push(c); return out; },

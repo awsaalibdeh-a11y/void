@@ -99,10 +99,10 @@ export function createPolice(scene, api, sound, life) {
     const bolt = new THREE.Mesh(new THREE.CylinderGeometry(.08, .08, 1, 6).translate(0, .5, 0), boltMat); bolt.visible = false; scene.add(bolt);
     g.visible = false; scene.add(g); return { g, bolt, on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, shotT: 3 + k, boltT: 0, down: 0, ph: k * 2.1 };
   });
-  let heat = 0, stars = 0, evade = 0, bust = 0, speedT = 0, cool = 0;
+  let heat = 0, stars = 0, evade = 0, bust = 0, speedT = 0, cool = 0, peak = 0;            // (peak: the most stars this chase reached)
   const starsOf = h => { let s = 0; for (let k = 1; k < HEAT.length; k++) if (h >= HEAT[k]) s = k; return s; };
   function addHeat(n, why) {
-    const before = stars; heat = Math.min(30, heat + n); stars = starsOf(heat); evade = 0;
+    const before = stars; heat = Math.min(30, heat + n); stars = starsOf(heat); evade = 0; peak = Math.max(peak, stars);
     if (stars > before) api.say(`${"★".repeat(stars)}  ${why}`, 2.5);
   }
   function spawnCop(c, p) {
@@ -117,7 +117,7 @@ export function createPolice(scene, api, sound, life) {
     }
   }
   function clear(msg) {
-    heat = 0; stars = 0; evade = 0; bust = 0;
+    heat = 0; stars = 0; evade = 0; bust = 0; peak = 0;
     for (const c of cops) { c.on = false; c.g.visible = false; }
     H.on = false; heli.visible = false; if (msg) api.say(msg, 3);
     for (const B of blocks) { B.on = false; B.g.visible = false; } for (const d of drones) { d.on = false; d.g.visible = false; d.bolt.visible = false; }
@@ -212,7 +212,7 @@ export function createPolice(scene, api, sound, life) {
       // busted: stopped with a cruiser right beside you
       if (close && ps < 4 && !air) { bust += dt; if (bust > 3) { const lost = Math.round(p.score * .15); p.score -= lost; api.busted(`BUSTED! The police fined you ${lost} points`); clear(); return; } } else bust = Math.max(0, bust - dt * 2);
       // losing them
-      if (nearest > 150) { evade += dt; if (evade > 8 + stars * 2) { const s = stars; heat = HEAT[s - 1]; stars = s - 1; evade = 0; if (!stars) { api.addScore(s * 500, "You got away"); clear(); } else api.say(`Losing them… ${"★".repeat(stars)}`, 2); } }
+      if (nearest > 150) { evade += dt; if (evade > 8 + stars * 2) { const s = stars; heat = HEAT[s - 1]; stars = s - 1; evade = 0; if (!stars) { api.addScore(Math.max(s, peak) * 500, `You got away (${peak}★)`); clear(); } else api.say(`Losing them… ${"★".repeat(stars)}`, 2); } }
       else evade = Math.max(0, evade - dt);
       sound.siren && sound.siren(stars ? clamp(1 - nearest / 220, 0, 1) : 0);
     },

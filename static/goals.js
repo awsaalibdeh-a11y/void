@@ -23,7 +23,7 @@ export const GOALS = [
   { id: "brooklyn", icon: "🌉", name: "Bridge and tunnel", text: "Cross the bridge to Brooklyn", stat: "brooklyn", need: 1 },
 ];
 export function createGoals(onDone) {
-  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0, coins: 0, fares: 0, upg: 0, steals: 0, meds: 0, grind: 0, b720: 0, combo: 0, cams: 0 }, store.get("void.stats") || {});
+  const S = Object.assign({ top: 0, smashed: 0, drift: 0, air: 0, pads: 0, butter: 0, wins: 0, escapes: 0, rings: 0, km: 0, refuels: 0, brooklyn: 0, best: 0, coins: 0, fares: 0, upg: 0, steals: 0, meds: 0, grind: 0, b720: 0, combo: 0, cams: 0, airkm: 0, esc2: 0 }, store.get("void.stats") || {});
   const done = new Set(store.get("void.goals") || []);
   let saveT = 0, lastSmash = null, lastRings = null, lastFuel = null, pads = new Set();
   function check() { for (const g of GOALS) if (!done.has(g.id) && S[g.stat] >= g.need) { done.add(g.id); store.set("void.goals", [...done]); onDone(g); } }
@@ -31,7 +31,7 @@ export function createGoals(onDone) {
     stats: S, done, GOALS,
     // words from the score feed tell us about races, escapes and landings
     note(why) {
-      if (/1st/.test(why)) S.wins++; if (/Fare \$/.test(why)) S.fares++; if (/got away/i.test(why)) S.escapes++; if (/Butter/.test(why)) S.butter++;
+      if (/1st/.test(why)) S.wins++; if (/Fare \$/.test(why)) S.fares++; if (/got away/i.test(why)) { S.escapes++; if (+(why.match(/\((\d)★\)/) || [0, 0])[1] >= 2) S.esc2 = (S.esc2 || 0) + 1; } if (/Butter/.test(why)) S.butter++;
       if (/^Landed at (?!PARK)/.test(why)) S.pads++; if (/^Drift/.test(why)) { const n = +(why.match(/\d+/) || [0])[0]; }
       check();
     },
@@ -39,7 +39,7 @@ export function createGoals(onDone) {
     update(dt, st, speedKmh) {
       if (!st || !st.started) return;
       S.top = Math.max(S.top, speedKmh); S.km += speedKmh / 3600 * dt;
-      if (st.mode === "air") S.air += dt;
+      if (st.mode === "air") { S.air += dt; S.airkm = (S.airkm || 0) + speedKmh / 3600 * dt; }
       if (lastSmash != null && st.smashed > lastSmash) S.smashed += st.smashed - lastSmash; lastSmash = st.smashed;
       if (lastRings != null && st.rings > lastRings) S.rings += st.rings - lastRings; lastRings = st.rings;
       if (lastFuel != null && st.fuel - lastFuel > .02 && Math.hypot(st.vel.x, st.vel.z) < 4) { if (!st._fueling) { S.refuels++; st._fueling = true; } } else if (st.fuel < lastFuel) st._fueling = false;

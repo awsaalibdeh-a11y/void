@@ -11,9 +11,9 @@ const $ = id => document.getElementById(id);
 const LT = window.__loadTimes = [], lt = k => LT.push([k, Math.round(performance.now())]);       // where the loading time goes (window.__loadTimes)
 const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); $("loader").style.setProperty("--p", p / 100); lt(p); };
 setLoad(15);
-const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife, personGeo }] = await Promise.all(
+const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife, personGeo, designMaterial }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
-const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }, { createContracts }, { createDealer }, { createLegion }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras", "contracts", "dealer", "legion"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }, { createContracts }, { createDealer }, { createLegion }, { createProgress }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras", "contracts", "dealer", "legion", "progress"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -34,7 +34,11 @@ setLoad(55);
 const carRoot = new THREE.Group(); scene.add(carRoot);
 const car = { group: carRoot, wheels: [] };
 const carMats = new Set();
-let inner = null, glowL = null;
+let inner = null, glowL = null, plate = null;
+// the licence plate: your rank (gold from rank 10)
+const plateC = document.createElement("canvas"); plateC.width = 256; plateC.height = 68; const plateTex = new THREE.CanvasTexture(plateC); plateTex.colorSpace = THREE.SRGBColorSpace;
+function drawPlate(rank) { const g = plateC.getContext("2d"), gold = rank >= 9; g.fillStyle = gold ? "#d4a83a" : "#f2f2f0"; g.fillRect(0, 0, 256, 68); g.strokeStyle = "#111"; g.lineWidth = 5; g.strokeRect(3, 3, 250, 62); g.fillStyle = "#111"; g.font = "900 36px Unbounded, Impact, sans-serif"; g.textAlign = "center"; g.fillText(`LEGION R${rank + 1}`, 128, 48); plateTex.needsUpdate = true; }
+drawPlate(0);
 function useModel(id, force) {
   if (inner && inner.model === id && !force) return;
   if (inner) carRoot.remove(inner.group);
@@ -44,7 +48,10 @@ function useModel(id, force) {
   Object.assign(car, { wheels: inner.wheels, clip: car.clip || inner.clip, materials: inner.materials, model: id, name: inner.name });
   carMats.clear();
   inner.group.traverse(o => { if (o.isMesh) { o.castShadow = true; if (o.material && o.material.isMeshStandardMaterial) carMats.add(o.material); } });
-  for (const m of carMats) { m.envMap = null; m.needsUpdate = true; }   // the paint reflects the city capture (scene.environment)     // phones skip the live cube and use the city reflection
+  for (const m of carMats) { m.envMap = null; m.needsUpdate = true; }   // the paint reflects the city capture (scene.environment)
+  carRoot.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(inner.group).applyMatrix4(carRoot.matrixWorld.clone().invert());
+  if (!plate) { plate = new THREE.Mesh(new THREE.PlaneGeometry(.52, .14), new THREE.MeshBasicMaterial({ map: plateTex, toneMapped: false })); plate.rotation.y = -Math.PI / 2; }
+  plate.position.set(bb.min.x - .015, bb.min.y + (bb.max.y - bb.min.y) * .33, 0); inner.group.add(plate);     // phones skip the live cube and use the city reflection
 }
 // live reflections on the paint: a small cube camera that rides with the car
 const carEnv = new THREE.WebGLCubeRenderTarget(COARSE ? 64 : 128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
@@ -71,7 +78,7 @@ function dayTurn(dt) {
     if (cyc.to === "night" && Math.random() < .5) { atmos.setWeather("rain"); SET.weather = "rain"; } else if (cyc.to === "day" && SET.weather !== "clear") { atmos.setWeather("clear"); SET.weather = "clear"; }
   }
 }
-let police, races, nav, legion = null;
+let police, races, nav, legion = null, progress = null, dealerRef = null;
 const net = createNet(); lt("net");
 setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
 // settings: graphics quality, look speed, auto gas, touch steering (kept on this device)
@@ -83,9 +90,9 @@ const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" :
 const gameOpts = {
   handling: () => SET.handling, buyFood: () => { if (cash < 10) return false; cash -= 10; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
-  props: (x, z, y, vel) => legion && legion.props(x, z, y, vel),
+  props: (x, z, y, vel) => legion && legion.props(x, z, y, vel), tune: (k, g) => progress ? progress.tuneBonus(g && g.ride ? g.ride.model.id : "void", k) : 0,
   tunnel: (x, z, y) => legion ? legion.tunnel(x, z, y) : null, pads: () => legion ? ZONES.concat(legion.pads()) : ZONES, onLand: (g, d) => legion && legion.onLand(g, d),
-  onScore: (n, why, pts) => { if (legion) legion.onScore(why, pts ?? n); if (/^Drift/.test(why)) goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; { const gm = /^Grind (\d+) m/.exec(why); if (gm) goals.stats.grind = (goals.stats.grind || 0) + +gm[1]; const sp = /^(\d+)( |$)/.exec(why); if (sp && +sp[1] >= 720) goals.stats.b720 = 1; if (/Kickflip|Heelflip/.test(why) && / \+ /.test(why)) goals.stats.combo = (goals.stats.combo || 0) + 1; } goals.note(why); earn(pts ?? n); },
+  onScore: (n, why, pts) => { if (legion) legion.onScore(why, pts ?? n); if (/^Drift/.test(why)) goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; { const gm = /^Grind (\d+) m/.exec(why); if (gm) goals.stats.grind = (goals.stats.grind || 0) + +gm[1]; const sp = /^(\d+)( |$)/.exec(why); if (sp && +sp[1] >= 720) goals.stats.b720 = 1; if (/Kickflip|Heelflip/.test(why) && / \+ /.test(why)) goals.stats.combo = (goals.stats.combo || 0) + 1; } goals.note(why); earn(pts ?? n); { const cm = /^🪙 Coin (\d+)\//.exec(why); if (cm && progress) progress.coin(+cm[1]); } },
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
   mapExtra(mx, g, MM) {
@@ -195,7 +202,9 @@ life.collide = (x, z) => !!game.api.hitBox(x, z, .8, .3);
 // crashes between other cars: you hear them, and close ones shake the camera
 life.onCrash = (x, z, power) => { const s = game.state; if (!s || mode !== "play") return; const d = Math.hypot(x - s.x, z - s.z); if (d < 170) { sound.crash(); if (d < 70) s.shake = Math.min(1, (s.shake || 0) + .35 * (1 - d / 70)); } };
 // VOID Motors: 50 cars for sale
-const dealer = createDealer(W, game, life, nav, sound, store, toast, { cash: () => cash, spend: n => { if (cash < n) return false; cash -= n; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), unlockHero: () => unlockHero() });
+progress = createProgress({ store, toast, sound, pop: (t, c) => legion && legion.pop(t, c), pay: n => { cash += n; earn(0); }, own: ex => dealerRef && dealerRef.own(ex), coins: () => extras.coins().got });
+const dealer = createDealer(W, game, life, nav, sound, store, toast, { progress, designMaterial, openBuild: () => openGarage(true),
+  testDrive: m => { game.api.deliver(m, m.cols[0]); progress.startTest(m.id, m.name); }, cash: () => cash, spend: n => { if (cash < n) return false; cash -= n; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), unlockHero: () => unlockHero() }); dealerRef = dealer;
 gameOpts.dealer = dealer;
 document.getElementById("gDealer").onclick = () => dealer.menu();
 // the secret code box: one word unlocks the best car, nothing else does anything
@@ -238,7 +247,7 @@ function dressRide(R, ride) {
   const key = ride.model.id + ":" + ride.color + ":" + (ride.rust || 0); if (R.key === key) return; R.key = key;
   for (const c of [...R.g.children]) R.g.remove(c);
   const geo = life.geoOf(ride.model.kind), rust = ride.rust || 0;
-  R.g.add(new THREE.Mesh(geo.body, new THREE.MeshStandardMaterial({ vertexColors: true, color: new THREE.Color(ride.color).multiplyScalar(1 - rust * .45), roughness: .3 + rust * .6, metalness: .55 * (1 - rust) })), new THREE.Mesh(geo.lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2.2, 2.2, 2.2) })));
+  R.g.add(new THREE.Mesh(geo.body, designMaterial({ vertexColors: true, color: new THREE.Color(ride.color).multiplyScalar(1 - rust * .45), roughness: .3 + rust * .6, metalness: .55 * (1 - rust) }, (ride.c && ride.c.design) || ride.model.design)), new THREE.Mesh(geo.lights, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2.2, 2.2, 2.2) })));
   R.g.children[0].castShadow = true; R.g.scale.set(ride.model.sl, ride.model.sh, ride.model.sw);
 }
 // settings that change how it plays and looks
@@ -266,7 +275,8 @@ function tutUpdate() {
 let lastS = null;
 // ---------- daily challenges: three a day, the same for everyone on that date, $2,500 each ----------
 const DAILY = [["smashed", 15, "💥 Smash 15 cars"], ["km", 10, "🛣️ Travel 10 km"], ["air", 180, "✈️ Fly for 3 minutes"], ["fares", 3, "🚕 Complete 3 taxi fares"], ["coins", 2, "🪙 Find 2 hidden coins"], ["escapes", 1, "🚓 Escape the police"],
-  ["wins", 1, "🏁 Win a race"], ["rings", 5, "💍 Fly through 5 rings"], ["pads", 2, "🛬 Land on 2 helipads"], ["steals", 3, "🔑 Take 3 cars from the traffic"], ["meds", 1, "🏅 Earn a contract medal"], ["refuels", 1, "⛽ Fill up at a station"]];
+  ["wins", 1, "🏁 Win a race"], ["rings", 5, "💍 Fly through 5 rings"], ["pads", 2, "🛬 Land on 2 helipads"], ["steals", 3, "🔑 Take 3 cars from the traffic"], ["meds", 1, "🏅 Earn a contract medal"], ["refuels", 1, "⛽ Fill up at a station"],
+  ["airkm", 2, "✈️ Fly 2 km"], ["esc2", 1, "🚓 Escape a 2-star chase"], ["coins", 3, "🪙 Collect 3 coins"]];
 const daily = (() => {
   const day = new Date().toISOString().slice(0, 10); let d = store.get("void.daily");
   if (!d || d.day !== day) { let h = 0; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0; const picks = []; while (picks.length < 3) { h = (h * 1103515245 + 12345) >>> 0; const k = h % DAILY.length; if (!picks.includes(k)) picks.push(k); } d = { day, picks, base: {}, done: [] }; for (const k of picks) d.base[DAILY[k][0]] = goals.stats[DAILY[k][0]] || 0; store.set("void.daily", d); }
@@ -274,7 +284,9 @@ const daily = (() => {
 })();
 function dailyProg(k) { const [stat, need] = DAILY[k]; return Math.min(1, ((goals.stats[stat] || 0) - (daily.base[stat] || 0)) / need); }
 function dailyCheck() { for (const k of daily.picks) if (!daily.done.includes(k) && dailyProg(k) >= 1) { daily.done.push(k); store.set("void.daily", daily); cash += 2500; earn(0); toast(`Daily challenge done: ${DAILY[k][2]} · +$2,500`); sound.win(); } }
-function renderDaily() { document.getElementById("gDaily").innerHTML = daily.picks.map(k => { const v = dailyProg(k), ok = daily.done.includes(k); return `<div class="goal${ok ? " ok" : ""}"><b>${DAILY[k][2].split(" ")[0]}</b><div><span>${DAILY[k][2].split(" ").slice(1).join(" ")}</span><small>$2,500</small><i style="--v:${v}"></i></div>${ok ? "✅" : `<em>${Math.floor(v * 100)}%</em>`}</div>`; }).join(""); }
+const dailyLeft = () => { const n = new Date(), t = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1) - n.getTime(), h = Math.floor(t / 36e5), m = Math.floor(t / 6e4) % 60, sec = Math.floor(t / 1e3) % 60; return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`; };
+setInterval(() => { const c = document.getElementById("gDailyClock"); if (c && !menuEl.hidden) c.textContent = `New challenges in ${dailyLeft()}`; }, 1000);
+function renderDaily() { document.getElementById("gDaily").innerHTML = `<p class="small daily-clock" id="gDailyClock">New challenges in ${dailyLeft()}</p>` + daily.picks.map(k => { const v = dailyProg(k), ok = daily.done.includes(k); return `<div class="goal${ok ? " ok" : ""}"><b>${DAILY[k][2].split(" ")[0]}</b><div><span>${DAILY[k][2].split(" ").slice(1).join(" ")}</span><small>$2,500</small><i style="--v:${v}"></i></div>${ok ? "✅" : `<em>${Math.floor(v * 100)}%</em>`}</div>`; }).join(""); }
 // contracts: hybrid drive + fly jobs and pursuits with medals
 const contracts = createContracts(W, game.api, nav, sound, police); lt("contracts");
 function renderContracts() { document.getElementById("gContracts").innerHTML = contracts.CONTRACTS.map(c => `<button class="tile con" data-con="${c.id}"><b>${c.icon}</b>${c.name}<small>${c.text}</small><i>${["Not done", "🥉 Bronze", "🥈 Silver", "🥇 Gold"][contracts.best[c.id] || 0]}</i></button>`).join("") + (contracts.active ? `<button class="tile con" id="gConStop"><b>✕</b>Cancel contract</button>` : ""); }
@@ -377,12 +389,12 @@ const OPTS = {
   cal: { label: "Calipers", items: [["Red", "#c1121f"], ["Black", "#2a2a30"], ["Yellow", "#e0b000"], ["White", "#e8e8e8"], ["Ion", "#3df5ff"]] },
   trim: { label: "Accents", items: [["Red", "#c1121f"], ["Black", "#16161a"], ["White", "#e8e8e8"], ["Gold", "#b8912e"], ["Ion", "#3df5ff"]] },
   light: { label: "Lights", items: [["Ice", "#e8fbff"], ["Amber", "#ffb347"], ["Ion", "#6ad8ff"], ["Violet", "#b38cff"]] },
-  glow: { label: "Underglow", items: [["Off", ""], ["White", "#ffffff"], ["Red", "#ff2233"], ["Ion", "#3df5ff"], ["Violet", "#9b5cff"]] },
+  glow: { label: "Underglow", items: [["Off", ""], ["White", "#ffffff"], ["Red", "#ff2233"], ["Ion", "#3df5ff"], ["Violet", "#9b5cff"], ["Gold", "#ffd23d", 15000], ["Toxic", "#8aff3d", 15000], ["Magenta", "#ff3df0", 20000], ["Ice", "#bff4ff", 25000]] },
   spoiler: { label: "Spoiler", seg: true, items: [["Stock", "none"], ["Ducktail", "ducktail"], ["GT wing", "gt"], ["Swan neck", "swan"], ["Rally", "rally"]] },
   livery: { label: "Livery", seg: true, items: [["Clean", "none"], ["Twin stripes", "stripes"], ["Centre stripe", "center"], ["Side stripe", "side"], ["Race #42", "race"]] },
   livc: { label: "Livery colour", items: [["White", "#f2f2f2"], ["Red", "#c1121f"], ["Black", "#101012"], ["Gold", "#c9a227"], ["Ion", "#3df5ff"], ["Orange", "#ff6a00"]] },
   tint: { label: "Windows", seg: true, items: [["Light", "light"], ["Dark", "dark"], ["Limo", "limo"], ["Mirror", "mirror"]] },
-  flame: { label: "Nitro flames", items: [["Blue", "#4fa8ff"], ["Orange", "#ff7a1a"], ["Green", "#3dff6a"], ["Purple", "#b05cff"], ["Pink", "#ff4fd8"]] },
+  flame: { label: "Nitro flames", items: [["Blue", "#4fa8ff"], ["Orange", "#ff7a1a"], ["Green", "#3dff6a"], ["Purple", "#b05cff"], ["Pink", "#ff4fd8"], ["Gold", "#ffd23d", 12000], ["Crimson", "#ff1a3a", 12000], ["White hot", "#ffffff", 18000]] },
   horn: { label: "Horn", seg: true, items: [["Classic", 0], ["Air horn", 1], ["Tune", 2]] },
 };
 OPTS.model = { label: "Car", seg: true, items: Object.entries(MODELS).map(([k, m]) => [m.name, k]) };
@@ -405,7 +417,17 @@ const ORDER = ["model", "paint", "finish", "livery", "livc", "spoiler", "rim", "
 $("cfgBody").innerHTML = `<div id="upgBody"></div>` + ORDER.map(k => [k, OPTS[k]]).map(([k, o]) => `<div class="grp"><div class="grp-h">${o.label}<b data-name="${k}"></b></div><div class="${o.seg ? "seg" : "sw"}">${o.items.map(([n, c], i) => o.seg
   ? `<button data-k="${k}" data-i="${i}">${n}</button>`
   : `<button data-k="${k}" data-i="${i}" title="${n}" aria-label="${o.label}: ${n}" style="background:${c || "repeating-linear-gradient(45deg,#222 0 4px,#111 4px 8px)"}"></button>`).join("")}</div></div>`).join("");
-$("cfgBody").addEventListener("click", e => { const b = e.target.closest("button[data-k]"); if (!b) return; build[b.dataset.k] = +b.dataset.i; applyBuild(); });
+// premium colours: a lock and a price until bought (click once to see the price, again to buy)
+const cosm = new Set(store.get("void.cosm") || []); let cosmAsk = null;
+const lockedItem = (k, i) => { const it = OPTS[k].items[i]; return it && it[2] && !cosm.has(k + ":" + i) ? it[2] : 0; };
+function markLocks() { for (const b of $("cfgBody").querySelectorAll("button[data-k]")) { const pr = lockedItem(b.dataset.k, +b.dataset.i); b.classList.toggle("lock", !!pr); if (pr) b.title = `${OPTS[b.dataset.k].items[+b.dataset.i][0]}: $${pr.toLocaleString()}`; } }
+$("cfgBody").addEventListener("click", e => {
+  const b = e.target.closest("button[data-k]"); if (!b) return; const k = b.dataset.k, i = +b.dataset.i, pr = lockedItem(k, i);
+  if (pr) { const id = k + ":" + i; if (cosmAsk !== id) { cosmAsk = id; toast(`${OPTS[k].items[i][0]} ${OPTS[k].label.toLowerCase()}: $${pr.toLocaleString()}. Click again to buy`); return; }
+    if (cash < pr) { toast(`You need $${(pr - cash).toLocaleString()} more`); return; } cash -= pr; store.set("void.cash", cash); earn(0); cosm.add(id); store.set("void.cosm", [...cosm]); cosmAsk = null; sound.win(); toast(`Bought: ${OPTS[k].items[i][0]} ${OPTS[k].label.toLowerCase()}`); markLocks(); }
+  build[k] = i; applyBuild();
+});
+markLocks();
 $("reset").onclick = () => { build = { ...DEFAULT, model: build.model }; applyBuild(); toast("Back to black and red"); };
 $("share").onclick = async () => {
   const url = location.origin + location.pathname + "#b=" + Object.keys(DEFAULT).map(k => build[k]).join(".");
@@ -420,7 +442,7 @@ let cash = store.get("void.cash") ?? 100000, cashSaveT = 0;
 if (!store.get("void.start100k")) { store.set("void.start100k", 1); if (cash < 100000) { cash = 100000; store.set("void.cash", cash); setTimeout(() => toast("You now start with $100,000. Go shopping at VOID Motors!"), 3000); } }
 gameOpts.upg = upg;
 addEventListener("pagehide", () => store.set("void.cash", cash));          // phones kill tabs without warning: save on the way out
-function earn(n) { cash += Math.max(0, Math.round(n)); clearTimeout(cashSaveT); cashSaveT = setTimeout(() => store.set("void.cash", cash), 800); const el = document.getElementById("gCash"); if (el) el.textContent = "$" + cash.toLocaleString(); }
+function earn(n) { if (n > 0 && progress) progress.addXp(Math.round(n)); cash += Math.max(0, Math.round(n)); clearTimeout(cashSaveT); cashSaveT = setTimeout(() => store.set("void.cash", cash), 800); const el = document.getElementById("gCash"); if (el) el.textContent = "$" + cash.toLocaleString(); }
 function renderUpg() {
   $("upgBody").innerHTML = `<div class="grp"><div class="grp-h">Performance<b>$${cash.toLocaleString()}</b></div><div class="upg">${Object.entries(UPG).map(([k, [ic, name, txt]]) => { const lv = upg[k], p = PRICE[lv]; return `<div class="up-row"><b>${ic}</b><div><span>${name}</span><small>${txt}</small><i>${[0, 1, 2].map(i => `<u class="${i < lv ? "on" : ""}"></u>`).join("")}</i></div>${p ? `<button data-u="${k}" ${cash < p ? "disabled" : ""}>$${p.toLocaleString()}</button>` : "<em>MAX</em>"}</div>`; }).join("")}</div><p class="up-note">Every point you score is also cash. Fully upgraded is about 20% faster and takes 40% less damage.</p></div>`;
 }
@@ -431,7 +453,7 @@ $("upgBody").addEventListener("click", e => {
 });
 goals.stats.upg = Object.values(upg).reduce((a, v) => a + v, 0); renderUpg(); earn(0);
 // one bonus a day for coming back
-try { const day = new Date().toDateString(); if (store.get("void.day") !== day) { const first = store.get("void.day") == null; store.set("void.day", day); if (!first) { cash += 2000; store.set("void.cash", cash); setTimeout(() => toast("Daily bonus: $2,000 for upgrades in the Garage"), 2500); } } } catch { }
+try { store.set("void.day", new Date().toDateString()); } catch { }          // (the daily reward is the login streak now: progress.greet)
 let toastT;
 function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("on"), 2200); }
 
@@ -523,7 +545,7 @@ function showroom(dt, time) {
 
 // ---------- per frame ----------
 const clock = new THREE.Clock();
-let lastGauge = 0, lastChips = 0, cycleT = 0;
+let lastGauge = 0, lastChips = 0, cycleT = 0, greeted = false, progT = 0, plateRank = 0;
 // the speedometer: a dial with a glowing arc, the speed, the gear (or altitude when flying) and what you're in
 const gauge = document.getElementById("gGauge"), gx = gauge.getContext("2d");
 function drawGauge(S) {
@@ -652,7 +674,9 @@ function frameLoop(fixed) {
   life.raining = atmos.weather === "rain" || atmos.weather === "storm"; life.night = W.timeOfDay !== "day";
   // the El train is solid: you get shoved off the track (and hurt if you hit it hard)
   if (mode === "play" && W.city.el && game.state) { const T = W.city.el.train, s = game.state; if (Math.abs(s.x - W.city.el.x) < 2.6 && s.y > W.city.el.top - .5 && s.y < W.city.el.top + 4 && Math.abs(s.z - T.z) < T.len / 2 + 1) { s.x = W.city.el.x + (s.x >= W.city.el.x ? 3 : -3); const sp = Math.hypot(s.vel.x, s.vel.z); if (sp > 8 || T.v > 5) { game.api.hurt(8 + T.v, "Hit by the train"); sound.crash(); } } }
-  if (mode === "play") { contracts.update(dt, time); dealer.update(dt, time); tutUpdate(); if ((dailyT += dt) > 1) { dailyT = 0; dailyCheck(); } extras.update(dt, time); legion.update(dt, time, S, camera.position); goals.stats.coins = extras.coins().got; goals.stats.cams = extras.fastCams(); goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
+  if (mode === "play") { contracts.update(dt, time); dealer.update(dt, time); tutUpdate(); if ((dailyT += dt) > 1) { dailyT = 0; dailyCheck(); } extras.update(dt, time); legion.update(dt, time, S, camera.position);
+    if (game.state.started && !greeted) { greeted = true; setTimeout(() => progress.greet(), 1200); }
+    if ((progT += dt) > .5) { const g0 = game.state; progress.tick(progT, cash, g0.ride ? g0.ride.model.id : null, t => { game.api.useHero(); toast(`Test drive over: ${t.name}. Unlock it in VOID Motors`); }); progT = 0; if (progress.rank !== plateRank) { plateRank = progress.rank; drawPlate(plateRank); } } goals.stats.coins = extras.coins().got; goals.stats.cams = extras.fastCams(); goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   if (heroDriven) { car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat); } else if (gsx && gsx.heroPark) { car.group.position.set(gsx.heroPark.x, 0, gsx.heroPark.z); car.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -gsx.heroPark.yaw); }
   car.setReveal(S.reveal);

@@ -479,7 +479,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     if (wantNitro && g.odArm && g.nT > 1 && !g.od) { g.od = true; say("⚡ OVERDRIVE", 1.6); sound.whoosh(); g.shake = .5; }
     if (!wantNitro) g.od = false;
     g.nitroOn = lerp(g.nitroOn, wantNitro ? (g.od ? 1.6 : 1) : g.micro > 0 ? .8 : 0, clamp(dt * 8));
-    const nCap = 1 + .35 * ((opts.upg || {}).nitro || 0) + (opts.tune ? opts.tune("nitro") : 0);
+    const nCap = 1 + .35 * ((opts.upg || {}).nitro || 0) + (opts.tune ? opts.tune("nitro", g) : 0);
     if (wantNitro) g.nitro = Math.max(0, g.nitro - dt / (5 * nCap) * (g.od ? 1.3 : 1)); else g.nitro = Math.min(1, g.nitro + dt / 14);
 
     if (g.veh && g.veh !== "car" && opts.vehicles) {
@@ -502,7 +502,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       const fx = Math.cos(g.yaw), fz = Math.sin(g.yaw), sx = -fz, sz = fx;
       u = g.vel.x * fx + g.vel.z * fz; let w = g.vel.x * sx + g.vel.z * sz;
       const OR = g.onTerrain ? (RM ? (RM.offroad ?? (RM.kind.fly ? .9 : .55)) : .7) : 1, gripT = g.onTerrain ? Math.min(1.05, .45 + .55 * OR) : 1, topT = g.onTerrain ? Math.min(1, .5 + .5 * OR) : 1;
-      const U = opts.upg || {}, top = ((RM ? RM.top : 92) * topT + g.nitroOn * 22) * (1 + .07 * (U.engine || 0)), acc = (RM ? RM.acc : 1) * (g.onTerrain ? Math.min(1, .6 + .4 * OR) : 1);
+      const U = opts.upg || {}, top = ((RM ? RM.top : 92) * topT + g.nitroOn * 22) * (1 + .07 * (U.engine || 0)) * (1 + (opts.tune ? opts.tune("top", g) : 0)), acc = (RM ? RM.acc : 1) * (g.onTerrain ? Math.min(1, .6 + .4 * OR) : 1);
       if (g.onTerrain) u -= 9.81 * Math.sin(Math.atan(g.slope || 0)) * dt;           // uphill slows you, downhill pulls
       if (gas) u += (u < -.5 ? 20 : 11.5 * acc * (1 + .1 * (U.engine || 0)) * (1 - clamp(u / top) ** 2) + g.nitroOn * 11) * gas * dt;
       else if (g.nitroOn > .1) u += g.nitroOn * 11 * dt;
@@ -510,7 +510,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (g.kick) { u += g.kick; g.kick = 0; g.shake = Math.max(g.shake || 0, .25); }
       u = Math.max(-16, u - Math.sign(u) * (.3 + .00034 * u * u) * dt);
       if (!gas && !brake && Math.abs(u) < .25) u = 0;
-      const grip = (hand ? 1.4 + .15 * (U.grip || 0) : 9 * (1 + .12 * (U.grip || 0)) + Math.min(9, Math.abs(u) * .09)) * (RM ? RM.grip : 1) * (HA ? .8 : 1.2) * gripT;
+      const grip = (hand ? 1.4 + .15 * (U.grip || 0) : 9 * (1 + .12 * (U.grip || 0)) + Math.min(9, Math.abs(u) * .09)) * (RM ? RM.grip : 1) * (HA ? .8 : 1.2) * gripT * (1 + (opts.tune ? opts.tune("grip", g) : 0));
       w *= Math.exp(-grip * dt);
       g.vel.set(fx * u + sx * w, 0, fz * u + sz * w);
       // suspension: a damped spring for pitch (squat on the throttle, dive on the brakes) and one for body roll in corners
@@ -643,7 +643,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     // sideslip: the car weathervanes into the airflow
     const sideV = g.vel.dot(s0); a.addScaledVector(s0, -sideV * 1.6);
     // thrust: back along the car when fast, down under it when slow
-    const cruise = g.wings > .5 && !g.jump && !g.landing ? .25 : 0, back = (gas * 1 + cruise + g.nitroOn * 1.2) * 16 * g.ang * ceiling;
+    const cruise = g.wings > .5 && !g.jump && !g.landing ? .25 : 0, back = (gas * 1 + cruise + g.nitroOn * 1.2) * 16 * g.ang * ceiling * (1 + (opts.tune ? opts.tune("thrust", g) : 0));
     a.addScaledVector(f, back);
     const lift = 1 - g.ang;
     if (!g.jump || g.hover || g.landing || up || down) {

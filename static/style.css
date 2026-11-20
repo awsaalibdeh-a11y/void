@@ -505,3 +505,26 @@ body.show-fps .fps-hud { display: block; } .fps-hud.mid { color: #ffd23d; } .fps
 /* nitro bar: glows when full (ready for Overdrive), blue-white while in Overdrive */
 .bar.nos.full i { box-shadow: 0 0 10px #3df5ff; } .bar.nos.od i { background: linear-gradient(90deg, #9ff3ff, #ffffff, #9ff3ff); box-shadow: 0 0 14px #9ff3ff; animation: odPulse .25s linear infinite alternate; }
 @keyframes odPulse { to { filter: brightness(1.4); } }
+
+/* progression: the rank badge under the score, the next-unlock bar under the cash, the test-drive clock */
+.g-rank { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; margin-top: 6px; padding: 5px 10px; border-radius: 10px; background: rgba(0,0,0,.45); max-width: 210px; }
+.g-rank b { grid-row: span 2; font: 900 16px var(--wide); color: #ffd23d; }
+.g-rank span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #fff; }
+.g-rank i { display: block; height: 3px; border-radius: 3px; background: linear-gradient(90deg, #ffd23d calc(var(--v) * 100%), rgba(255,255,255,.18) 0); }
+.g-next { margin-top: 6px; padding: 5px 10px; border-radius: 10px; background: rgba(0,0,0,.45); text-align: right; max-width: 220px; margin-left: auto; }
+.g-next span { display: block; font-size: 11px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-next i { display: block; height: 3px; margin-top: 4px; border-radius: 3px; background: linear-gradient(90deg, #ff3df0 calc(var(--v) * 100%), rgba(255,255,255,.18) 0); }
+.g-test { border-color: rgba(255,210,61,.6); }
+.res-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
+.daily-clock { margin: 0 0 6px; opacity: .8; }
+/* VOID Motors: tuning rows, what unlocks a locked car */
+.deal-tune { margin-top: 12px; display: grid; gap: 6px; }
+.deal-tune h4 { margin: 0; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+.tune-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 13px; }
+.tune-row i { font-style: normal; letter-spacing: 2px; color: #ffd23d; }
+.tune-row .pill { padding: 4px 10px; font-size: 12px; }
+.tune-row em { font-style: normal; font-size: 11px; color: #9dffb0; }
+.deal-lock { margin: 10px 0; padding: 10px; border-radius: 10px; background: rgba(255,210,61,.1); border: 1px solid rgba(255,210,61,.35); font-size: 13px; }
+/* Build: premium colours show a lock until bought */
+#cfgBody .sw button.lock { position: relative; opacity: .75; }
+#cfgBody .sw button.lock::after { content: "🔒"; position: absolute; right: -4px; bottom: -4px; font-size: 10px; }

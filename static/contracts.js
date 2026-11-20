@@ -74,6 +74,13 @@ export function createContracts(W, api, nav, sound, police) {
     const def = C.def; let medal = 0;
     if (ok) { medal = C.t <= def.medals[0] ? 3 : C.t <= def.medals[1] ? 2 : 1; api.addScore(PAY[medal], `${MEDAL[medal]} ${def.name} in ${fmt(C.t)}`); if (medal > (best[def.id] || 0)) { best[def.id] = medal; store.set("void.contracts", best); } }
     else api.say(`${def.icon} ${why || "Contract failed"}`, 3);
+    // the result, with a retry and the next contract one click away
+    if (why !== "Contract cancelled") {
+      const el = $("gRaceRes"), next = CONTRACTS[(CONTRACTS.indexOf(def) + 1) % CONTRACTS.length], t = C.t;
+      el.innerHTML = `<h3>${def.icon} ${def.name}</h3><p>${ok ? `${MEDAL[medal]} in ${fmt(t)} · +$${PAY[medal].toLocaleString()}` : why || "Contract failed"}</p><div class="res-btns"><button class="pill" id="gConRetry">↻ Retry</button><button class="pill solid" id="gConNext">${next.icon} ${next.name} →</button><button class="pill" id="gConOk">OK</button></div>`;
+      el.hidden = false; $("gConOk").onclick = () => el.hidden = true; $("gConRetry").onclick = () => { el.hidden = true; start(def.id); }; $("gConNext").onclick = () => { el.hidden = true; start(next.id); };
+      dispatchEvent(new CustomEvent("void:break"));
+    }
     beacon.visible = thief.visible = drone.visible = false; nav.setDest(null); $("gCon").hidden = true; C = null;
     return medal;
   }
