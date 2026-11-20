@@ -37,6 +37,17 @@ function gameMix(state) {
   return { ...base, pad: .5, hat: .4, chop: .3, open: 900 };
 }
 
+// the radio's stations (beside the adaptive VOID Score): each has its own tempo, chords, drums and lead
+const STATIONS = {
+  synth: { step: 60 / 118 / 4, roots: [110, 87.31, 130.81, 98], chords: [[220, 261.63, 329.63], [174.61, 220, 261.63], [196, 261.63, 329.63], [196, 246.94, 293.66]],
+    kick: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], bass: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1], clap: [4, 12], hat: [0, 0, .6, 0, 0, 0, .6, 0, 0, 0, .6, 0, 0, 0, .6, .4],
+    arp: { every: 1, mul: 2, wave: "sawtooth", len: .12, gain: .2, cut: 2600 }, mix: { pad: .5, hat: .8, kick: 1, clap: .7, bass: .8, arp: 1, open: 2800 } },
+  chill: { step: 60 / 84 / 4, roots: [73.42, 61.74, 98, 110], chords: [[185, 220, 277.18], [146.83, 185, 220], [146.83, 185, 246.94], [164.81, 220, 277.18]],
+    kick: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], bass: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], clap: [12], hat: [0, 0, .4, 0, 0, 0, .4, 0, 0, 0, .4, 0, 0, 0, .4, 0],
+    arp: { every: 2, mul: 1, wave: "triangle", len: .32, gain: .2, cut: 1800 }, mix: { pad: .75, hat: .35, kick: .6, clap: .35, bass: .6, arp: .8, open: 1100 } },
+  chase: { mix: { pad: .45, hat: 1, kick: 1, clap: 1, bass: 1, bell: 1, chop: .5, open: 4200 } },          // the phonk at full tilt, whatever you're doing
+};
+
 export class Sound {
   constructor() { this.on = false; this.ctx = null; this.songStart = null; this.liveStep = 0; this.gameState = "idle"; this.mode = "idle"; }
 
@@ -61,7 +72,7 @@ export class Sound {
     rev.buffer = ir; this.revBus = C.createGain(); this.revBus.gain.value = .28; this.revBus.connect(rev).connect(this.musicIn);
 
     this.bus = {};
-    for (const k of ["pad", "hat", "kick", "clap", "bass", "bell", "chop"]) {
+    for (const k of ["pad", "hat", "kick", "clap", "bass", "bell", "chop", "arp"]) {
       const g = C.createGain(); g.gain.value = 0; this.bus[k] = g;
       g.connect(k === "kick" || k === "clap" || k === "hat" ? this.musicIn : this.pump);
     }
@@ -69,7 +80,7 @@ export class Sound {
     this.bellIn = C.createGain(); const bd = C.createWaveShaper(); bd.curve = this.curve(9); bd.oversample = "4x";
     const bellTone = C.createBiquadFilter(); bellTone.type = "peaking"; bellTone.frequency.value = 2200; bellTone.gain.value = 5;
     this.bellIn.connect(bd).connect(bellTone).connect(this.bus.bell); bellTone.connect(this.revBus);
-    this.bus.chop.connect(this.revBus);
+    this.bus.chop.connect(this.revBus); this.bus.arp.connect(this.revBus);
 
     // pad: detuned saws through a lowpass that opens with the section
     this.padF = C.createBiquadFilter(); this.padF.type = "lowpass"; this.padF.frequency.value = 900; this.padF.Q.value = .8;
@@ -135,8 +146,9 @@ export class Sound {
         this.songStep++; this.next += STEP;
       }
     } else {
-      const mix = this.mode === "game" ? gameMix(this.gameState) : { pad: .4, hat: 0, kick: 0, clap: 0, bass: 0, bell: 0, chop: 0, rise: 0, half: true, riff: 0, open: 700 };
-      while (this.next < C.currentTime + .12) { this.applyMix(mix, this.next); this.playStep(this.liveStep, this.next, mix); this.liveStep++; this.next += STEP; }
+      const St = STATIONS[this.radio], step = St && St.step || STEP;
+      const mix = St ? St.mix : this.mode === "game" ? gameMix(this.gameState) : { pad: .4, hat: 0, kick: 0, clap: 0, bass: 0, bell: 0, chop: 0, rise: 0, half: true, riff: 0, open: 700 };
+      while (this.next < C.currentTime + .12) { this.applyMix(mix, this.next); if (St && St.chords) this.playStation(this.liveStep, this.next, St); else this.playStep(this.liveStep, this.next, mix); this.liveStep++; this.next += step; }
     }
   }
 
@@ -162,6 +174,21 @@ export class Sound {
     if (m.chop > .01 && ((s === 0 && bar % 2 === 0) || (s === 10 && bar === 3))) this.chop(t, s === 0 ? "ah" : "ey", 1);
   }
 
+  // a station's bar: its chords on the pad, its drums, and an arpeggio up and down the chord
+  playStation(n, t, S) {
+    const s = n % 16, bar = Math.floor(n / 16) % 4, ch = S.chords[bar];
+    if (s === 0) ch.forEach((fr, i) => { this.padOsc[i * 2].frequency.setTargetAtTime(fr, t, .08); this.padOsc[i * 2 + 1].frequency.setTargetAtTime(fr * 1.003, t, .08); });
+    if (S.kick[s]) { this.kick(t); this.duck(t); }
+    if (S.bass[s]) this.bass808(t, S.roots[bar]);
+    if (S.clap.includes(s)) this.clap(t);
+    if (S.hat[s]) this.hat(t, S.hat[s]);
+    const A = S.arp; if (s % A.every === 0) { const notes = [ch[0], ch[1], ch[2], ch[0] * 2, ch[2], ch[1]]; this.arpNote(t, notes[Math.floor(n / A.every) % notes.length] * A.mul, A); }
+  }
+  arpNote(t, fr, A) {
+    const C = this.ctx, o = C.createOscillator(), g = C.createGain(), f = C.createBiquadFilter();
+    o.type = A.wave; o.frequency.value = fr; f.type = "lowpass"; f.frequency.setValueAtTime(A.cut, t); f.frequency.exponentialRampToValueAtTime(380, t + A.len);
+    this.env(g, t, .004, A.gain, A.len); o.connect(f).connect(g).connect(this.bus.arp); o.start(t); o.stop(t + A.len + .05);
+  }
   env(g, t, a, peak, dec) { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(.0001, t + a + dec); }
   duck(t) { const g = this.pump.gain; g.cancelScheduledValues(t); g.setValueAtTime(1, t); g.linearRampToValueAtTime(.3, t + .01); g.linearRampToValueAtTime(1, t + .22); }
   kick(t) {
@@ -204,7 +231,8 @@ export class Sound {
   whoosh() { if (this.on) this.noiseHit(this.ctx.currentTime, "bandpass", 700, .8, .5, .9, this.sfx); }
   pop() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "bandpass", 300, 1, .9, .07, this.sfx); this.noiseHit(t + .06, "bandpass", 260, 1, .6, .06, this.sfx); } }
   crash() { if (this.on) { const t = this.ctx.currentTime; this.noiseHit(t, "lowpass", 2500, .4, 1, 1.2, this.sfx); this.noiseHit(t, "bandpass", 180, 1, 1, .6, this.sfx); } }
-  // the car radio: "score" is the game's own music, "voidfm" loops the film track, "off" is engine and city only
+  // the car radio: "score" is the game's own music (it follows what you do), "synth" / "chill" / "chase" are stations,
+  // "voidfm" loops the film track, "off" is engine and city only
   setRadio(st) { this.init(); this.radio = st; this.musicIn.gain.setTargetAtTime(st === "off" ? 0 : .5, this.ctx.currentTime, .3); if (st === "voidfm") this.startSong(0); else if (this.mode === "song") this.stopSong(); }
   siren(level) {            // a wailing two-tone siren whose volume follows how close the nearest cruiser is
     if (!this.ctx || !this.on) return; const c = this.ctx, t = c.currentTime;

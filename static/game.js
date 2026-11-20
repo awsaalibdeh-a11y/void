@@ -78,6 +78,7 @@ export function createGame(W, car, sound, life, opts = {}) {
   if ($("gHorn")) $("gHorn").onclick = () => horn();
   if ($("gTime")) $("gTime").onclick = () => opts.cycleTime && opts.cycleTime();
   if ($("gPhoto")) $("gPhoto").onclick = togglePhoto;
+  if ($("gResetBtn")) $("gResetBtn").onclick = () => reset();
   $("gGo").onclick = () => { $("gReady").hidden = true; if (!sound.on) sound.setOn(true); g.started = true; };
 
   // ---- extra stunts: ramps round the city and rings in the sky ----
@@ -103,17 +104,22 @@ export function createGame(W, car, sound, life, opts = {}) {
     { x: -600, z: 1400, yaw: Math.PI / 2, len: 30, h: .7 }, { x: -760, z: 1370, yaw: Math.PI / 4, len: 18, h: 1.3 },
     { x: 974, z: 1215, yaw: Math.PI / 2, len: 210, h: .9 },                                  // the boardwalk railing
     { x: 2580, z: 12, yaw: 0, len: 50, h: .8 }, { x: 2580, z: -12, yaw: 0, len: 50, h: .8 },  // by the highway at the foot of the mountains
+    { x: 1720, z: 9.6, yaw: 0, len: 860, h: .8 }, { x: 1720, z: -9.6, yaw: 0, len: 860, h: .8 },   // the highway guardrails
+    // rooftop ledges: a railing along one edge of a dozen mid-height roofs (land the car up there, then Y)
+    ...W.buildings.filter(b => b.h > 16 && b.h < 48 && b.hw > 9 && b.hd > 6 && Math.abs(b.x) < 900).sort((a, b) => a.x * 7 + a.z - (b.x * 7 + b.z)).filter((b, i) => i % 23 === 0).slice(0, 12)
+      .map(b => ({ x: b.x - b.hw + 1, z: b.z - b.hd + .7, yaw: 0, len: b.hw * 2 - 2, h: b.h + .8, b0: b.h })),
   ].map(r => ({ ...r, c: Math.cos(r.yaw), s: Math.sin(r.yaw) }));
   {
     const parts = [];
     for (const r of RAILS) {
       const bar = new THREE.CylinderGeometry(.06, .06, r.len, 8).rotateZ(Math.PI / 2).translate(r.len / 2, r.h, 0);
-      const g = [bar]; for (let a = 1; a < r.len; a += 3) g.push(new THREE.BoxGeometry(.08, r.h, .08).translate(a, r.h / 2, 0));
+      const b0 = r.b0 || 0, g = [bar]; for (let a = 1; a < r.len; a += 3) g.push(new THREE.BoxGeometry(.08, r.h - b0, .08).translate(a, (r.h + b0) / 2, 0));
       for (const q of g) { q.rotateY(-r.yaw); q.translate(r.x, 0, r.z); parts.push(q.toNonIndexed()); }
     }
     W.scene.add(new THREE.Mesh(mergeGeometries(parts.map(q => { for (const k of Object.keys(q.attributes)) if (k !== "position" && k !== "normal") q.deleteAttribute(k); return q; })), new THREE.MeshStandardMaterial({ color: 0xd8dde4, metalness: .9, roughness: .25 })));
   }
-  const railNear = (x, z, y) => { for (const r of RAILS) { const dx = x - r.x, dz = z - r.z, a = dx * r.c + dz * r.s, b = -dx * r.s + dz * r.c; if (a > .3 && a < r.len - .3 && Math.abs(b) < .8 && y > r.h + .05 && y < r.h + 1.4) return { r, a }; } return null; };
+  // (magnet: falling onto a rail from the air catches it from further away, and the grind pulls you onto the bar)
+  const railNear = (x, z, y, m) => { for (const r of RAILS) { const dx = x - r.x, dz = z - r.z, a = dx * r.c + dz * r.s, b = -dx * r.s + dz * r.c; if (a > .3 && a < r.len - .3 && Math.abs(b) < (m ? 2.2 : .8) && y > r.h + (m ? -.3 : .05) && y < r.h + (m ? 2.4 : 1.4)) return { r, a }; } return null; };
   const rampAt = (x, z) => {
     for (const r of RAMPS) {
       const dx = x - r.x, dz = z - r.z, c = Math.cos(r.yaw), s = Math.sin(r.yaw), a = dx * c + dz * s, b = -dx * s + dz * c;
@@ -132,7 +138,17 @@ export function createGame(W, car, sound, life, opts = {}) {
       const m = new THREE.Mesh(new THREE.TorusGeometry(9, .6, 10, 40), mat.clone()); m.position.set(x, y, z); m.rotation.y = -yaw + Math.PI / 2; W.scene.add(m);
       RINGS.push({ m, x, y, z, nx: Math.cos(yaw), nz: Math.sin(yaw), done: 0, side: 0 }); void rr;
     });
+    // boost chains: five cyan rings in a row high over the towers; each refills nitro and flings you on, all five in a row pays big
+    const boostMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3df5ff).multiplyScalar(2.4), toneMapped: false }), ringGeo = new THREE.TorusGeometry(11, .8, 10, 44);
+    [[-420, 320, -300, 0], [-320, 430, 1300, 0], [620, 260, 260, Math.PI / 2]].forEach(([x0, y0, z0, yaw], chain) => {
+      for (let k = 0; k < 5; k++) {
+        const x = x0 + Math.cos(yaw) * k * 120, z = z0 + Math.sin(yaw) * k * 120, y = y0 + Math.sin(k * 1.3) * 14;
+        const m = new THREE.Mesh(ringGeo, boostMat); m.position.set(x, y, z); m.rotation.y = -yaw + Math.PI / 2; W.scene.add(m);
+        RINGS.push({ m, x, y, z, nx: Math.cos(yaw), nz: Math.sin(yaw), done: 0, side: 0, boost: true, chain, idx: k, R: 10.5 });
+      }
+    });
   }
+  const chains = [0, 0, 0].map(() => ({ n: 0, t: 0 }));
 
   function spawn(at) {
     const s = at || SPAWN; rig.yaw = null; if (g && g.ride) releaseRide(); if (g) { g.heroPark = null; }
@@ -263,7 +279,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       g.trS += turn * 8.5 * dt; if (held("drift")) g.trF += 9.5 * dt; if (held("down")) g.trH = (g.trH || 0) + 9.5 * dt; if (held("nitro")) g.grabT = (g.grabT || 0) + dt;
       g.airT += dt; g.charge = 0;
       if (held("up") && !g.jumpHeld && g.dbl) { g.dbl = false; g.vy = Math.max(g.vy, 0) + 5.5; u += 3; sound.whoosh(); g.shake = .3; }   // double jump: one thruster burst
-      if (g.vy <= 1.5) { const rn = railNear(g.x, g.z, g.y); if (rn) { const along = fx * rn.r.c + fz * rn.r.s; if (Math.abs(along) > .5) {
+      if (g.vy <= 1.5) { const rn = railNear(g.x, g.z, g.y, true); if (rn) { const along = fx * rn.r.c + fz * rn.r.s; if (Math.abs(along) > .35) {
         landBoard(); g.grind = { r: rn.r, a: rn.a, dir: Math.sign(along), v: Math.max(7, Math.abs(u) * Math.abs(along)), m: 0 }; sound.thud && sound.thud(.45); g.jumpHeld = held("up"); return; } } }
     }
     g.jumpHeld = held("up");
@@ -303,7 +319,21 @@ export function createGame(W, car, sound, life, opts = {}) {
   function wreck(why) { g.wreck = 2.6; g.boom = 1; g.vel.set(0, 0, 0); say(why + ". Respawning…", 2.6); sound.crash(); }
   // into the water: a splash, the car sinks, and you're put back on the last bit of road (no explosion, no wreck)
   function splash() { const lake = Math.hypot(g.x - city.lake.x, g.z - city.lake.z) < 120; g.sink = 1.6; g.splashT = 1; g.mode = "drive"; say(lake ? "Splash! That's the park lake" : "Splash! You drove into the river", 2.2); sound.crash(); }
-  function reset() { if (!g || !g.started || g.wreck > 0) return; spawn({ ...g.last }); say("Back on the road", 1.5); }
+  // R: back on your wheels right where you are, lined up with the street and at the same speed (stuck, flipped,
+  // nosed into a wall); in the air it levels you out; only when there is no free ground near is it the last road
+  function reset() {
+    if (!g || !g.started || g.wreck > 0) return;
+    const back = () => { spawn({ ...g.last }); say("Back on the road", 1.5); };
+    if (g.veh !== "car" || g.mode === "rail") return back();
+    if (g.mode === "air") { Object.assign(g, { roll: 0, pitch: 0, hover: true, landing: false, jump: false, stall: 0 }); say("Levelled out", 1.2); return; }
+    let spot = null;
+    for (let rad = 0; rad <= 24 && !spot; rad += 2) for (let a = 0; a < 6.3 && !spot; a += rad ? .5 : 7) { const x = g.x + Math.cos(a) * rad, z = g.z + Math.sin(a) * rad; if (!hitBox(x, z, .5, 1.4) && !city.isWater(x, z)) spot = [x, z]; }
+    if (!spot) return back();
+    const sp = Math.hypot(g.vel.x, g.vel.z); let yaw = Math.round(g.yaw / (Math.PI / 2)) * (Math.PI / 2);
+    for (const d of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) if (!hitBox(spot[0] + Math.cos(yaw + d) * 7, spot[1] + Math.sin(yaw + d) * 7, .5, 1.2)) { yaw += d; break; }
+    Object.assign(g, { x: spot[0], z: spot[1], y: Math.max(0, groundAt(spot[0], spot[1], 0).h), yaw, pitch: 0, roll: 0, mode: "drive", sp: 0, sr: 0, spV: 0, srV: 0, trS: 0, trF: 0 });
+    g.vel.set(Math.cos(yaw) * sp, 0, Math.sin(yaw) * sp); rig.yaw = null; say("Back on your wheels", 1.2);
+  }
   function horn() { sound.horn && sound.horn(opts.hornType ? opts.hornType() : 0); life && life.honk(g.x, g.z); }
 
   // the ground under a point: ramps, rooftops (only if you are up there), else the street; water is -1
@@ -351,8 +381,9 @@ export function createGame(W, car, sound, life, opts = {}) {
           pv.x = pv.x * .3 + nvx * .6; pv.z = pv.z * .3 + nvz * .6; c.v *= .3;
           hurt(dmg, `Hit by a ${c.kind.id}`); impact((g.x + c.x) / 2, .6, (g.z + c.z) / 2, Math.max(dmg, rel * .6)); if (dmg > 2) { sound.crash(); g.sparks = .7; } else sound.pop();
         }
-      } else if (ps > 25 && Math.abs(along) < hl + 1 && Math.abs(side) < hw + 1.8 && Math.abs(side) >= hw) {
-        const t = g.near.get(c) || 0; if (performance.now() - t > 4000) { g.near.set(c, performance.now()); addScore(60, "Near miss", true); }
+      } else if (ps > 25 && Math.abs(along) < hl + 1 && Math.abs(side) < hw + 2 && Math.abs(side) >= hw) {      // within 2 m of its side
+        const t = g.near.get(c) || 0, now = performance.now();
+        if (now - t > 4000) { g.near.set(c, now); g.nearN = now - (g.nearLast || 0) < 3500 ? (g.nearN || 0) + 1 : 1; g.nearLast = now; addScore(25 * g.nearN, g.nearN > 1 ? `NEAR MISS ×${g.nearN}` : "NEAR MISS", true); sound.pop(); }
       }
     }
   }
@@ -427,9 +458,18 @@ export function createGame(W, car, sound, life, opts = {}) {
     else if (g.fuel < .15 && g.fuelMsg !== 2 && g.fuel > 0) { g.fuelMsg = 2; say("Low fuel: find a ⛽ station", 4); }
     if (g.fuel > .2) g.fuelMsg = 0;
     service(dt);
-    const wantNitro = (held("nitro") || (g.ap && g.ap.nitro)) && g.nitro > .02 && g.fuel > 0;
-    g.nitroOn = lerp(g.nitroOn, wantNitro ? 1 : 0, clamp(dt * 8));
-    if (wantNitro) g.nitro = Math.max(0, g.nitro - dt / (5 * (1 + .35 * ((opts.upg || {}).nitro || 0)))); else g.nitro = Math.min(1, g.nitro + dt / 14);
+    // three stages: a tap is a quick kick, holding boosts, and holding from a full tank for a second is OVERDRIVE
+    const nHeld = !!(held("nitro") || (g.ap && g.ap.nitro));
+    if (nHeld && !g.nWas) { g.nT = 0; g.odArm = g.nitro > .985; }
+    if (nHeld) g.nT = (g.nT || 0) + dt;
+    if (!nHeld && g.nWas && g.nT < .2 && g.nitro > .1 && g.fuel > 0) { g.nitro -= .1; g.kick = 7; g.micro = .35; }
+    g.nWas = nHeld; g.micro = Math.max(0, (g.micro || 0) - dt);
+    const wantNitro = nHeld && (g.nT >= .16 || g.ap) && g.nitro > .02 && g.fuel > 0;
+    if (wantNitro && g.odArm && g.nT > 1 && !g.od) { g.od = true; say("⚡ OVERDRIVE", 1.6); sound.whoosh(); g.shake = .5; }
+    if (!wantNitro) g.od = false;
+    g.nitroOn = lerp(g.nitroOn, wantNitro ? (g.od ? 1.6 : 1) : g.micro > 0 ? .8 : 0, clamp(dt * 8));
+    const nCap = 1 + .35 * ((opts.upg || {}).nitro || 0) + (opts.tune ? opts.tune("nitro") : 0);
+    if (wantNitro) g.nitro = Math.max(0, g.nitro - dt / (5 * nCap) * (g.od ? 1.3 : 1)); else g.nitro = Math.min(1, g.nitro + dt / 14);
 
     if (g.veh && g.veh !== "car" && opts.vehicles) {
       const I = { turn, gas, brake, up: g.fuel > 0 && (g.ap ? g.ap.up : held("up")) ? 1 : 0, down: (g.ap ? g.ap.down : held("down")) ? 1 : 0, nitro: g.nitroOn > .3, stickY: -stick.y };
@@ -456,6 +496,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (gas) u += (u < -.5 ? 20 : 11.5 * acc * (1 + .1 * (U.engine || 0)) * (1 - clamp(u / top) ** 2) + g.nitroOn * 11) * gas * dt;
       else if (g.nitroOn > .1) u += g.nitroOn * 11 * dt;
       if (brake) u -= (u > .5 ? 26 : 8) * brake * dt;
+      if (g.kick) { u += g.kick; g.kick = 0; g.shake = Math.max(g.shake || 0, .25); }
       u = Math.max(-16, u - Math.sign(u) * (.3 + .00034 * u * u) * dt);
       if (!gas && !brake && Math.abs(u) < .25) u = 0;
       const grip = (hand ? 1.4 + .15 * (U.grip || 0) : 9 * (1 + .12 * (U.grip || 0)) + Math.min(9, Math.abs(u) * .09)) * (RM ? RM.grip : 1) * (HA ? .8 : 1.2) * gripT;
@@ -469,8 +510,11 @@ export function createGame(W, car, sound, life, opts = {}) {
       // drift scoring
       const slip = Math.atan2(Math.abs(w), Math.max(1, Math.abs(u)));
       g.slip = Math.abs(u) > 6 ? clamp((slip - .12) * 3) + (brake && Math.abs(u) > 20 ? .35 : 0) : 0; if (g.thudT > 0) g.thudT -= dt;
-      if (slip > .22 && Math.abs(u) > 12) { g.drift += slip * Math.abs(u) * dt * 6; g.driftT = .7; }
-      else if (g.driftT > 0) { g.driftT -= dt; if (g.driftT <= 0 && g.drift > 30) { addScore(Math.round(g.drift), "Drift"); g.drift = 0; } else if (g.driftT <= 0) g.drift = 0; }
+      if (slip > .22 && Math.abs(u) > 12) { g.drift += slip * Math.abs(u) * dt * 6; g.driftT = .7; g.driftDur = (g.driftDur || 0) + dt; g.driftMul = Math.min(5, 1 + Math.floor(g.driftDur / 1.5)); }
+      else if (g.driftT > 0) {
+        g.driftT -= dt;
+        if (g.driftT <= 0) { if (g.drift > 30) addScore(Math.round(g.drift * (g.driftMul || 1)), g.driftMul > 1 ? `Drift ×${g.driftMul}` : "Drift"); g.drift = 0; g.driftDur = 0; g.driftMul = 1; }
+      }
       // move, with ramps, rooftops, buildings, water and traffic
       const nx = g.x + g.vel.x * dt, nz = g.z + g.vel.z * dt;
       const hit = hitBox(nx, nz, g.y + .5, 1.15);
@@ -504,6 +548,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       // drive into the loop and the track takes you round
       if (g.x > LOOP_X - 1.5 && g.x < LOOP_X + .5 && Math.abs(g.z) < HW && Math.cos(g.yaw) > .8 && u > 3 && g.y < .2) { g.mode = "rail"; g.d = T.D[T.loopIn]; g.v = u; return; }
       traffic(dt);
+      if (opts.props && Math.abs(u) > 4) opts.props(g.x, g.z, g.y, g.vel);
       g.roll = lerp(g.roll, (g.sr || 0) + (g.tRoll || 0), clamp(dt * 20));
       if ((g.y === 0 || gr.terrain) && Math.abs(u) < 40 && !gr.roof && !city.isWater(g.x, g.z) && !hitBox(g.x, g.z, .5, 3)) g.last = { x: g.x, z: g.z, yaw: g.yaw, y: gr.terrain ? g.y : 0 };
       g.gForce = 1 + Math.abs(u * yawRate) / G * .5;
@@ -588,13 +633,28 @@ export function createGame(W, car, sound, life, opts = {}) {
       a.y += vert * lift;
     }
     g.vel.addScaledVector(a, dt);
+    if (g.kick) { g.vel.addScaledVector(f, g.kick); g.kick = 0; }
+    // landing assist: under 10 m on a landing the sink is cushioned to a soft touchdown, and near a helipad you're eased onto its middle
+    if (g.landing && above < 10 && g.vel.y < -2.5) g.vel.y = lerp(g.vel.y, -2.5, clamp(dt * 6));
+    if (g.landing) { const pad = (opts.pads ? opts.pads() : ZONES).find(z => z.y && Math.hypot(g.x - z.x, g.z - z.z) < 60 && g.y > z.y - 2); if (pad) { g.vel.x += ((pad.x - g.x) * .8 - g.vel.x * .6) * dt; g.vel.z += ((pad.z - g.z) * .8 - g.vel.z * .6) * dt; } }
+    // the sonic boom: past 500 km/h on nitro the air cracks (a shockwave, a bonus and some nitro back)
+    if (g.veh === "car" && V > 140 && g.nitroOn > .5 && performance.now() - (g.boomT || 0) > 12000) { g.boomT = performance.now(); g.sonic = 1; g.nitro = Math.min(1, g.nitro + .3); g.shake = 1; addScore(500, "💥 SONIC BOOM"); sound.impact && sound.impact(); }
+    g.sonic = Math.max(0, (g.sonic || 0) - dt);
     g.x += g.vel.x * dt; g.y += g.vel.y * dt; g.z += g.vel.z * dt;
     g.thr = lerp(g.thr, (up ? 1 : down ? .7 : gas ? .9 : g.hover || g.landing ? .55 : g.jump ? 0 : .3) + g.nitroOn * .4, clamp(dt * 6));
     g.gForce = 1 + Math.abs(a.clone().addScaledVector(UP, G).dot(bu)) / G * .6;
     // stunt rings
     for (const r of RINGS) {
       const dx = g.x - r.x, dy = g.y - r.y, dz = g.z - r.z, plane = dx * r.nx + dz * r.nz, side = Math.sign(plane);
-      if (r.side && side !== r.side && Math.abs(plane) < 6 && Math.hypot(dx - plane * r.nx, dy, dz - plane * r.nz) < 8.5 && performance.now() - r.done > 3000) { r.done = performance.now(); g.rings++; addScore(300, `Ring ${g.rings}`); r.m.material.color.set(0x3dff8a).multiplyScalar(2.5); setTimeout(() => r.m.material.color.set(0xffc23d).multiplyScalar(2.2), 3000); }
+      if (r.side && side !== r.side && Math.abs(plane) < 6 && Math.hypot(dx - plane * r.nx, dy, dz - plane * r.nz) < (r.R || 8.5) && performance.now() - r.done > 3000) {
+        r.done = performance.now();
+        if (r.boost) {                                       // refill the nitro and throw the car forward
+          g.nitro = 1; const V0 = g.vel.length() || 1, add = Math.min(30, Math.max(0, 160 - V0)); g.vel.multiplyScalar((V0 + add) / V0); g.shake = .6; sound.whoosh();
+          const C = chains[r.chain], now = performance.now(); C.n = r.idx === 0 || now - C.t > 9000 ? (r.idx === 0 ? 1 : 0) : r.idx === C.n ? C.n + 1 : 0; C.t = now;
+          if (C.n === 5) { C.n = 0; addScore(2000, "⚡ SKY CHAIN COMPLETE"); } else addScore(200, `⚡ Sky boost${C.n > 1 ? ` ${C.n}/5` : ""}`);
+          opts.onBoostRing && opts.onBoostRing(r);
+        } else { g.rings++; addScore(300, `Ring ${g.rings}`); r.m.material.color.set(0x3dff8a).multiplyScalar(2.5); setTimeout(() => r.m.material.color.set(0xffc23d).multiplyScalar(2.2), 3000); }
+      }
       r.side = side;
     }
     // buildings
@@ -607,6 +667,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       if (g.wreck > 0) return;
     }
     traffic(dt);
+    if (opts.props && g.y < 9) opts.props(g.x, g.z, g.y, g.vel);
     const gr = groundAt(g.x, g.z, g.y);
     // flying low and fast pays too
     if (!g.jump && g.y - gr.h > 1 && g.y - gr.h < 12 && g.vel.length() > 42) { g.lowT = Math.max(0, g.lowT || 0) + dt; if (g.lowT > 2.5) { g.lowT = -5; addScore(250, "Low pass"); } } else if ((g.lowT || 0) > 0) g.lowT = 0; else if (g.lowT < 0) g.lowT += dt;
@@ -668,7 +729,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     mx.drawImage(mapC, -(g.x - bounds.x0) / MM, -(g.z - bounds.z0) / MM);
     for (const z of ZONES) { const px = (z.x - g.x) / MM, pz = (z.z - g.z) / MM; mx.fillStyle = z.safe ? (g.done.has(z.id) ? "#888" : "#3dff8a") : "#ff4455"; mx.beginPath(); mx.arc(px, pz, 5, 0, 7); mx.fill(); }
     if (opts.mapExtra) opts.mapExtra(mx, g, MM, c);
-    mx.fillStyle = "#ffc23d"; for (const r of RINGS) { const px = (r.x - g.x) / MM, pz = (r.z - g.z) / MM; if (Math.abs(px) < c && Math.abs(pz) < c) { mx.beginPath(); mx.arc(px, pz, 3, 0, 7); mx.fill(); } }
+    for (const r of RINGS) { const px = (r.x - g.x) / MM, pz = (r.z - g.z) / MM; if (Math.abs(px) < c && Math.abs(pz) < c) { mx.fillStyle = r.boost ? "#3df5ff" : "#ffc23d"; mx.beginPath(); mx.arc(px, pz, r.boost ? 4 : 3, 0, 7); mx.fill(); } }
     if (life) { mx.fillStyle = "#ffd23d"; for (const n of life.nearCars(g.x, g.z, c * MM)) { const px = (n.x - g.x) / MM, pz = (n.z - g.z) / MM; if (Math.abs(px) < c && Math.abs(pz) < c) mx.fillRect(px - 1, pz - 1, 2, 2); } }
     mx.restore();
     mx.fillStyle = "#fff"; mx.beginPath(); mx.moveTo(c, c - 8); mx.lineTo(c - 6, c + 6); mx.lineTo(c + 6, c + 6); mx.closePath(); mx.fill();
@@ -696,7 +757,7 @@ export function createGame(W, car, sound, life, opts = {}) {
     },
   };
   return {
-    api, RINGS,
+    api, RINGS, RAILS, RAMPS,
     get state() { return g; }, get photo() { return photo; },
     enter() { active = true; start(); },
     exit() { active = false; keys.clear(); touch.clear(); sound.setGame("off"); if (photo) togglePhoto(); },
@@ -763,7 +824,7 @@ export function createGame(W, car, sound, life, opts = {}) {
       $("gSpd").textContent = Math.round(speed); $("gAlt").textContent = Math.round(Math.max(0, g.y)); $("gVs").textContent = (air ? g.vel.y : 0).toFixed(1);
       const landAid = air && g.above < 40 && g.vel.y < -1 ? `${g.above < 12 && g.vel.y < -5 ? "PULL UP · " : ""}${Math.round(g.above)} m · sink ${(-g.vel.y).toFixed(1)} m/s${-g.vel.y < 3 ? " ✓" : ""}` : "";
       if (g.veh === "foot" && (g.nearT = (g.nearT || 0) - dt) <= 0) { g.nearT = .25; const n = nearestCar(); g.nearName = n ? (n.kind === "hero" ? "your VOID car" : n.kind === "owned" ? n.o.ride.model.name : n.o.model.name) : cartNear() ? "🌭" : ""; }
-      $("gHint").textContent = g.msgT > 0 ? g.msg : g.veh === "foot" && g.nearName ? (g.nearName === "🌭" ? "E: buy a hot dog ($10, +30 health)" : `E: get into ${g.nearName}`) : g.stall > .5 ? "STALL: push the nose down or add thrust" : landAid || (g.drift > 20 ? `Drift ${Math.round(g.drift)}` : "");
+      $("gHint").textContent = g.msgT > 0 ? g.msg : g.veh === "foot" && g.nearName ? (g.nearName === "🌭" ? "E: buy a hot dog ($10, +30 health)" : `E: get into ${g.nearName}`) : g.stall > .5 ? "STALL: push the nose down or add thrust" : landAid || (g.drift > 20 ? `Drift ${Math.round(g.drift)}${g.driftMul > 1 ? `  ×${g.driftMul}` : ""}` : "");
       $("gFly").textContent = g.mode === "air" ? (g.landing ? "Hover" : "Land") : "Fly";
       if ($("gHp")) { $("gHp").style.setProperty("--v", g.hp / 100); $("gHp").classList.toggle("low", g.hp < 35); }
       if ($("gNos")) $("gNos").style.setProperty("--v", g.nitro);
@@ -778,7 +839,7 @@ export function createGame(W, car, sound, life, opts = {}) {
         thrust: { power: air && g.veh === "car" ? g.thr : 0, angle: g.ang, deploy: air && g.veh === "car" && !(g.jump && !g.hover && !g.landing && g.thr < .05) ? 1 : 0 }, wings: g.veh === "car" ? g.wings : 0, air, cam,
         inside: view === "seat", screenOn: view === "seat", mode: !air ? "DRIVE" : g.wings > .9 ? "GLIDE" : g.hover ? "HOVER" : "THRUST",
         rpm, gear, load: held("gas") || gp.gas > .3 ? 1 : .2, engine: g.veh === "foot" || g.veh === "board" ? 0 : !air ? 1 : .15, walk: g.walk || 0, crouch: g.veh === "board" ? Math.max((g.charge || 0) / .6, g.grabT > 0 ? 1 : 0) : 0, grinding: !!g.grind, braking: g.ap ? (g.ap.brake || 0) : (g.brakeIn || 0), ride: g.ride, heroPark: g.heroPark, ridePark: g.ridePark, boat: g.boat, zones, reveal: 1,
-        splash: g.splashT > 0 ? (g.splashT -= dt, 1) : 0, nitro: g.nitroOn, hp: g.hp, veh: g.veh || "car", fuel: g.fuel, thr: g.thr, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
+        splash: g.splashT > 0 ? (g.splashT -= dt, 1) : 0, nitro: g.nitroOn, od: !!g.od, nitroFull: g.nitro > .985, slip: g.veh === "car" && g.mode === "drive" ? g.slip || 0 : 0, sonic: g.sonic || 0, hp: g.hp, veh: g.veh || "car", fuel: g.fuel, thr: g.thr, boom: g.boom, sparks: g.sparks, shake: g.shake || 0, wrecked: g.wreck > 0,
       };
     },
   };

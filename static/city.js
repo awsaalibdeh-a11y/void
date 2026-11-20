@@ -209,12 +209,13 @@ export async function buildCity(scene, canvasTex, COARSE) {
   const nearR = (x, z, r) => { const out = new Set(); for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) for (let cz = Math.floor((z - r) / CELL); cz <= Math.floor((z + r) / CELL); cz++) for (const b of hash.get(cx * 10007 + cz) || []) out.add(b); return [...out]; };
 
   // instanced props, gathered as lists then placed at the end
-  const P = { acs: [], trees: [], lamps: [], hydrants: [], towers: [], subway: [], aviation: [], helipads: [], benches: [], burgers: [], pizzas: [], signs: [], awn: [], stoops: [], bins: [], escapes: [], carts: [], steam: [] };
+  const P = { cones: [], barriers: [], acs: [], trees: [], lamps: [], hydrants: [], towers: [], subway: [], aviation: [], helipads: [], benches: [], burgers: [], pizzas: [], signs: [], awn: [], stoops: [], bins: [], escapes: [], carts: [], steam: [] };
 
   // ---- ground: grass everywhere, asphalt under the grid, sidewalks on every block ----
   // land: Manhattan between the rivers, New Jersey west of the Hudson, Brooklyn east of the East River (the rivers are gaps)
   const W1 = XA - 60, W2 = XB + 60, HW0 = W1 - 600, EW1 = W2 + 700, WATER_Y = -.45;
-  const grassMat = mat({ map: grassTex, roughness: .95, color: 0xb8d0a0 });
+  // (the ground layers get depth nudges so they never flicker through each other far away: grass back, pavement, parks and markings forward)
+  const grassMat = mat({ map: grassTex, roughness: .95, color: 0xb8d0a0, polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 4 });
   grassTex.repeat.set(1, 1);
   for (const [a, b] of [[-20000, HW0], [W1, W2], [EW1, 20000]]) {
     const g = new THREE.PlaneGeometry(b - a, 40000).rotateX(-Math.PI / 2), uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (b - a) / 10, uv.getY(k) * 4000);
@@ -663,21 +664,23 @@ export async function buildCity(scene, canvasTex, COARSE) {
   for (let k = 0; k < 6; k++) drawScreen(k, 0);
   let screenK = 0, screenT = 0;
   if (spires.length) scene.add(new THREE.Mesh(mergeGeometries(spires.map(g => g.toNonIndexed())), mat({ color: 0xb8bcc4, metalness: .9, roughness: .25 })));
-  const walkMat = mat({ map: walkTex, roughness: .9 }); walkTex.repeat.set(1, 1);
+  const walkMat = mat({ map: walkTex, roughness: .9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }); walkTex.repeat.set(1, 1);
   const wg = mergeGeometries(walkG); { const p = wg.attributes.position, uv = wg.attributes.uv; for (let k = 0; k < p.count; k++) uv.setXY(k, p.getX(k) / 4, p.getZ(k) / 4); }
   scene.add(new THREE.Mesh(wg, walkMat));
   const pg = mergeGeometries(parkG); { const p = pg.attributes.position, uv = pg.attributes.uv; for (let k = 0; k < p.count; k++) uv.setXY(k, p.getX(k) / 10, p.getZ(k) / 10); }
   const parkTex = grassTex.clone(); parkTex.repeat.set(1, 1); parkTex.needsUpdate = true;
-  scene.add(new THREE.Mesh(pg, mat({ map: parkTex, roughness: .95, color: 0xc8e0a8 })));
+  scene.add(new THREE.Mesh(pg, mat({ map: parkTex, roughness: .95, color: 0xc8e0a8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
   const signMat = new THREE.MeshBasicMaterial({ map: signAtlas, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) }); emissive.push(signMat);
   { const tiles = new Map(); for (const g of signGeo) { const p0 = g.attributes.position, k = tileOf(p0.getX(0), p0.getZ(0)); if (!tiles.has(k)) tiles.set(k, []); tiles.get(k).push(g); } for (const list of tiles.values()) scene.add(new THREE.Mesh(mergeGeometries(list), signMat)); }
 
   // small props go in 200 m tiles and are only drawn near the camera (trees a little further)
   const propTiles = [];
-  const instT = (geo, material, list, place, colorOf, far = 330) => {
+  const smashReg = new Map();          // list -> { kind, items: [ [mesh, index, matrix], ... ] per item } for the props a car can knock over
+  const instT = (geo, material, list, place, colorOf, far = 330, kind) => {
     const groups = new Map(), PT = 400;
-    list.forEach((it, i) => { place(it, i); const e = m4.elements, k = Math.floor(e[12] / PT) * 1000 + Math.floor(e[14] / PT); let gr = groups.get(k); if (!gr) groups.set(k, gr = []); gr.push([m4.clone(), colorOf ? colorOf(it, i) : null]); });
-    for (const [k, arr] of groups) { const mesh = new THREE.InstancedMesh(geo, material, arr.length); arr.forEach(([m, c], j) => { mesh.setMatrixAt(j, m); if (c) mesh.setColorAt(j, c); }); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); scene.add(mesh);
+    list.forEach((it, i) => { place(it, i); const e = m4.elements, k = Math.floor(e[12] / PT) * 1000 + Math.floor(e[14] / PT); let gr = groups.get(k); if (!gr) groups.set(k, gr = []); gr.push([m4.clone(), colorOf ? colorOf(it, i) : null, i]); });
+    let reg = null; if (kind) { reg = smashReg.get(list); if (!reg) smashReg.set(list, reg = { kind, items: [] }); }
+    for (const [k, arr] of groups) { const mesh = new THREE.InstancedMesh(geo, material, arr.length); arr.forEach(([m, c, i], j) => { mesh.setMatrixAt(j, m); if (c) mesh.setColorAt(j, c); if (reg) (reg.items[i] = reg.items[i] || []).push([mesh, j, m]); }); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); scene.add(mesh);
       propTiles.push({ mesh, x: (Math.floor(k / 1000) + .5) * PT, z: (((k % 1000) + 1000) % 1000 + .5) * PT, far }); }
   };
   const inst = (geo, material, list, place) => { const mesh = new THREE.InstancedMesh(geo, material, Math.max(1, list.length)); list.forEach((it, i) => { place(it, i); mesh.setMatrixAt(i, m4); }); mesh.instanceMatrix.needsUpdate = true; if (list.length) scene.add(mesh); return mesh; };
@@ -696,12 +699,28 @@ export async function buildCity(scene, canvasTex, COARSE) {
   // pools of warm light under every lamp (only at night)
   const poolTex = canvasTex(128, 128, (g, w) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, "rgba(255,200,130,.55)"); r.addColorStop(.5, "rgba(255,180,110,.18)"); r.addColorStop(1, "rgba(255,170,100,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
   const poolMat = new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -3 });
-  instT(new THREE.PlaneGeometry(16, 16).rotateX(-Math.PI / 2), poolMat, P.lamps, ([x, z, ry]) => { at(0, 0, 0, ry); v.set(0, .08, 1.8).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); }, null, 260);
+  instT(new THREE.PlaneGeometry(16, 16).rotateX(-Math.PI / 2), poolMat, P.lamps, ([x, z, ry]) => { at(0, 0, 0, ry); v.set(0, .08, 1.8).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); }, null, 260, "lamp");
   const lampHead = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffcf8a).multiplyScalar(2.4), toneMapped: false }); emissive.push(lampHead); lampHead.userData.glow = 2.4; lampHead.userData.base = new THREE.Color(0xffcf8a);
-  instT(mergeGeometries([new THREE.CylinderGeometry(.1, .14, 8, 6).translate(0, 4, 0), new THREE.BoxGeometry(.1, .1, 2).translate(0, 7.9, 1)].map(g => g.toNonIndexed())), darkM, P.lamps, ([x, z, ry]) => at(x, 0, z, ry));
-  instT(new THREE.BoxGeometry(.5, .14, .8), lampHead, P.lamps, ([x, z, ry]) => { at(0, 0, 0, ry); v.set(0, 7.85, 1.8).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); });
-  instT(new THREE.CylinderGeometry(.22, .26, .8, 8).translate(0, .4, 0), mat({ color: 0xc8202a, roughness: .5 }), P.hydrants, ([x, z]) => at(x, 0, z));
-  instT(new THREE.CylinderGeometry(.35, .3, 1, 8).translate(0, .5, 0), mat({ color: 0x2d4a2d, roughness: .7 }), P.bins, ([x, z]) => at(x, 0, z));
+  instT(mergeGeometries([new THREE.CylinderGeometry(.1, .14, 8, 6).translate(0, 4, 0), new THREE.BoxGeometry(.1, .1, 2).translate(0, 7.9, 1)].map(g => g.toNonIndexed())), darkM, P.lamps, ([x, z, ry]) => at(x, 0, z, ry), null, 330, "lamp");
+  instT(new THREE.BoxGeometry(.5, .14, .8), lampHead, P.lamps, ([x, z, ry]) => { at(0, 0, 0, ry); v.set(0, 7.85, 1.8).applyQuaternion(q0); m4.compose(v.add(new THREE.Vector3(x, 0, z)), q0, sc.set(1, 1, 1)); }, null, 330, "lamp");
+  instT(new THREE.CylinderGeometry(.22, .26, .8, 8).translate(0, .4, 0), mat({ color: 0xc8202a, roughness: .5 }), P.hydrants, ([x, z]) => at(x, 0, z), null, 330, "hydrant");
+  instT(new THREE.CylinderGeometry(.35, .3, 1, 8).translate(0, .5, 0), mat({ color: 0x2d4a2d, roughness: .7 }), P.bins, ([x, z]) => at(x, 0, z), null, 330, "bin");
+  // road works: a line of cones down the kerb lane with a striped barrier at each end (drive straight through them)
+  {
+    let sc2 = 99; const rc = () => (sc2 = (sc2 * 16807) % 2147483647) / 2147483647;
+    for (let k = 0; k < 46; k++) {
+      const i = Math.floor(rc() * (NX - 1)), j = Math.floor(rc() * NZ); if (!GRID.hasX(j, i)) continue;
+      const x0 = GRID.ax(i) + GRID.avW(i) / 2 + 12, x1 = GRID.ax(i + 1) - GRID.avW(i + 1) / 2 - 12; if (x1 - x0 < 34) continue;
+      const z = GRID.sz(j) + (rc() < .5 ? 1 : -1) * (GRID.stW(j) / 2 - 1.3), xs = x0 + rc() * (x1 - x0 - 28);
+      for (let c = 0; c < 8; c++) P.cones.push([xs + c * 3, z]);
+      P.barriers.push([xs - 2.5, z], [xs + 23.5, z]);
+    }
+    const coneMat = mat({ color: 0xff5a12, roughness: .6 }), stripeTex = canvasTex(64, 16, (g, w, h) => { for (let x = -16; x < w; x += 16) { g.fillStyle = "#e8e8e8"; g.fillRect(x, 0, 16, h); g.fillStyle = "#d4202a"; g.beginPath(); g.moveTo(x, h); g.lineTo(x + 8, 0); g.lineTo(x + 16, 0); g.lineTo(x + 8, h); g.fill(); } });
+    instT(mergeGeometries([new THREE.ConeGeometry(.24, .72, 10).translate(0, .4, 0), new THREE.CylinderGeometry(.17, .19, .1, 10).translate(0, .42, 0)].map(g => g.toNonIndexed())), coneMat, P.cones, ([x, z]) => at(x, 0, z), null, 260, "cone");
+    instT(new THREE.BoxGeometry(.4, .04, .4).translate(0, .02, 0), darkM, P.cones, ([x, z]) => at(x, 0, z), null, 200, "cone");
+    instT(new THREE.BoxGeometry(.12, .4, 2.4).translate(0, .9, 0), mat({ map: stripeTex, roughness: .5 }), P.barriers, ([x, z]) => at(x, 0, z), null, 260, "barrier");
+    instT(mergeGeometries([new THREE.BoxGeometry(.5, .7, .08).translate(0, .35, 1.05), new THREE.BoxGeometry(.5, .7, .08).translate(0, .35, -1.05)].map(g => g.toNonIndexed())), darkM, P.barriers, ([x, z]) => at(x, 0, z), null, 260, "barrier");
+  }
   // NYC water towers: wooden barrel, cone roof, steel legs
   const towerGeo = mergeGeometries([new THREE.CylinderGeometry(2.4, 2.4, 4.5, 14).translate(0, 4.7, 0), new THREE.ConeGeometry(2.6, 1.6, 14).translate(0, 7.75, 0),
     ...[[1.5, 1.5], [-1.5, 1.5], [1.5, -1.5], [-1.5, -1.5]].map(([a, b]) => new THREE.CylinderGeometry(.12, .12, 2.5, 4).translate(a, 1.25, b))].map(g => g.toNonIndexed()));
@@ -772,7 +791,7 @@ export async function buildCity(scene, canvasTex, COARSE) {
   instT(new THREE.PlaneGeometry(2.3, 3.1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x050505 }), P.subway, ([x, z]) => at(x + .05, .08, z));
   const stoopGeo = mergeGeometries([0, 1, 2, 3].map(k => new THREE.BoxGeometry(2, .3, .5).translate(0, .15 + k * .3, -k * .45)).map(g => g.toNonIndexed()));
   instT(stoopGeo, mat({ color: 0x7a5a44, roughness: .9 }), P.stoops, ([x, z, s]) => at(x, 0, z + (s > 0 ? 0 : 0), s > 0 ? Math.PI : 0));
-  instT(new THREE.BoxGeometry(1.8, .5, .6).translate(0, .45, 0), mat({ color: 0x4a3a2a, roughness: .9 }), P.benches, ([x, z, a]) => at(x, 0, z, -a));
+  instT(new THREE.BoxGeometry(1.8, .5, .6).translate(0, .45, 0), mat({ color: 0x4a3a2a, roughness: .9 }), P.benches, ([x, z, a]) => at(x, 0, z, -a), null, 330, "bench");
   // giant burgers and pizza slices on some food places, because why not
   const bun = mat({ color: 0xc88a3a, roughness: .6 }), patty = mat({ color: 0x4a2a18, roughness: .8 }), cheese = mat({ color: 0xffc21a, roughness: .5 }), lettuce = mat({ color: 0x4caf2a, roughness: .7 });
   // (built as one merged mesh per material: 80 sculptures in 5 draw calls)
@@ -828,7 +847,15 @@ export async function buildCity(scene, canvasTex, COARSE) {
   setLights(0);
 
   const helipads = P.helipads; let cullN = 0;
+  const propIdx = new Map(), PC = 12, zeroM = new THREE.Matrix4().makeScale(0, 0, 0);
+  for (const [list, reg] of smashReg) reg.items.forEach((parts, i) => { if (!parts) return; const x = list[i][0], z = list[i][1], key = Math.floor(x / PC) * 100000 + Math.floor(z / PC); let a = propIdx.get(key); if (!a) propIdx.set(key, a = []); a.push({ kind: reg.kind, x, z, parts, down: 0 }); });
+  const props = {
+    near(x, z, r) { const out = []; for (let gx = Math.floor((x - r) / PC); gx <= Math.floor((x + r) / PC); gx++) for (let gz = Math.floor((z - r) / PC); gz <= Math.floor((z + r) / PC); gz++) { const a = propIdx.get(gx * 100000 + gz); if (a) for (const q of a) if (!q.down && Math.hypot(q.x - x, q.z - z) < r) out.push(q); } return out; },
+    hide(q) { q.down = 1; for (const [mesh, j] of q.parts) { mesh.setMatrixAt(j, zeroM); mesh.instanceMatrix.needsUpdate = true; } },
+    restore(q) { q.down = 0; for (const [mesh, j, m] of q.parts) { mesh.setMatrixAt(j, m); mesh.instanceMatrix.needsUpdate = true; } },
+  };
   return {
+    props,
     buildings, footprints, roads, parks: [[[PX0, PZ0], [PX1, PZ0], [PX1, PZ1], [PX0, PZ1]]], water: [[[HW0, -9000], [W1, -9000], [W1, 9000], [HW0, 9000]], [[W2, -9000], [EW1, -9000], [EW1, 9000], [W2, 9000]], Array.from({ length: 24 }, (_, k) => [lake.x + Math.cos(k / 24 * 6.283) * lake.rx, lake.z + Math.sin(k / 24 * 6.283) * lake.rz])],
     WATER_Y, rivers: { hudson: [HW0, W1], east: [W2, EW1] },
     beaches: [], walkways: [], bounds: { x0: XA - 220, x1: brooklyn + 300, z0: ZA - 160, z1: ZB + 160 }, credit: "a made-up city in code",

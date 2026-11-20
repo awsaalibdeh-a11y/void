@@ -9,11 +9,11 @@ Object.defineProperty(THREE.Material.prototype, "forceSinglePass", { get: () => 
 const V = new URL(import.meta.url).search;
 const $ = id => document.getElementById(id);
 const LT = window.__loadTimes = [], lt = k => LT.push([k, Math.round(performance.now())]);       // where the loading time goes (window.__loadTimes)
-const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); lt(p); };
+const setLoad = p => { $("ldbar").style.width = p + "%"; $("ldpct").textContent = Math.round(p); $("loader").style.setProperty("--p", p / 100); lt(p); };
 setLoad(15);
 const [{ createWorld, clamp, lerp, smooth, frame, PAD_R, ZONES }, { buildCar, MODELS }, { addInterior, HEAD }, { Sound, BAR }, { createWatch, TOTAL, CHAPTERS }, { createGame }, { createLife, personGeo }] = await Promise.all(
   ["world", "car", "interior", "sound", "watch", "game", "npc"].map(n => import(`./${n}.js${V}`)));
-const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }, { createContracts }, { createDealer }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras", "contracts", "dealer"].map(n => import(`./${n}.js${V}`)));
+const [{ createPolice }, { createRaces }, { createNet, EMOTES }, { createNav }, { createVehicles }, { createAtmos, WEATHERS }, { createGoals, GOALS }, { createExtras }, { createContracts }, { createDealer }, { createLegion }] = await Promise.all(["police", "race", "net", "nav", "vehicles", "atmos", "goals", "extras", "contracts", "dealer", "legion"].map(n => import(`./${n}.js${V}`)));
 setLoad(40);
 
 const COARSE = matchMedia("(pointer: coarse)").matches, REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -61,7 +61,7 @@ const DENSITY = { few: .55, normal: 1, busy: 1.3 }[(store.get("void.settings") |
 const life = createLife(scene, W.roads, W.walkways, COARSE || LITE, DENSITY); lt("life");
 const TIMES = ["night", "sunset", "day"];
 function cycleTime() { const k = TIMES[(TIMES.indexOf(W.timeOfDay) + 1) % 3]; W.setTime(k); store.set("void.time", k); toast({ night: "Night in the city", sunset: "Golden hour", day: "Daytime" }[k]); cubeN = 0; }
-let police, races, nav;
+let police, races, nav, legion = null;
 const net = createNet(); lt("net");
 setInterval(() => { if (document.hidden) net.tick(.5, null); }, 500);     // a hosting tab in the background still relays everyone
 // settings: graphics quality, look speed, auto gas, touch steering (kept on this device)
@@ -73,7 +73,8 @@ const SET = Object.assign({ q: LITE ? "lite" : TOP ? "ultra" : STRONG ? "high" :
 const gameOpts = {
   handling: () => SET.handling, buyFood: () => { if (cash < 10) return false; cash -= 10; store.set("void.cash", cash); earn(0); return true; }, heroOwned: () => !!store.get("void.hero"), starter: () => { const m = life.models.find(m => m.id === "compact-3") || life.models.find(m => m.kind.id === "compact"); return { model: { ...m, top: 31, acc: .7, grip: .9 }, color: 0x6b5a44, rust: .75, owned: true }; }, onSteal: c => { police && police.event("steal"); goals.stats.steals = (goals.stats.steals || 0) + 1; },
   garage: () => openGarage(true), cycleTime, hornType: () => build.horn, autoGas: () => SET.autogas === "on", onRepair: () => car.repair && car.repair(),
-  onScore: (n, why, pts) => { if (why === "Drift") goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; { const gm = /^Grind (\d+) m/.exec(why); if (gm) goals.stats.grind = (goals.stats.grind || 0) + +gm[1]; const sp = /^(\d+)( |$)/.exec(why); if (sp && +sp[1] >= 720) goals.stats.b720 = 1; if (/Kickflip|Heelflip/.test(why) && / \+ /.test(why)) goals.stats.combo = (goals.stats.combo || 0) + 1; } goals.note(why); earn(pts ?? n); },
+  props: (x, z, y, vel) => legion && legion.props(x, z, y, vel),
+  onScore: (n, why, pts) => { if (legion) legion.onScore(why, pts ?? n); if (/^Drift/.test(why)) goals.drift(n); if (/^(🥇|🥈|🥉)/.test(why)) goals.stats.meds = (goals.stats.meds || 0) + 1; { const gm = /^Grind (\d+) m/.exec(why); if (gm) goals.stats.grind = (goals.stats.grind || 0) + +gm[1]; const sp = /^(\d+)( |$)/.exec(why); if (sp && +sp[1] >= 720) goals.stats.b720 = 1; if (/Kickflip|Heelflip/.test(why) && / \+ /.test(why)) goals.stats.combo = (goals.stats.combo || 0) + 1; } goals.note(why); earn(pts ?? n); },
   onSmash: kind => police && police.event("smash", kind), policeClear: () => police && police.clear(),
   autopilot: (g, dt, over) => nav ? nav.controls(g, dt, over) : null, openGps: () => document.getElementById("gGpsBtn").click(),
   mapExtra(mx, g, MM) {
@@ -98,7 +99,7 @@ function renderGoals() {
   document.getElementById("gGoals").innerHTML = GOALS.map(g => { const v = Math.min(1, (S[g.stat] || 0) / g.need), ok = goals.done.has(g.id); return `<div class="goal${ok ? " ok" : ""}"><b>${g.icon}</b><div><span>${g.name}</span><small>${g.text}</small><i style="--v:${v}"></i></div>${ok ? "🏆" : `<em>${Math.floor(v * 100)}%</em>`}</div>`; }).join("");
   document.getElementById("gStatsRow").innerHTML = `<div><b>${(S.best || 0).toLocaleString()}</b><span>Best score</span></div><div><b>${Math.round(S.top)}</b><span>Top km/h</span></div><div><b>${S.km.toFixed(1)}</b><span>km travelled</span></div><div><b>${goals.done.size}/${GOALS.length}</b><span>Trophies</span></div><div><b>$${cash.toLocaleString()}</b><span>Cash · spend in Garage</span></div>`;
 }
-const WX_ICON = { clear: "☀️ Clear", rain: "🌧 Rain", storm: "⛈ Storm", fog: "🌫 Fog", snow: "❄️ Snow" }, RADIO = { score: "🎵 VOID Score", voidfm: "📻 VOID FM", off: "🔇 Radio off" };
+const WX_ICON = { clear: "☀️ Clear", rain: "🌧 Rain", storm: "⛈ Storm", fog: "🌫 Fog", snow: "❄️ Snow" }, RADIO = { score: "🎵 VOID Score", synth: "🌆 Cyber Synth", chill: "🌙 Chill Night Drive", chase: "🔥 High-Octane Chase", voidfm: "📻 VOID FM", off: "🔇 Radio off" };
 function chips() { document.getElementById("gChips").innerHTML = `<span>${{ night: "🌙", sunset: "🌇", day: "☀️" }[W.timeOfDay]} ${W.timeOfDay}</span><span>${WX_ICON[atmos.weather]}</span>`; document.getElementById("gWeather").innerHTML = `<b>${WX_ICON[SET.weather].split(" ")[0]}</b>${WX_ICON[SET.weather].split(" ").slice(1).join(" ")}`; document.getElementById("gRadio").innerHTML = `<b>${RADIO[SET.radio].split(" ")[0]}</b>${RADIO[SET.radio].split(" ").slice(1).join(" ")}`; }
 document.getElementById("gWeather").onclick = () => { SET.weather = WEATHERS[(WEATHERS.indexOf(SET.weather) + 1) % WEATHERS.length]; atmos.setWeather(SET.weather); store.set("void.settings", SET); chips(); toast(WX_ICON[SET.weather]); };
 document.getElementById("gRadio").onclick = () => { const k = Object.keys(RADIO); SET.radio = k[(k.indexOf(SET.radio) + 1) % k.length]; if (!sound.on) setSound(true); sound.setRadio(SET.radio); store.set("void.settings", SET); chips(); toast(RADIO[SET.radio]); };
@@ -615,7 +616,7 @@ function frameLoop(fixed) {
   const night = W.timeOfDay !== "day";
   heads.intensity = night && veh === "car" ? (W.timeOfDay === "night" ? 260 : 120) : 0;
   W.sky.position.copy(camera.position); W.grade.uniforms.time.value = time % 100; W.grade.uniforms.sharp.value = renderer.getPixelRatio() < (devicePixelRatio || 1) * .95 ? .45 : .22;
-  W.grade.uniforms.blur.value = mode === "play" && motionOK() ? Math.max(0, Math.min(1, (S.speed - 160) / 220)) * .9 + (S.nitro || 0) * .5 : 0;
+  W.grade.uniforms.blur.value = mode === "play" && motionOK() ? (Math.max(0, Math.min(1, (S.speed - 160) / 220)) * .9 + Math.min(1, S.nitro || 0) * .5) * (S.air ? .15 : 1) : 0;
   atmos.update(dt, time, S, mode === "play" ? game.state : null);
   W.city.poolMat.opacity = W.timeOfDay === "night" ? 1 : W.timeOfDay === "sunset" ? .45 : 0; W.city.poolMat.visible = W.timeOfDay !== "day";
   extras.sky(dt, time);
@@ -624,7 +625,7 @@ function frameLoop(fixed) {
   life.raining = atmos.weather === "rain" || atmos.weather === "storm"; life.night = W.timeOfDay !== "day";
   // the El train is solid: you get shoved off the track (and hurt if you hit it hard)
   if (mode === "play" && W.city.el && game.state) { const T = W.city.el.train, s = game.state; if (Math.abs(s.x - W.city.el.x) < 2.6 && s.y > W.city.el.top - .5 && s.y < W.city.el.top + 4 && Math.abs(s.z - T.z) < T.len / 2 + 1) { s.x = W.city.el.x + (s.x >= W.city.el.x ? 3 : -3); const sp = Math.hypot(s.vel.x, s.vel.z); if (sp > 8 || T.v > 5) { game.api.hurt(8 + T.v, "Hit by the train"); sound.crash(); } } }
-  if (mode === "play") { contracts.update(dt, time); dealer.update(dt, time); tutUpdate(); if ((dailyT += dt) > 1) { dailyT = 0; dailyCheck(); } extras.update(dt, time); goals.stats.coins = extras.coins().got; goals.stats.cams = extras.fastCams(); goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
+  if (mode === "play") { contracts.update(dt, time); dealer.update(dt, time); tutUpdate(); if ((dailyT += dt) > 1) { dailyT = 0; dailyCheck(); } extras.update(dt, time); legion.update(dt, time, S, camera.position); goals.stats.coins = extras.coins().got; goals.stats.cams = extras.fastCams(); goals.update(dt, game.state, S.speed); if (time - lastChips > 2) { lastChips = time; chips(); } }
   if (mode === "play" && time - lastGauge > .05) { lastGauge = time; drawGauge(S); const fu = document.getElementById("gFuel"); if (fu && S.fuel != null) { fu.style.setProperty("--v", S.fuel); fu.classList.toggle("low", S.fuel < .2); } }
   if (heroDriven) { car.group.position.copy(S.pos); car.group.quaternion.copy(S.quat); } else if (gsx && gsx.heroPark) { car.group.position.set(gsx.heroPark.x, 0, gsx.heroPark.z); car.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -gsx.heroPark.yaw); }
   car.setReveal(S.reveal);
@@ -674,7 +675,7 @@ function frameLoop(fixed) {
     pf.life -= dt * .9; pf.s.position.addScaledVector(pf.v, dt); pf.v.multiplyScalar(.97);
     pf.s.scale.setScalar((pf.grow || .4) + (1 - pf.life) * 4.5); pf.s.material.opacity = Math.max(0, pf.life) * .5; if (pf.life <= 0) pf.s.visible = false;
   }
-  const lineA = smooth(240, 320, S.speed) * (S.inside ? 0 : 1);
+  const lineA = smooth(240, 320, S.speed) * (S.inside ? 0 : 1) * (S.air ? .3 : 1);
   fx.lines.material.opacity = lineA * .08;
   if (lineA > .01) {
     const d = new THREE.Object3D();
@@ -702,7 +703,7 @@ function frameLoop(fixed) {
   const c = S.cam, shake = !motionOK() ? 0 : (Math.max(0, S.g - 2) * .004 + S.thrust.power * .01 + (S.shake || 0) * .25 + (S.nitro || 0) * .02) * (S.inside ? .25 : 1);
   camera.position.copy(c.pos).add(new THREE.Vector3(Math.sin(time * 53) * shake, Math.sin(time * 61 + 1) * shake, Math.sin(time * 47 + 2) * shake));
   camera.up.copy(c.up || new THREE.Vector3(0, 1, 0)); camera.lookAt(c.look);
-  camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .06 : .35; camera.updateProjectionMatrix();
+  camera.fov = fovFor(c.fov); camera.near = S.inside || S.screenOn ? .06 : mode === "play" ? .6 : .35; camera.updateProjectionMatrix();
   camLight.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0)); camLight.target.position.copy(S.pos);
   scene.fog.far = lerp(950, 2600, smooth(20, 160, S.alt)) * W.weatherFog; scene.fog.near = lerp(120, 400, smooth(20, 160, S.alt)) * W.weatherFog;
   const DET = { lite: .42, low: .55, medium: .8, high: 1, ultra: 1.2 }[W.quality] || 1; life.detail = DET; W.city.detail = DET;
@@ -735,6 +736,8 @@ try {
   });
   if (parts.length) { const geo = mergeGeometries(parts); geo.translate(0, -.02, 0); life.setVoidGeo(geo); life.setVoidDetail(W.quality !== "lite"); window.__voidTris = geo.attributes.position.count / 3; }
 } catch (e) { console.warn("VOID flyers keep the simple shape", e); }
+legion = createLegion({ W, game, sound, store, life, COARSE, races: () => races, nav: () => nav, dealer: () => dealer, radioNext: () => document.getElementById("gRadio").click(),
+  trailColor: () => { const v = OPTS.glow.items[build.glow][1]; return v ? new THREE.Color(v).toArray() : [1, .2, .85]; } });
 setLoad(95);
 await precompile(); lt("compile");
 // warm-up: draw every mesh once into a tiny target so its buffers and textures are on the graphics card before you play.
@@ -747,6 +750,7 @@ try {
   for (const [o, v, f, m] of saved) { o.visible = v; o.frustumCulled = f; o.layers.mask = m; } for (const [o, v] of parents) o.visible = v;
 } catch (e) { console.warn("warm-up skipped", e); }
 lt("warm-up");
+for (const pr of renderer.info.programs) if (pr.diagnostics && !pr.diagnostics.runnable) console.error("VOID shader failed:", pr.diagnostics.vertexShader.log, pr.diagnostics.fragmentShader.log);      // (parallel compiling hides these otherwise)
 let raf;
 let frameErr = 0;
 const loop = () => { raf = requestAnimationFrame(loop); try { frameLoop(); } catch (e) { if (frameErr++ < 3) console.error(e); } };   // one bad frame never stops the game

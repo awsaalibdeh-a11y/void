@@ -230,7 +230,7 @@ export async function createWorld(canvas, COARSE) {
   roadTex.wrapS = THREE.RepeatWrapping;
   const roadMat = new THREE.MeshStandardMaterial({ map: roadTex, color: 0xb8bcc6, roughness: .85, metalness: 0, envMapIntensity: .25, side: THREE.DoubleSide });
   const sideMat = new THREE.MeshStandardMaterial({ color: 0x111115, roughness: .5, metalness: .6, side: THREE.DoubleSide });
-  const edgeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(1.05), toneMapped: false, side: THREE.DoubleSide });
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x8a8d94, roughness: .7, side: THREE.DoubleSide });         // matte: glowing edges read as stray lines of light down the street
   ribbon(0, roadEnd, [-HW, 0], [HW, 0], roadMat);
   ribbon(loopIn - 4, roadEnd, [-HW, -.4], [HW, -.4], sideMat);
   for (const s of [-1, 1]) {

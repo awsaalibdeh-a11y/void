@@ -67,7 +67,11 @@ export const CAR_MODELS = (() => {
     words.forEach((w, i) => {
       const beater = k.id !== "hover" && k.id !== "supercar" && (i % 5 === 3 || k.id === "classic" && i % 3 === 0);
       const brand = BRANDS[(i * 5 + k.id.length) % BRANDS.length];
-      out.push({ id: `${k.id}-${i}`, name: `${brand} ${w}${beater ? " (rusty)" : ""}`, kind: k, sl: .9 + rr() * .2, sh: .93 + rr() * .14, sw: .95 + rr() * .1,
+      // its design: [roof height, nose drop, tail drop, part bits] (1 spoiler, 2 roof box, 4 hood scoop, 8 bull bar, 16 fender flares, 32 two-tone, 64 stripes)
+      const sporty = /sports|muscle|supercar|coupe/.test(k.id), utility = /suv|pickup|van|wagon/.test(k.id), P = (pr, b) => rr() < pr ? b : 0;
+      const bits = P(sporty ? .65 : .2, 1) + P(utility ? .45 : .1, 2) + P(k.id === "muscle" ? .7 : sporty ? .3 : .12, 4) + P(utility ? .4 : .05, 8) + P(sporty ? .4 : .12, 16) + P(.3, 32) + P(sporty ? .4 : .15, 64);
+      const design = [.86 + rr() * .3, (rr() - .3) * .55, (rr() - .25) * .6, beater ? bits & 58 : bits];
+      out.push({ id: `${k.id}-${i}`, name: `${brand} ${w}${beater ? " (rusty)" : ""}`, kind: k, design, sl: .9 + rr() * .2, sh: .93 + rr() * .14, sw: .95 + rr() * .1,
         cols: beater ? [0x6b5a44, 0x7a3a2a, 0x5a6a5a, 0x8a7a5a] : k.cols.slice(0, 2 + Math.floor(rr() * (k.cols.length - 1))), rust: beater ? .55 + rr() * .45 : rr() < .15 ? rr() * .3 : 0,
         top: perf[0] * (beater ? .85 : .92 + rr() * .16), acc: perf[1] * (beater ? .85 : .95 + rr() * .1), grip: perf[2] * (beater ? .85 : 1), offroad: OFFROAD[k.id] });
     });
@@ -211,6 +215,7 @@ export function vehicle(k) {
     return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
   }
   const [body, glass, roof] = PROFILES[kind](L);
+  const roofTop = Math.max(...roof.map(q => q[1])), deck = Math.max(...body.filter(q => q[0] < -L / 2 + .5).map(q => q[1])), hood = Math.max(...body.filter(q => q[0] > L / 2 - 1.3).map(q => q[1])), belt = Math.min(...glass.map(q => q[1]));
   p.push(ext(body, W, BODY, .1), ext(glass, W * .9, GLASS, .06), ext(roof, W * .86, BODY, .05));
   p.push(B(.2, .22, W * .96, L / 2 - .02, .42, 0, DARK), B(.2, .22, W * .96, -L / 2 + .02, .42, 0, DARK));       // bumpers
   p.push(B(.03, .14, W * .5, L / 2 + .02, .58, 0, [.12, .12, .13]));                                               // grille
@@ -225,8 +230,25 @@ export function vehicle(k) {
   if (k.id === "taxi") { p.push(B(.55, .26, .9, -.1, 1.6, 0, BODY)); lt.push(B(.57, .16, .92, -.1, 1.62, 0, [1, .92, .6])); for (const s of [1, -1]) p.push(B(L * .7, .1, .02, 0, .66, s * (W / 2 + .01), [.03, .03, .03])); }
   if (k.id === "police") { for (const s of [1, -1]) p.push(B(L * .8, .24, .02, 0, .65, s * (W / 2 + .01), [.12, .25, .75])); lt.push(B(.3, .14, .5, -.15, 1.52, .32, [.2, .35, 1]), B(.3, .14, .5, -.15, 1.52, -.32, [1, .15, .15])); }
   lamps(kind === "sports" || kind === "supercar" ? .5 : kind === "hover" ? .55 : kind === "suv" || kind === "pickup" ? .85 : kind === "van" ? .85 : .66);
-  return { body: mergeGeometries(p), lights: mergeGeometries(lt) };
+  // optional parts (each car switches its own on in the shader): spoiler, roof box, hood scoop, bull bar, fender flares
+  const opt = [];
+  if (k.id !== "taxi" && k.id !== "police") {
+    const ax = L / 2 - .95;
+    opt.push([1, [B(.34, .05, W * .88, -L / 2 + .3, deck + .34, 0, BODY), B(.06, .3, .06, -L / 2 + .32, deck + .17, W * .3, DARK), B(.06, .3, .06, -L / 2 + .32, deck + .17, -W * .3, DARK)]]);
+    opt.push([2, [B(L * .32, .17, W * .56, -.15, roofTop + .1, 0, DARK), B(L * .34, .03, W * .6, -.15, roofTop + .02, 0, CHR)]]);
+    opt.push([4, [B(.6, .13, .46, L / 2 - 1.05, hood + .05, 0, BODY), B(.04, .08, .4, L / 2 - .76, hood + .07, 0, [.05, .05, .05])]]);
+    opt.push([8, [B(.1, .36, W * .82, L / 2 + .12, .56, 0, CHR), B(.12, .08, W * .62, L / 2 - 1.5, roofTop + .06, 0, DARK)]]);
+    opt.push([16, [ax, -ax].flatMap(x => [1, -1].map(sd => B(1.0, .16, .1, x, .74, sd * (W / 2 + .03), DARK)))]);
+  }
+  for (const g of p) part(g, 0);
+  for (const [id, list] of opt) for (const g of list) p.push(part(g, Math.log2(id) + 1));
+  const merged = mergeGeometries(p);
+  shape(merged, L / 2, belt, roofTop);
+  return { body: merged, lights: mergeGeometries(lt) };
 }
+// which optional part a vertex belongs to (0: always there) and the body's shape numbers for the design shader
+function part(g, id) { const n = g.attributes.position.count; g.setAttribute("aPart", new THREE.BufferAttribute(new Float32Array(n).fill(id), 1)); return g; }
+function shape(g, hl, belt, top) { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set([hl, belt, top], i * 3); g.setAttribute("aShape", new THREE.BufferAttribute(a, 3)); }
 // people: torso and arms (shirt colour), each leg on its own so they can swing, a head and hair
 const C = (rt, rb, h, seg, x, y, z, c, sx = 1, sz = 1) => tint(new THREE.CylinderGeometry(rt, rb, h, seg).scale(sx, 1, sz).translate(x, y, z).toNonIndexed(), c);
 export function personGeo() {
@@ -267,8 +289,26 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
   // ---- vehicles ----
   const carMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .32, metalness: .55, envMapIntensity: 1.1 });
   carMat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float aRust; varying float vRust; varying vec3 vOP;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvRust = aRust; vOP = position;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vRust; varying vec3 vOP;")
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float aRust; attribute vec4 aDesign; attribute vec3 aShape; attribute float aPart; varying float vRust; varying vec3 vOP; varying float vTone; varying float vStripe;")
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+vRust = aRust; vOP = position; vTone = 0.; vStripe = 0.;
+if (aShape.x > .1) {
+  float bits = aDesign.w;
+  if (aPart > .5 && mod(floor(bits / exp2(aPart - 1.)), 2.) < .5) transformed = vec3(0.);       // a part this car doesn't have
+  else if (!(abs(color.b - color.r) < .005 && color.r < .07)) {                                  // (tyres keep their shape)
+    float hl = aShape.x, belt = aShape.y, ax = abs(transformed.x) / hl;
+    if (transformed.y > belt) transformed.y = belt + (transformed.y - belt) * aDesign.x;           // a taller or lower glasshouse
+    float topN = belt + (aShape.z - belt) * aDesign.x, lift = max(0., transformed.y - .32);
+    transformed.y -= (smoothstep(.45, 1., transformed.x / hl) * aDesign.y + smoothstep(.45, 1., -transformed.x / hl) * aDesign.z) * lift * .55;   // sleek or blunt nose and tail
+    transformed.z *= 1. - .13 * pow(smoothstep(.55, 1., ax), 1.4) - .2 * smoothstep(belt - .05, topN + .05, transformed.y);   // rounded corners, sides leaning in to the roof
+    transformed.y -= .07 * smoothstep(.82, 1., ax) * lift;                                         // rounded top edges front and back
+  }
+  float painted = step(.9, color.r * color.g * color.b);
+  vTone = painted * mod(floor(bits / 32.), 2.) * step(position.y, aShape.y * .62);
+  vStripe = painted * mod(floor(bits / 64.), 2.) * step(abs(position.z), .22) * step(aShape.y * .8, position.y);
+}`);
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying float vRust; varying vec3 vOP; varying float vTone; varying float vStripe;")
+      .replace("#include <color_fragment>", "#include <color_fragment>\nif (vTone > .5) diffuseColor.rgb *= .22; if (vStripe > .5) diffuseColor.rgb = dot(diffuseColor.rgb, vec3(.3, .59, .11)) > .45 ? vec3(.04) : vec3(.92);")
       .replace("#include <color_fragment>", "#include <color_fragment>\nfloat rn = fract(sin(dot(floor(vOP * 7.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453) * .6 + fract(sin(dot(floor(vOP * 23.0), vec3(39.3, 11.7, 83.1))) * 9631.7) * .4; float rr = vRust * smoothstep(.55 - vRust * .35, .9, rn) * step(.12, diffuseColor.r + diffuseColor.g + diffuseColor.b); diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - vRust * .35), vec3(.36, .17, .07) * (.6 + .7 * rn), rr);")
       .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, .95, vRust * .85);")
       .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - vRust * .85;");
@@ -278,6 +318,7 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
   const meshes = KINDS.map((k, ti) => {
     const g = vehicle(k), body = new THREE.InstancedMesh(g.body, carMat, Math.max(1, counts[ti])), lights = new THREE.InstancedMesh(g.lights, lightMat, Math.max(1, counts[ti]));
     const rust = new Float32Array(Math.max(1, counts[ti])); body.geometry.setAttribute("aRust", new THREE.InstancedBufferAttribute(rust, 1)); body.rust = rust;
+    const des = new Float32Array(Math.max(1, counts[ti]) * 4); body.geometry.setAttribute("aDesign", new THREE.InstancedBufferAttribute(des, 4)); body.design = des;
     body.castShadow = true; body.frustumCulled = lights.frustumCulled = false; scene.add(body, lights); return { body, lights };
   });
   const cars = [], col = new THREE.Color();
@@ -306,10 +347,12 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
   KINDS.forEach((k, ti) => {
     for (let n = 0; n < counts[ti]; n++) {
       const ms = CAR_MODELS.filter(m => m.kind === k), model = ms[Math.floor(rnd() * ms.length)];
-      const c = { kind: k, ti, n, model, v: 0, want: (k.id === "bus" || k.id === "truck" ? 8 : k.id === "sports" || k.id === "supercar" ? 13 : k.fly ? 18 : 10) + rnd() * 4, x: 0, z: 0, yaw: 0, y: 0, rx: 0, rz: 0, bump: 0, near: false, rust: model.rust ? Math.min(1, model.rust * (.8 + rnd() * .4)) : 0, fly: k.fly ? 20 + rnd() * 34 : FLYK.has(k.id) && rnd() < .09 ? 26 + rnd() * 44 : 0, idx: cars.length };
+      const c = { kind: k, ti, n, model, v: 0, want: (k.id === "bus" || k.id === "truck" ? 8 : k.id === "sports" || k.id === "supercar" ? 13 : k.fly ? 18 : 10) + rnd() * 4, x: 0, z: 0, yaw: 0, y: 0, rx: 0, rz: 0, bump: 0, near: false, rust: model.rust ? Math.min(1, model.rust * (.8 + rnd() * .4)) : 0, fly: k.fly ? 20 + rnd() * 34 : FLYK.has(k.id) && rnd() < .22 ? 26 + rnd() * 44 : 0, idx: cars.length };
       if (c.fly) c.want = 15 + rnd() * 9;
       place(c); cars.push(c);
       c.color = model.cols[Math.floor(rnd() * model.cols.length)]; c.col = new THREE.Color(c.color);
+      const d0 = model.design || [1, 0, 0, 0], plain = k.id === "taxi" || k.id === "police";
+      c.design = [plain ? 1 : d0[0] * (.94 + rnd() * .12), d0[1] + (rnd() - .5) * .16, d0[2] + (rnd() - .5) * .16, rnd() < .35 ? d0[3] ^ (1 << Math.floor(rnd() * 7)) : d0[3]];
     }
     meshes[ti].body.setColorAt(0, col.setHex(0xffffff));
   });
@@ -364,9 +407,9 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
   };
 
   // ---- per frame ----
-  const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), legT = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
+  const legQ = new THREE.Quaternion(), legM = new THREE.Matrix4(), legT = new THREE.Matrix4(), Z = new THREE.Vector3(0, 0, 1), squash = new THREE.Vector3(), m4 = new THREE.Matrix4(), lm4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), zero = new THREE.Vector3();
   const buckets = new Map(), tmp = {}, cell = new Map(), CELL = 30;
-  let frameN = 0, debLive = 1, crashT = 0, reckT = 6;
+  let frameN = 0, debLive = 1, crashT = 0, reckT = 6, skyT = 8;
   const MASS = { bus: 4, truck: 3.5, sixer: 3, monster: 2.6, van: 1.6, suv: 1.4, pickup: 1.5, limo: 1.5, compact: .75, hatch: .85, buggy: .7 };
   const LEGS = [[null, 1, .1], [null, -1, -.1]], pscale = new THREE.Vector3();
   function decide(c, k) {       // at the crossing k: straight on, or turn onto the cross road
@@ -392,11 +435,13 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
       if (debris.instanceColor) debris.instanceColor.needsUpdate = true;
       return;
     }
-    const fly = power > 28;
+    const fly = power > 22, air = c.y > 3;                // (a flying car keeps its height and falls)
+    if (air) { c.fly0 = c.fly0 || c.fly; c.fly = 0; }
     c.crush = fly ? .72 : .82;
     c.wreck = fly ? { t: 0, vx: vx * .8 + (rnd() - .5) * 4, vz: vz * .8 + (rnd() - .5) * 4, vy: 4 + power * .25, wx: (rnd() - .5) * 8, wy: (rnd() - .5) * 6, wz: (rnd() - .5) * 8 }
       : { t: 0, vx: vx * .45, vz: vz * .45, vy: 0, wx: 0, wy: (rnd() - .5) * 3, wz: 0 };
-    c.y = 0; c.rx = 0; c.rz = 0; c.v = 0; c.turn = null;
+    if (air) { c.wreck.vy = Math.max(c.wreck.vy * .5, 2); c.wreck.wx = (rnd() - .5) * 5; c.wreck.wz = (rnd() - .5) * 5; c.wreck.air = 1; } else c.y = 0;
+    c.rx = 0; c.rz = 0; c.v = 0; c.turn = null;
     c.col.setHex(c.color).multiplyScalar(fly ? .28 : .45);
     debLive = 1; for (let k = 0; k < (fly ? 14 : 6); k++) {
       const di = debI++ % DEB, d = deb[di]; d.life = 3 + rnd() * 2; d.p.set(c.x, 1, c.z); d.v.set(vx * .6 + (rnd() - .5) * 14, 3 + rnd() * 9, vz * .6 + (rnd() - .5) * 14); d.w.set(rnd() * 12, rnd() * 12, rnd() * 12); d.c = k % 3 ? c.color : 0x222222;
@@ -446,9 +491,9 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
   return {
     get detail() { return api.detail; }, set detail(v) { api.detail = v; },
     cars, people, meshes, smash, near, models: CAR_MODELS,
-    set onHit(f) { api.onHit = f; }, set onCrash(f) { api.onCrash = f; },
+    set onHit(f) { api.onHit = f; }, set onCrash(f) { api.onCrash = f; }, set onBoom(f) { api.onBoom = f; }, set onSmoke(f) { api.onSmoke = f; },
     // the flying VOID cars: the real car's shape, or (Lite) the simple low-poly body traffic uses
-    setVoidGeo(geo) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M) return; M.simple = M.simple || { body: M.body.geometry, lights: M.lights.geometry }; geo.setAttribute("aRust", M.simple.body.attributes.aRust); M.full = geo; },
+    setVoidGeo(geo) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M) return; M.simple = M.simple || { body: M.body.geometry, lights: M.lights.geometry }; geo.setAttribute("aRust", M.simple.body.attributes.aRust); geo.setAttribute("aDesign", M.simple.body.attributes.aDesign); M.full = geo; },
     setVoidDetail(full) { const M = meshes[KINDS.findIndex(k => k.id === "voidcar")]; if (!M || !M.full) return; M.body.geometry = full ? M.full : M.simple.body; M.lights.geometry = full ? jetGeo : M.simple.lights; }, set collide(f) { api.collide = f; }, set raining(v) { api.raining = v; }, set night(v) { api.night = v; },
     take(c) { c.taken = true; c.parked = false; c.turn = null; },
     park(c, x, z, yaw) { Object.assign(c, { taken: false, parked: true, x, z, yaw, v: 0, y: 0, wreck: null, turn: null, crush: 0 }); },
@@ -477,10 +522,14 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
         const h = far ? dt * every : dt;
         if (c.wreck) {                                   // a smashed car tumbles, bounces, then lies there smoking until it is towed
           const w = c.wreck; w.t += h;
-          if (c.y > 0 || w.vy > 0) { w.vy -= 9.81 * h; c.y = Math.max(0, c.y + w.vy * h); c.rx += w.wx * h; c.rz += w.wz * h; c.yaw += w.wy * h; if (c.y === 0) { w.vy = -w.vy * .3; w.wx *= .5; w.wz *= .5; w.wy *= .5; if (Math.abs(w.vy) < 1) w.vy = 0; } }
+          if (c.y > 0 || w.vy > 0) {
+            w.vy -= 9.81 * h; c.y = Math.max(0, c.y + w.vy * h); c.rx += w.wx * h; c.rz += w.wz * h; c.yaw += w.wy * h;
+            if (w.air && c.y > 2 && api.onSmoke && (w.st = (w.st || 0) - h) < 0) { w.st = .06; api.onSmoke(c.x, c.y + .6, c.z); }      // a smoke trail on the way down
+            if (c.y === 0) { if (w.air && w.vy < -10) { w.air = 0; if (api.onBoom) api.onBoom(c.x, c.z, -w.vy); } w.vy = -w.vy * .3; w.wx *= .5; w.wz *= .5; w.wy *= .5; if (Math.abs(w.vy) < 1) w.vy = 0; }
+          }
           c.x += w.vx * h; c.z += w.vz * h; const f = Math.pow(c.y > 0 ? .9 : .2, h); w.vx *= f; w.vz *= f;
           if (c.y === 0) { c.rx = Math.round(c.rx / Math.PI) * Math.PI * .02 + c.rx * .98; c.rz = Math.round(c.rz / Math.PI) * Math.PI * .02 + c.rz * .98; }
-          if (w.t > 24) { place(c); posOf(c); c.rx = c.rz = c.y = 0; c.col.setHex(c.color); c.crush = 0; c.dent = 0; }
+          if (w.t > 24) { place(c); posOf(c); c.rx = c.rz = c.y = 0; c.col.setHex(c.color); c.crush = 0; c.dent = 0; if (c.fly0) { c.fly = c.fly0; c.fly0 = 0; } }
         } else if (c.parked) {
           c.v = 0;
         } else if (c.turn) {
@@ -530,12 +579,13 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
         const ddx = c.x - cx0, ddz = c.z - cz0;
         if (ddx * ddx + ddz * ddz < RC2) {
           e.set(c.rx, -c.yaw, c.rz + (c.turn ? (c.fly ? .25 : .05) : 0), "YXZ"); q.setFromEuler(e); const md = c.model; m4.compose(pos.set(c.x, c.y, c.z), q, squash.set(md.sl, (c.crush || 1 - (c.dent || 0) * .07) * md.sh, md.sw));
-          const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.body.rust[k] = c.rust;
+          const M = meshes[c.ti], k = M.k++; M.body.setMatrixAt(k, m4); M.body.setColorAt(k, c.col); M.body.rust[k] = c.rust; M.body.design.set(c.design, k * 4);
+          M.lights.setMatrixAt(k, c.wreck ? lm4.compose(pos, q, zero) : m4);        // (before the shadow and headlight-pool code below reuse m4)
           if (c.fly && !c.wreck && c.kind.id !== "hover" && jk < 900) jets.setMatrixAt(jk++, m4);
           if (!c.fly && c.y < 1.5 && bk2 < 2200 && ddx * ddx + ddz * ddz < 40000) {
             bE.set(0, -c.yaw, 0); bQ.setFromEuler(bE); m4.compose(bP.set(c.x, .045, c.z), bQ, bS.set(c.kind.L * md.sl * 1.25, 1, c.kind.W * md.sw * 1.5)); blobs.setMatrixAt(bk2++, m4);
             if (api.night && !c.wreck && hk2 < 600 && ddx * ddx + ddz * ddz < 25600) { const L = c.kind.L * md.sl; m4.compose(bP.set(c.x + Math.cos(c.yaw) * (L / 2 + 4.5), .05, c.z + Math.sin(c.yaw) * (L / 2 + 4.5)), bQ, bS.set(9, 1, 5.5)); beams.setMatrixAt(hk2++, m4); }
-          } M.lights.setMatrixAt(k, c.wreck ? m4.compose(pos, q, zero) : m4); }
+          } }
       }
       // collisions among the cars near the camera: a hard hit wrecks both, mass and momentum decide where they go
       crashT += dt;
@@ -559,12 +609,23 @@ export function createLife(scene, roads, walkways, COARSE, DENS = 1) {
             }
           }
         }
+        // every so often something happens in the sky near you: a flyer's engine dies, or two of them collide
+        if ((skyT -= .08) < 0 && player) {
+          skyT = 12 + rnd() * 14; const fx0 = player.vx || 0, fz0 = player.vz || 0, fl = Math.hypot(fx0, fz0) || 1;
+          const pick = cars.filter(c => c.fly && !c.wreck && c.kind.id !== "voidcar" && Math.hypot(c.x - player.x, c.z - player.z) < 420 && Math.hypot(c.x - player.x, c.z - player.z) > 70 && ((c.x - player.x) * fx0 + (c.z - player.z) * fz0) / fl > -40);
+          if (pick.length) {
+            const a = pick[Math.floor(rnd() * pick.length)], b = pick.find(o => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 140 && Math.abs(o.y - a.y) < 30);
+            if (b) { const nx = b.x - a.x, nz = b.z - a.z, d = Math.hypot(nx, nz) || 1; smash(a, nx / d * 12, nz / d * 12, 40); smash(b, -nx / d * 12, -nz / d * 12, 40); if (api.onBoom) api.onBoom((a.x + b.x) / 2, (a.z + b.z) / 2, 30, (a.y + b.y) / 2); }
+            else { a.fail = 2.2; }
+          }
+        }
+        for (const c of cars) if (c.fail > 0) { if (api.onSmoke) api.onSmoke(c.x, c.y + .5, c.z); if ((c.fail -= .08) <= 0 && !c.wreck) smash(c, Math.cos(c.yaw) * c.v, Math.sin(c.yaw) * c.v, 30); }
         // every so often somebody near you drives like a maniac
-        if ((reckT -= .08) < 0 && player) { reckT = 9 + rnd() * 10; for (let t = 0; t < 40; t++) { const c = cars[Math.floor(rnd() * cars.length)], d = Math.hypot(c.x - player.x, c.z - player.z); if (!c.fly && !c.wreck && !c.taken && !c.parked && d > 70 && d < 260 && !(MASS[c.kind.id] > 1.5)) { c.reck = 20 + rnd() * 15; break; } } }
+        if ((reckT -= .08) < 0 && player) { reckT = 6 + rnd() * 6; for (let t = 0; t < 40; t++) { const c = cars[Math.floor(rnd() * cars.length)], d = Math.hypot(c.x - player.x, c.z - player.z); if (!c.fly && !c.wreck && !c.taken && !c.parked && d > 70 && d < 260 && !(MASS[c.kind.id] > 1.5)) { c.reck = 20 + rnd() * 15; break; } } }
       }
       jets.count = jk; jets.visible = jk > 0; jets.instanceMatrix.needsUpdate = true; jk = 0;
       beams.count = hk2; beams.visible = hk2 > 0; beams.instanceMatrix.needsUpdate = true; hk2 = 0;
-      for (const m of meshes) { m.body.count = m.lights.count = m.k; m.body.visible = m.lights.visible = m.k > 0; m.body.instanceMatrix.needsUpdate = m.lights.instanceMatrix.needsUpdate = true; if (m.body.instanceColor) m.body.instanceColor.needsUpdate = true; m.body.geometry.attributes.aRust.needsUpdate = true; }
+      for (const m of meshes) { m.body.count = m.lights.count = m.k; m.body.visible = m.lights.visible = m.k > 0; m.body.instanceMatrix.needsUpdate = m.lights.instanceMatrix.needsUpdate = true; if (m.body.instanceColor) m.body.instanceColor.needsUpdate = true; m.body.geometry.attributes.aRust.needsUpdate = true; if (m.body.geometry.attributes.aDesign) m.body.geometry.attributes.aDesign.needsUpdate = true; }
       // debris (skipped once every piece has landed and been hidden)
       if (debLive) { debLive = 0; for (let k = 0; k < DEB; k++) {
         const d = deb[k];
